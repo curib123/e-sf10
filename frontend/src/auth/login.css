@@ -1,0 +1,130 @@
+@import '../color.css';
+
+.login-container {
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: url("/frontend/assets/images/background.jpg") no-repeat center/cover;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-color);
+  backdrop-filter: blur(4px);
+}
+
+.login-box {
+  position: relative;
+  z-index: 10;
+  background: var(--box-background);
+  padding: 2rem;
+  border-radius: 14px;
+  box-shadow: 0 5px 15px var(--shadow-color);
+  width: 100%;
+  max-width: 420px;
+  min-width: 320px;
+  backdrop-filter: blur(5px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all 0.3s ease;
+}
+
+.login-box:hover {
+  box-shadow: 0 12px 20px var(--shadow-color);
+  transform: translateY(-3px) scale(1.07);
+}
+
+.login-title {
+  color: var(--text-color);
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 1.5rem;
+  letter-spacing: 1px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  align-items: center;
+}
+
+.login-label {
+  color: var(--text-color);
+  font-size: 1rem;
+  font-weight: 500;
+  margin-bottom: 0.8rem;
+  width: 100%;
+  text-align: left;
+}
+
+.login-input {
+  width: 92%;
+  margin: 0.5rem;
+  padding: 0.7rem;
+  border-radius: 10px;
+  background: var(--input-background);
+  color: var(--primary-color);
+  border: 1px solid var(--border-color);
+  outline: none;
+  font-size: 1rem;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.login-input::placeholder {
+  color: var(--primary-color);
+  font-size: 0.95rem;
+  transition: opacity 0.3s ease;
+}
+
+.login-input:focus {
+  border-color: var(--primary-color);
+  transform: scale(1.02);
+}
+
+.login-input:focus::placeholder {
+  opacity: 0.4;
+}
+
+.login-button {
+  background: var(--primary-color);
+  color: white;
+  padding: 1rem;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease-in-out;
+  border: none;
+  width: 92%;
+  margin-top: 1rem;
+}
+
+.login-button:hover {
+  background: var(--primary-hover);
+  transform: scale(1.03);
+}
+
+.login-button:active {
+  transform: scale(0.97);
+  opacity: 0.9;
+}
+
+@media (max-width: 480px) {
+  .login-box {
+    max-width: 90%;
+  }
+  .login-input, .login-button {
+    width: 100%;
+  }
+  .overlay {
+    backdrop-filter: blur(2px);
+  }
+}
