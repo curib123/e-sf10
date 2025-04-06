@@ -1,0 +1,190 @@
+
+@import '../../../color.css';  
+
+.add-student {
+    background-color: var(--text-color);
+    height: 100vh;
+    width: 100vw;
+    padding-top: 100px;
+    display: flex;
+    align-items: start;
+    justify-content: center;
+  }
+  
+  .pagination {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  
+  .pagination button {
+    background-color: var(--primary-color);
+    color: var(--text-color);
+    padding: 10px 15px;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+  }
+  
+  .pagination button:hover {
+    background-color: var(--primary-hover);
+  }
+  
+  .pagination button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+  }
+  
+.title-container {
+    text-align: center;
+    border-top-left-radius: 40px;
+    border-bottom-right-radius: 40px;
+    padding: 40px 0;
+    width: 100%;
+    margin-bottom: 50px;
+    background-color: var(--primary-color);
+  }
+  
+  .student-title {
+    font-size: 36px;
+    font-weight: bold;
+    color: var(--text-color);
+    margin: 0;
+  }
+  
+  .subtitle {
+    font-size: 18px;
+    color: var(--text-color);
+    margin-top: 10px;
+    margin-bottom: 20;
+    font-family: 'Verdana', sans-serif;
+  }
+  
+  .add-student-container {
+    padding-bottom: 20px;
+    font-family: Arial, sans-serif;
+  }
+
+  .header{
+    display: flex;
+    justify-content: space-between;
+    gap: 40px;
+  }
+  
+  .add-student-btn {
+    background-color: var(--primary-color);
+    color: var(--text-color);
+    border: none;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-bottom: 20px;
+    border-radius: 5px;
+  }
+  
+  .add-student-btn:hover {
+    background-color: var(--primary-hover);
+  }
+  
+  .search-filters {
+    margin-bottom: 20px;
+    display: flex;
+    gap: 20px;
+  }
+  
+  .search-input {
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    width: 200px;
+  }
+  
+  .filter-select {
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+  }
+  
+  .crud-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  .crud-table th, .crud-table td {
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .crud-table th {
+    background-color: var(--primary-color);
+    color: var(--text-color);
+    padding: 25px 40px;
+  }
+  
+  .crud-table td {
+    background-color: var(--text-color);
+    color:var(--primary-color);
+    padding: 10px;
+  }
+  
+  .edit-btn,
+  .view-info-btn,
+  .school-record-btn,
+  .remove-btn {
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+    border: none;
+    padding: 10px 15px;
+    cursor: pointer;
+    margin: 5px;
+    border-radius: 5px;
+  }
+  
+  .edit-btn:hover,
+  .view-info-btn:hover,
+  .school-record-btn:hover
+  .remove-btn:hover {
+    background-color: #999;
+  }
+  
+  .remove-btn {
+  background-color: var(--danger-color); /* Set a color for the delete button */
+  color: var(--text-color); /* Text color for the delete button */
+  border: none;
+  padding: 10px 15px;
+  cursor: pointer;
+  margin: 5px;
+  border-radius: 5px;
+}
+
+.remove-btn:hover {
+  background-color: var(--danger-hover); /* Change the hover color for the delete button */
+}
+
+  .view-info-btn {
+    background-color: var(--primary-color);
+  }
+  
+  .school-record-btn {
+    background-color: var(--primary-hover);
+  }
+  
+  .edit-btn {
+    background-color: var(--secondary-color);
+  }
+  
+  .view-info-btn:hover {
+    background-color: var(--primary-hover);
+  }
+  
+  .school-record-btn:hover {
+    background-color: var(--primary-color);
+  }
+  
+  .edit-btn:hover {
+    background-color: var(--primary-hover);
+  }
+  

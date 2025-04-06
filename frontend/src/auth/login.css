@@ -40,13 +40,13 @@ body::before {
 
 .login-box {
     position: relative;
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--text-color);
     padding: 30px;
     border-radius: 12px;
     backdrop-filter: blur(12px);
     box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.2);
     text-align: center;
-    color: var(--text-color);
+    color: var(--primary-color);
     border: 1px solid var(--border-color);
 }
 
@@ -82,17 +82,17 @@ body::before {
 
 
 .input-icon {
-    color: var(--text-color);
+    color: var(--primary-color);
     margin-right: 10px;
 }
 
 
 .login-input {
     width: 100%;
-    background: transparent;
+    background: var(--input-background);
     border: none;
     outline: none;
-    color: var(--text-color);
+    color: var(--primary-hover);
     font-size: 14px;
 }
 

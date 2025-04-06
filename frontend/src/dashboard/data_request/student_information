@@ -1,0 +1,45 @@
+const studentsData = [
+    {
+      id: 1,
+      lastName: "Doe",
+      firstName: "John",
+      middleName: "M",
+      extensionName: "Jr.",
+      dateOfBirth: "2005-03-15",
+      gender: "Male",
+      grade: "A",
+    },
+    {
+      id: 2,
+      lastName: "Smith",
+      firstName: "Jane",
+      middleName: "A",
+      extensionName: "Sr.",
+      dateOfBirth: "2004-08-22",
+      gender: "Female",
+      grade: "B",
+    },
+    {
+      id: 3,
+      lastName: "Brown",
+      firstName: "Emily",
+      middleName: "L",
+      extensionName: "",
+      dateOfBirth: "2006-02-05",
+      gender: "Female",
+      grade: "A",
+    },
+    {
+      id: 4,
+      lastName: "Williams",
+      firstName: "Michael",
+      middleName: "R",
+      extensionName: "",
+      dateOfBirth: "2005-11-11",
+      gender: "Male",
+      grade: "C",
+    },
+  ];
+  
+  export default studentsData;
+  

@@ -1,9 +1,13 @@
 
 :root {
-    --primary-color: #05685b;
-    --primary-hover: #45a049;
-    --text-color: #fff;
-    --input-background: rgba(255, 255, 255, 0.1);
+    --primary-color: #067973;
+    --primary-bg: #ffff;
+    --primary-active : #1cd8b98c ;
+    --primary-hover: #14ada6;
+    --text-color:  #f0f2f5;
+    --input-background: rgb(195, 219, 219);
     --border-color: rgba(255, 255, 255, 0.3);
     --secondary-color: #ccc;
+    --danger-color: #dc3545; /* Red color for the delete button */
+    --danger-hover: #c82333; 
 }
