@@ -95,7 +95,7 @@
   .topbar {
     height: 60px;
     width: 100vw;
-    background: var( --primary-bg);
+    background: var( --primary-bg); 
     position: fixed;
     top: 0;
     left: 0;
