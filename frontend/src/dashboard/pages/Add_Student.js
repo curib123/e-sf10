@@ -240,32 +240,34 @@ const Add_Student = () => {
     { value: "desc", label: "Sort by Name (Z-A)" },
   ]);
 
-  // Filter students based on search query, gender, grade level, and date of birth
-  const filteredStudents = students.filter((student) => {
-    const matchesSearchQuery =
-      student.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.middle_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.extension_name.toLowerCase().includes(searchQuery.toLowerCase());
+ // Filter students based on search query, gender, grade level, and date of birth
+const filteredStudents = students.filter((student) => {
+  const matchesSearchQuery =
+    student.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    student.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    student.middle_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    student.extension_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    student.LRN.includes(searchQuery); // Added LRN check
 
-    const matchesGenderFilter =
-      genderFilter === "All Gender" || student.gender === genderFilter;
+  const matchesGenderFilter =
+    genderFilter === "All Gender" || student.gender === genderFilter;
 
-    // Match grade level using the student’s associated grade level from schoolRecords
-    const studentRecord = schoolRecords.find(
-      (record) => record.student_id === student.student_id
-    );
-    const studentGradeLevel = studentRecord ? studentRecord.grade_level : "N/A";
+  // Match grade level using the student’s associated grade level from schoolRecords
+  const studentRecord = schoolRecords.find(
+    (record) => record.student_id === student.student_id
+  );
+  const studentGradeLevel = studentRecord ? studentRecord.grade_level : "N/A";
 
-    const matchesGradeLevelFilter =
-      gradeLevelFilter === "All Grades" || studentGradeLevel === gradeLevelFilter;
+  const matchesGradeLevelFilter =
+    gradeLevelFilter === "All Grades" || studentGradeLevel === gradeLevelFilter;
 
-    return (
-      matchesSearchQuery &&
-      matchesGenderFilter &&
-      matchesGradeLevelFilter
-    );
-  });
+  return (
+    matchesSearchQuery &&
+    matchesGenderFilter &&
+    matchesGradeLevelFilter
+  );
+});
+
 
   // Sorting function for students based on first_name or last_name
   const sortStudents = (studentsList) => {
@@ -307,7 +309,7 @@ const Add_Student = () => {
             <input
               type="text"
               className="search-input"
-              placeholder="Search by name..."
+              placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -354,63 +356,65 @@ const Add_Student = () => {
           </button>
         </div>
 
-        {/* Student Table */}
         <div className="crud-table">
-          {currentStudents.length > 0 ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>LRN</th>
-                  <th>First Name</th>
-                  <th>Middle Name</th>
-                  <th>Last Name</th>
-                  <th>Grade Level</th>
-                  <th>View Info</th>
-                  <th>School Record</th>
-                  <th>Edit</th>
-                  <th>Remove</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentStudents.map((student) => (
-                  <tr key={student.student_id}>
-                    <td>{student.student_id}</td>
-                    <td>{student.LRN}</td>
-                    <td>{student.first_name}</td>
-                    <td>{student.middle_name}</td>
-                    <td>{student.last_name}</td>
-                    <td>{student.gradeLevel}</td>
-                    <td>
-                      <button className="view-info-btn">
-                        <FaFileAlt /> View Info {/* Added View Info Icon */}
-                      </button>
-                    </td>
-                    <td>
-                      <button className="school-record-btn">
-                        <FaFileAlt /> School Record {/* Added School Record Icon */}
-                      </button>
-                    </td>
-                    <td>
-                      <button className="edit-btn">
-                        <FaEdit /> Edit {/* Added Edit Icon */}
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        className="remove-btn"
-                      >
-                        <FaTrashAlt /> {student.is_deleted ? "Restore" : "Remove"} {/* Toggle Delete */}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div>No students found.</div>
-          )}
-        </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>LRN</th>
+        <th>First Name</th>
+        <th>Middle Name</th>
+        <th>Last Name</th>
+        <th>Grade Level</th>
+        <th>View Info</th>
+        <th>School Record</th>
+        <th>Edit</th>
+        <th>Remove</th>
+      </tr>
+    </thead>
+    <tbody>
+      {currentStudents.length > 0 ? (
+        currentStudents.map((student) => (
+          <tr key={student.student_id}>
+            <td>{student.student_id}</td>
+            <td>{student.LRN}</td>
+            <td>{student.first_name}</td>
+            <td>{student.middle_name}</td>
+            <td>{student.last_name}</td>
+            <td>{student.gradeLevel}</td>
+            <td>
+              <button className="view-info-btn">
+                <FaFileAlt /> View Info
+              </button>
+            </td>
+            <td>
+              <button className="school-record-btn">
+                <FaFileAlt /> School Record
+              </button>
+            </td>
+            <td>
+              <button className="edit-btn">
+                <FaEdit /> Edit
+              </button>
+            </td>
+            <td>
+              <button className="remove-btn">
+                <FaTrashAlt /> {student.is_deleted ? "Restore" : "Remove"}
+              </button>
+            </td>
+          </tr>
+        ))
+      ) : (
+        <tr>
+          <td colSpan="10" className="no-students">
+            No students found matching your filters.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
+
 
         {/* Pagination */}
         <div className="pagination">
