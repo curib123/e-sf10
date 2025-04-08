@@ -3,7 +3,8 @@ import Sidebar from "./component/SideBar";
 import { Routes, Route, useLocation } from "react-router-dom";
 
 import Dashboard from "./pages/Dashboard";
-import Add_Student from "./pages/Add_Student";
+import Student_Info from "./pages/Student_Info";
+import AddStudentForm from "./pages/Add_Student";
 
 const DashboardLayout = () => {
   const location = useLocation();
@@ -13,8 +14,10 @@ const DashboardLayout = () => {
     switch (path) {
       case "/":
         return "Dashboard";
-      case "/add_Student":
-        return "Add Student";
+      case "/student_info":
+        return "Student Information";
+        case "/add_Student":
+          return "Add Student";
       default:
         return "Page Not Found"; // Default fallback if route is not mapped
     }
@@ -31,7 +34,8 @@ const DashboardLayout = () => {
         {/* Routes for different pages */}
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/add_Student" element={<Add_Student />} />
+          <Route path="/student_info" element={<Student_Info />} />
+          <Route path="/add_Student" element={<AddStudentForm />} />
         </Routes>
       </div>
     </div>
