@@ -177,8 +177,7 @@ const StudentInformation = () => {
             </button>
           </div>
   
-  
-          <div className="overflow-auto rounded-lg shadow-md w-full">
+          <div className="overflow-auto m-6 rounded-lg shadow-md w-full">
             <table className="min-w-full bg-white text-sm text-left mx-auto">
               <thead className="bg-gray-200">
                 <tr>
