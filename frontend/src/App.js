@@ -1,7 +1,7 @@
 import './App.css';
 import { useState } from 'react';
 import Login from './auth/login';
-import DashboardLayout from './dashboard/DashboardLayout';
+import Dashboard from '../src/main/dashboard';
 import { BrowserRouter as Router } from "react-router-dom";
 
 function App() {
@@ -13,8 +13,8 @@ function App() {
   // Kung wala pa, login page lang usa iyang makita
   return isLoggedIn ? (
     <Router>
-          <DashboardLayout />
-        </Router>
+          <Dashboard />
+    </Router>
     
   ) : (
     <Login onLogin={() => setIsLoggedIn(true)} />
