@@ -1,4 +1,4 @@
-/* Sidebar styles */
+
 .sidebar {
     width: 240px;
     transition: width 0.3s ease;
@@ -9,13 +9,12 @@
     width: 70px;
   }
   
-  /* Hide sidebar text when collapsed */
+
   .sidebar.collapsed .sidebar-title,
   .sidebar.collapsed .link-text {
     display: none;
   }
-  
-  /* Optional nav-link hover styling */
+ 
   .sidebar .nav-link {
     display: flex;
     align-items: center;

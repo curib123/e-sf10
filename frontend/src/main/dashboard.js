@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Route, Routes, Link, useLocation, useNavigate } from 'react-router-dom';
-import { FaHome, FaUserGraduate, FaUsersCog, FaBuilding, FaBars, FaSignOutAlt } from 'react-icons/fa';
+import { FaHome, FaUserGraduate, FaUsersCog, FaBuilding, FaBars,FaPlus, FaSignOutAlt } from 'react-icons/fa';
 import Home from '../screens/home';
 import StudentInformation from '../screens/student_information';
+import AddStudent from '../screens/add_students';
 import './dashboard.css';
 
 const Dashboard = () => {
@@ -40,25 +41,31 @@ const Dashboard = () => {
         <ul className="nav nav-pills flex-column mt-3">
           <li className="nav-item">
             <Link to="/home" className="nav-link text-white">
-              <FaHome className="me-3" />
+              <FaHome className="me-5" />
               <span className="link-text">Dashboard</span>
             </Link>
           </li>
           <li className="nav-item">
             <Link to="/student_information" className="nav-link text-white">
-              <FaUserGraduate className="me-3" />
+              <FaUserGraduate className="me-5" />
               <span className="link-text">Student Info</span>
             </Link>
           </li>
           <li className="nav-item">
+            <Link to="/add_student" className="nav-link text-white">
+              <FaPlus className="me-5" />
+              <span className="link-text">Add Student</span>
+            </Link>
+          </li>
+          <li className="nav-item">
             <Link to="/settings" className="nav-link text-white">
-              <FaUsersCog className="me-3" />
+              <FaUsersCog className="me-5" />
               <span className="link-text">Access Roles</span>
             </Link>
           </li>
           <li className="nav-item">
             <Link to="/reports" className="nav-link text-white">
-              <FaBuilding className="me-3" />
+              <FaBuilding className="me-5" />
               <span className="link-text">Administration</span>
             </Link>
           </li>
@@ -81,6 +88,7 @@ const Dashboard = () => {
           <Routes>
             <Route path="/home" element={<Home />} />
             <Route path="/student_information" element={<StudentInformation />} />
+            <Route path="/add_student" element={<AddStudent />} />
           </Routes>
         </div>
       </div>
