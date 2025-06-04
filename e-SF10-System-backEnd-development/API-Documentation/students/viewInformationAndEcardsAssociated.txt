@@ -1,0 +1,37 @@
+--------------------------------------------------
+## View Information and Ecards Associated
+--------------------------------------------------
+
+#Prerequisites
+    -Autorization
+        No Auth
+    -Headers (add)
+        Key:Authorization
+        Value:Bearer paste your generated token here
+    -Method
+        GET
+    -EndPoint
+        http://localhost:3001/esf10/students/123456789012/details
+
+
+--------------------------------------------------
+Response    (200 ok)
+--------------------------------------------------
+{
+    "student": {
+        "student_id": 1,
+        "lrn": "123456789012",
+        "first_name": "Quivir",
+        "middle_name": "Añora",
+        "last_name": "Cutanda",
+        "date_of_birth": "2002-05-18T16:00:00.000Z",
+        "gender": "Male",
+        "street": "123 Main St",
+        "city": "Manila",
+        "province": "Metro Manila",
+        "zip_code": "1000",
+        "guardian_name": "Unknown",
+        "contact_number": "09171234567"
+    },
+    "eCards": []
+}

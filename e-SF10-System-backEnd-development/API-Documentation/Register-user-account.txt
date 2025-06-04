@@ -1,0 +1,50 @@
+--------------------------------------------------
+## register User account
+--------------------------------------------------
+
+#Prerequisites
+    -Autorization
+        No Auth
+    -Headers (add)
+        Key:Content-Type
+        Value:application/json
+    -Method
+        POST
+    -EndPoint
+       http://localhost:3001/esf10/register-user
+    -Body:raw
+--------------------------------------------------
+Example requist
+--------------------------------------------------
+
+{
+  "first_name": "Teacher",
+  "last_name": "test",
+  "email": "teacher@gmail.com",
+  "password": "securepassword123",
+  "role": "teacher"
+}
+
+
+--------------------------------------------------
+Example response
+-------------------------------------------------
+{
+    "message": "User registered successfully",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo0LCJlbWFpbCI6InRlYWNoZXJAZ21haWwuY29tIiwiaWF0IjoxNzQ5MDIyMDYyLCJleHAiOjE3NDkwMjU2NjJ9.8utCuflfCrIzr4X1gDbBHJuDMiheM_aFDKtltYqY588",
+    "user": {
+        "user_id": 4,
+        "first_name": "Teacher",
+        "last_name": "test",
+        "email": "teacher@gmail.com",
+        "role": "teacher",
+        "permissions": [
+            "search_student",
+            "view_student_info",
+            "view_ecards",
+            "upload_documents",
+            "download_documents",
+            "lock_records"
+        ]
+    }
+}
