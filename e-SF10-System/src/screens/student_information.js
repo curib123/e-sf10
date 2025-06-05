@@ -191,12 +191,13 @@ const StudentInformationSimple = () => {
     >
       Edit
     </Link>
-    <button
+     <Link
+       to={`/record_student/${student.lrn}`}
       className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold"
       style={{ minWidth: "70px" }}
     >
       Records
-    </button>
+    </Link>
     <button
       className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold"
       style={{ minWidth: "100px" }}

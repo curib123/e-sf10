@@ -22,7 +22,7 @@ const Add_User = () => {
     e.preventDefault();
 
     try {
-      const res = await fetch('http://localhost:3001/esf10/register-Admin', {
+      const res = await fetch(' http://localhost:3001/esf10/register-user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -43,11 +43,17 @@ const Add_User = () => {
   };
 
   return (
+    
     <div className="container d-flex justify-content-center align-items-start min-vh-100">
       <div className="card shadow-md p-4 rounded" style={{ maxWidth: '1000px', width: '100%' }}>
+      
         <h3 className="text-center mb-3">Create Users Account</h3>
         <p className="text-muted text-center mb-4">Admin / Staff / Teacher /Student </p>
-
+ {response && (
+          <div className={`alert alert-${response.type} mt-4`} role="alert">
+            {response.message}
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <div className="mb-3">
             <label className="form-label">First Name</label>
@@ -118,23 +124,26 @@ const Add_User = () => {
               onChange={handleChange}
             >
               <option value="admin">Admin</option>
-              <option value="staff">Staff</option>
+              <option value="registrar">Registrar</option>
               <option value="teacher">Teacher</option>
               <option value="student">Student</option>
               {/* Add more roles if needed */}
             </select>
           </div>
 
-          <button type="submit" className="btn btn-secondary w-100">
+          <button type="submit" className="btn btn-secondary w-100 mb-3">
             Create User
           </button>
         </form>
-
-        {response && (
-          <div className={`alert alert-${response.type} mt-4`} role="alert">
-            {response.message}
-          </div>
-        )}
+ <button
+      type="button"
+      className="btn btn-outline-secondary mb-3"
+      onClick={() => window.history.back()}
+    >
+      <i className="bi bi-arrow-left-circle me-2"></i>
+      Back
+    </button>
+       
       </div>
     </div>
   );

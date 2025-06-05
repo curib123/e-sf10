@@ -19,18 +19,18 @@ const Dashboard = ({ onLogout }) => {
   const location = useLocation();
   const [pageTitle, setPageTitle] = useState('');
 
-  useEffect(() => {
-    const pathToTitle = {
-      '/home': 'Dashboard',
-      '/student_information': 'Student Information',
-      '/users_account': 'Users Account',
-      '/add_student': 'Add Student',
-      '/add_user': 'Create User',
-      '/edit_student/:lrn': 'Update User',
-      '/reports': 'Administration',
-    };
-    setPageTitle(pathToTitle[location.pathname] || 'Dashboard');
-  }, [location]);
+  // useEffect(() => {
+  //   const pathToTitle = {
+  //     '/home': 'Dashboard',
+  //     '/student_information': 'Student Information',
+  //     '/users_account': 'Users Account',
+  //     '/add_student': 'Add Student',
+  //     '/add_user': 'Create User Account',
+  //     '/edit_student/:lrn': 'Update User',
+  //     '/reports': 'Administration',
+  //   };
+  //   setPageTitle(pathToTitle[location.pathname] || 'Dashboard');
+  // }, [location]);
 
   const navLinks = [
     { to: '/home', icon: <FaHome />, label: 'Dashboard' },
@@ -62,10 +62,12 @@ const Dashboard = ({ onLogout }) => {
       {/* Main */}
       <div className="main">
         <div className="topbar">
-          <button className="toggle-btn" onClick={() => setCollapsed(!collapsed)} aria-label="Toggle sidebar">
+         <div className='d-flex align-items-center justify-content-between '> 
+           <button className="toggle-btn" onClick={() => setCollapsed(!collapsed)} aria-label="Toggle sidebar">
             <FaBars />
           </button>
-          <h3>{pageTitle}</h3>
+          <h3>Trinidad Municipal College</h3>
+         </div>
           <button className="logout-btn" onClick={onLogout} aria-label="Logout">
             <FaSignOutAlt />
             <span>Logout</span>
@@ -80,6 +82,7 @@ const Dashboard = ({ onLogout }) => {
             <Route path="/add_user" element={<Add_User />} />
             <Route path="/users_account" element={<User />} />
             <Route path="/edit_student/:lrn" element={<EditStudent />} />
+            
 
           </Routes>
         </div>
