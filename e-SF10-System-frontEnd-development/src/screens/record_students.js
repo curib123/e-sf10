@@ -5,33 +5,69 @@ export default function StudentRecord() {
   const { lrn } = useParams();
   const [student, setStudent] = useState(null);
   const [eCards, setECards] = useState([]);
+  const [transferRequest, setTransferRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewingFile, setViewingFile] = useState(null);
 
   useEffect(() => {
-    const fetchStudentDetails = async () => {
-      const token = localStorage.getItem("token");
-      if (!token) return alert("Token missing. Please log in.");
+    const token = localStorage.getItem("token");
+    if (!token) {
+      alert("Token missing. Please log in.");
+      setLoading(false);
+      return;
+    }
 
+    // Fetch all transfer requests, filter by LRN
+    async function fetchTransferRequests() {
       try {
-        const res = await fetch(`http://localhost:3001/esf10/students/${lrn}/details`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Failed to fetch student details");
+        const res = await fetch(
+          `http://localhost:3001/esf10/transfer-request/view-all-requests?page=1&limit=10`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        if (!res.ok) throw new Error("Failed to fetch transfer requests");
+        const data = await res.json();
+        if (data.success) {
+          const filtered = data.data.filter((req) => req.lrn === lrn);
+          setTransferRequest(filtered.length > 0 ? filtered[0] : null);
+        }
+      } catch (error) {
+        console.error("Transfer requests fetch error:", error);
+      }
+    }
 
+    // Fetch student details by LRN
+    async function fetchStudentDetails() {
+      try {
+        const res = await fetch(
+          `http://localhost:3001/esf10/students/${lrn}/details`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!res.ok) throw new Error("Failed to fetch student details");
         const data = await res.json();
         setStudent(data.student);
         setECards(data.eCards || []);
       } catch (err) {
         alert(`❌ ${err.message}`);
-      } finally {
-        setLoading(false);
       }
-    };
+    }
 
-    if (lrn) fetchStudentDetails();
+    if (lrn) {
+      setLoading(true);
+      Promise.all([fetchTransferRequests(), fetchStudentDetails()]).finally(() =>
+        setLoading(false)
+      );
+    }
   }, [lrn]);
 
+  // File viewer helpers
   const getFileExtension = (filename) => {
     if (!filename) return "";
     const parts = filename.split(".");
@@ -64,7 +100,8 @@ export default function StudentRecord() {
       if (card.sf10_document_path) {
         try {
           const response = await fetch(card.sf10_document_path);
-          if (!response.ok) throw new Error(`Failed to download ${card.sf10_document_path}`);
+          if (!response.ok)
+            throw new Error(`Failed to download ${card.sf10_document_path}`);
           const blob = await response.blob();
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement("a");
@@ -88,7 +125,11 @@ export default function StudentRecord() {
   if (loading)
     return (
       <div className="d-flex justify-content-center align-items-center vh-100">
-        <div className="spinner-border text-primary" role="status" aria-label="Loading spinner">
+        <div
+          className="spinner-border text-primary"
+          role="status"
+          aria-label="Loading spinner"
+        >
           <span className="visually-hidden">Loading...</span>
         </div>
       </div>
@@ -103,9 +144,10 @@ export default function StudentRecord() {
 
   return (
     <div className="container">
+    
+
       {/* Header */}
       <div className="d-flex justify-content-end align-items-center mb-4">
-     
         <button
           className="btn btn-outline-dark btn-lg d-flex align-items-center gap-2"
           onClick={() => window.history.back()}
@@ -118,44 +160,65 @@ export default function StudentRecord() {
         </button>
       </div>
 
-      {/* Student Info Card */}
-      <div className="card shadow-sm rounded-4 border-0 mb-5" style={{ transition: "transform 0.3s", cursor: "default" }}>
-        <div className="card-header bg-dark text-white rounded-top-4 fs-4 fw-semibold d-flex align-items-center gap-3">
-          <i className="bi bi-info-circle"></i> Student Information
-        </div>
-        <div className="card-body p-4">
-          <div className="row gy-3">
-            <div className="col-md-4">
-              <div className="text-uppercase text-secondary fw-semibold small">LRN</div>
-              <div className="fs-5">{student.lrn}</div>
-            </div>
-            <div className="col-md-8">
-              <div className="text-uppercase text-secondary fw-semibold small">Full Name</div>
-              <div className="fs-5">{`${student.first_name} ${student.middle_name} ${student.last_name}`}</div>
-            </div>
-            <div className="col-md-4">
-              <div className="text-uppercase text-secondary fw-semibold small">Gender</div>
-              <div className="fs-6">{student.gender}</div>
-            </div>
-            <div className="col-md-4">
-              <div className="text-uppercase text-secondary fw-semibold small">Date of Birth</div>
-              <div className="fs-6">{new Date(student.date_of_birth).toLocaleDateString()}</div>
-            </div>
-            <div className="col-md-4">
-              <div className="text-uppercase text-secondary fw-semibold small">Guardian</div>
-              <div className="fs-6">{student.guardian_name}</div>
-            </div>
-            <div className="col-md-4">
-              <div className="text-uppercase text-secondary fw-semibold small">Contact</div>
-              <div className="fs-6">{student.contact_number}</div>
-            </div>
-            <div className="col-md-8">
-              <div className="text-uppercase text-secondary fw-semibold small">Address</div>
-              <div className="fs-6">{`${student.street}, ${student.city}, ${student.province}, ${student.zip_code}`}</div>
-            </div>
-          </div>
+     {/* Student Info Card */}
+<div
+  className="card shadow-sm rounded-4 border-0 mb-5"
+  style={{ transition: "transform 0.3s", cursor: "default" }}
+>
+  <div className="card-header bg-dark text-white rounded-top-4 fs-4 fw-semibold d-flex align-items-center gap-3">
+    <i className="bi bi-info-circle"></i> Student Information
+  </div>
+  <div className="card-body p-4">
+    {/* Transfer Status Badge */}
+    {transferRequest?.request_status === "Approved" && (
+      <div
+        className="alert alert-success text-center fw-bold fs-5 mb-4"
+        role="alert"
+        style={{ borderRadius: "0.375rem" }}
+      >
+        TRANSFERRED STUDENT
+      </div>
+    )}
+
+    <div className="row gy-3">
+      <div className="col-md-4">
+        <div className="text-uppercase text-secondary fw-semibold small">LRN</div>
+        <div className="fs-5">{student.lrn}</div>
+      </div>
+      <div className="col-md-8">
+        <div className="text-uppercase text-secondary fw-semibold small">Full Name</div>
+        <div className="fs-5">
+          {`${student.first_name} ${student.middle_name || ""} ${student.last_name}`}
         </div>
       </div>
+      <div className="col-md-4">
+        <div className="text-uppercase text-secondary fw-semibold small">Gender</div>
+        <div className="fs-6">{student.gender}</div>
+      </div>
+      <div className="col-md-4">
+        <div className="text-uppercase text-secondary fw-semibold small">Date of Birth</div>
+        <div className="fs-6">
+          {new Date(student.date_of_birth).toLocaleDateString()}
+        </div>
+      </div>
+      <div className="col-md-4">
+        <div className="text-uppercase text-secondary fw-semibold small">Guardian</div>
+        <div className="fs-6">{student.guardian_name}</div>
+      </div>
+      <div className="col-md-4">
+        <div className="text-uppercase text-secondary fw-semibold small">Contact</div>
+        <div className="fs-6">{student.contact_number}</div>
+      </div>
+      <div className="col-md-8">
+        <div className="text-uppercase text-secondary fw-semibold small">Address</div>
+        <div className="fs-6">
+          {`${student.street}, ${student.city}, ${student.province}, ${student.zip_code}`}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
       {/* E-Cards Section */}
       <div className="d-flex justify-content-between align-items-center mb-3">
@@ -203,7 +266,9 @@ export default function StudentRecord() {
                     className="card-title text-truncate fw-semibold"
                     title={card.sf10_document_path || `E-Card ${index + 1}`}
                   >
-                    {card.sf10_document_path ? card.sf10_document_path.split("/").pop() : `E-Card ${index + 1}`}
+                    {card.sf10_document_path
+                      ? card.sf10_document_path.split("/").pop()
+                      : `E-Card ${index + 1}`}
                   </h5>
                   <p className="card-text text-muted small mb-3">
                     <b>Grade:</b> {card.grade_level} | <b>Section:</b> {card.section}
@@ -266,50 +331,40 @@ export default function StudentRecord() {
               </div>
               <div
                 className="modal-body p-0 bg-light"
-                style={{ height: "calc(100% - 56px)", overflow: "auto" }}
+                style={{ height: "calc(100% - 56px)", overflow: "hidden" }}
               >
                 {(() => {
-                  const ext = getFileExtension(viewingFile.sf10_document_path.toLowerCase());
-                  if (["pdf"].includes(ext)) {
+                  const ext = getFileExtension(viewingFile.sf10_document_path);
+                  if (["png", "jpg", "jpeg", "gif", "bmp", "webp"].includes(ext)) {
+                    return (
+                      <img
+                        src={viewingFile.sf10_document_path}
+                        alt="Document preview"
+                        className="img-fluid h-100 mx-auto d-block"
+                        style={{ objectFit: "contain" }}
+                      />
+                    );
+                  }
+                  if (ext === "pdf") {
                     return (
                       <iframe
                         src={viewingFile.sf10_document_path}
-                        style={{ width: "100%", height: "100%", border: "none" }}
-                        title="PDF Preview"
+                        title="PDF Viewer"
+                        className="w-100 h-100 border-0"
                       />
-                    );
-                  } else if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) {
-                    return (
-                      <div className="d-flex justify-content-center align-items-center h-100 p-3">
-                        <img
-                          src={viewingFile.sf10_document_path}
-                          alt="E-Card"
-                          style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: "0.5rem" }}
-                        />
-                      </div>
-                    );
-                  } else if (["doc", "docx", "docs"].includes(ext)) {
-                    return (
-                      <iframe
-                        src={`https://docs.google.com/gview?url=${viewingFile.sf10_document_path}&embedded=true`}
-                        style={{ width: "100%", height: "100%", border: "none" }}
-                        title="Word Preview"
-                      />
-                    );
-                  } else {
-                    return (
-                      <p className="p-4 text-center fst-italic text-muted">
-                        Unsupported file type for preview.
-                      </p>
                     );
                   }
+                  return (
+                    <p className="text-center fs-5 fw-semibold my-auto text-muted">
+                      Preview not available for this file type.
+                    </p>
+                  );
                 })()}
               </div>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 }

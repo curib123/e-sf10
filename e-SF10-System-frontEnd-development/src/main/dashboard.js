@@ -13,6 +13,8 @@ import {
   FaDatabase,
   FaListAlt,
   FaUpload,
+  FaExchangeAlt ,
+  FaClipboardList ,
 } from 'react-icons/fa';
 
 
@@ -30,6 +32,11 @@ import SchoolSettings from '../screens/school_settings';
 import Backup from '../screens/backup';
 import CreateRoles from '../screens/create_roles';
 import EditPermission from '../screens/edit_permission';
+import RequestTransfer from '../screens/request_transfer';
+import ViewRequest from '../screens/view_request';
+import AllLogs from '../screens/all_logs';
+
+import { isTokenExpired } from '../components/token_checker'; 
 
 
 import './dashboard.css';
@@ -46,6 +53,16 @@ const Dashboard = ({ onLogout }) => {
 
   const schoolId = '1234567890';
   const token = localStorage.getItem('token');
+      
+   
+     useEffect(() => {
+       const token = localStorage.getItem('token');
+       
+       if (isTokenExpired(token)) {
+         window.location.reload();
+          localStorage.clear();
+       } 
+     }, []);
 
   const navLinks = [
     { to: '/dashboard', icon: <FaHome />, label: 'Dashboard' },
@@ -185,9 +202,19 @@ const Dashboard = ({ onLogout }) => {
               className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
             >
               <FaUpload />
-              {!collapsed && <span className="ms-4">Upload SF10</span>}
+              {!collapsed && <span className="ms-4">Upload Student SF10</span>}
             </NavLink>
           </li>
+
+           <li>
+    <NavLink
+      to="/view_request"
+      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
+    >
+      <FaExchangeAlt  />
+      {!collapsed && <span className="ms-4">Student Transfer Requests</span>}
+    </NavLink>
+  </li>
         </ul>
       </li>
 
@@ -213,7 +240,9 @@ const Dashboard = ({ onLogout }) => {
   className={`submenu ${isSysAdminOpen ? 'show' : ''}`}
   style={{ display: collapsed ? 'none' : undefined }}
 >
-  <li>
+
+
+    <li>
     <NavLink
       to="/users_account"
       className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
@@ -230,6 +259,16 @@ const Dashboard = ({ onLogout }) => {
     >
       <FaBuilding />
       {!collapsed && <span className="ms-4">School Default Settings</span>}
+    </NavLink>
+  </li>
+
+    <li>
+    <NavLink
+      to="/all_logs"
+      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
+    >
+      <FaClipboardList  />
+      {!collapsed && <span className="ms-4">View Activity Logs</span>}
     </NavLink>
   </li>
 
@@ -370,7 +409,10 @@ const Dashboard = ({ onLogout }) => {
             <Route path="/backup" element={<Backup />} />
             <Route path="/create_roles" element={<CreateRoles />} />
            <Route path="/edit_permission/:userId" element={<EditPermission />} />
-              
+            <Route path="/request_transfer/:studentId" element={<RequestTransfer />} />
+            <Route path="/view_request" element={<ViewRequest />} />
+            <Route path="/all_logs" element={<AllLogs />} />
+
             {/* <Route path="*" element={<NotFound />} /> */}
           </Routes>
         </div>

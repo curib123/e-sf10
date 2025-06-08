@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { FaPlus, FaSearch } from "react-icons/fa";
@@ -201,7 +202,7 @@ const searchStudents = async (query) => {
                         : ""}
                     </td>
                     <td>
-                      <div className="d-flex flex-wrap gap-3 justify-content-center">
+                      <div className="d-flex flex-wrap gap-1 justify-content-center">
                         <Link
                           to={`/edit_student/${student.lrn}`}
                           className="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold"
@@ -221,9 +222,16 @@ const searchStudents = async (query) => {
                         <Link
                           to={`/upload_ecards/${student.lrn}`}
                           className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold"
-                          style={{ minWidth: "100px" }}
+                          style={{ minWidth: "80px" }}
                         >
                           Upload E-SF10
+                        </Link>
+                         <Link
+                          to={`/request_transfer/${student.student_id}`}
+                          className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold"
+                          style={{ minWidth: "80px" }}
+                        >
+                          Request Transfer
                         </Link>
                       </div>
                     </td>
