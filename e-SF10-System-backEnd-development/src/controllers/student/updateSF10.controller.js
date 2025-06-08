@@ -1,38 +1,21 @@
-const path = require("path");
-const fs = require("fs");
-const { createSchoolRecord } = require("../../models/schoolRecord.model");
+const path = require('path');
+const fs = require('fs');
+const db = require('../../config/db'); // Add this line to import the database connection
+const { updateSchoolRecord } = require('../../models/schoolRecord.model');
 
-exports.uploadSF10 = async (req, res) => {
-  const { studentId } = req.params;
+exports.updateSF10 = async (req, res) => {
+  const { recordId } = req.params;
   const file = req.file;
+  const { start_year, end_year, grade_level, section } = req.body;
 
   try {
     // Basic validation
     if (!file) {
       return res.status(400).json({
         success: false,
-        error: "No file uploaded",
-        studentId,
-        details: "Please include an SF10 file in your request",
-      });
-    }
-
-    const { start_year, end_year, grade_level, section } = req.body;
-
-    // Required fields check
-    if (!start_year || !end_year || !grade_level || !section) {
-      fs.unlinkSync(file.path);
-      return res.status(400).json({
-        success: false,
-        error: "Missing required fields",
-        studentId,
-        missingFields: [
-          ...(!start_year ? ["start_year"] : []),
-          ...(!end_year ? ["end_year"] : []),
-          ...(!grade_level ? ["grade_level"] : []),
-          ...(!section ? ["section"] : []),
-        ],
-        details: "All fields are required for SF10 upload",
+        error: 'No file uploaded',
+        recordId,
+        details: 'Please include an SF10 file in your request',
       });
     }
 
@@ -45,9 +28,9 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid start year",
-        studentId,
-        details: "Start year must be a valid number",
+        error: 'Invalid start year',
+        recordId,
+        details: 'Start year must be a valid number',
       });
     }
 
@@ -55,9 +38,9 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid end year",
-        studentId,
-        details: "End year must be a valid number",
+        error: 'Invalid end year',
+        recordId,
+        details: 'End year must be a valid number',
       });
     }
 
@@ -65,9 +48,9 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid year format",
-        studentId,
-        details: "Years must be 4-digit numbers",
+        error: 'Invalid year format',
+        recordId,
+        details: 'Years must be 4-digit numbers',
       });
     }
 
@@ -75,8 +58,8 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid start year range",
-        studentId,
+        error: 'Invalid start year range',
+        recordId,
         details: `Start year must be between 2000 and ${currentYear + 5}`,
       });
     }
@@ -85,8 +68,8 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid end year range",
-        studentId,
+        error: 'Invalid end year range',
+        recordId,
         details: `End year must be between 2000 and ${currentYear + 5}`,
       });
     }
@@ -95,9 +78,9 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid year span",
-        studentId,
-        details: "Start year and end year cannot be the same",
+        error: 'Invalid year span',
+        recordId,
+        details: 'Start year and end year cannot be the same',
       });
     }
 
@@ -105,9 +88,9 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid year sequence",
-        studentId,
-        details: "Start year cannot be greater than end year",
+        error: 'Invalid year sequence',
+        recordId,
+        details: 'Start year cannot be greater than end year',
       });
     }
 
@@ -115,9 +98,9 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid year span",
-        studentId,
-        details: "School year span cannot be more than 1 year",
+        error: 'Invalid year span',
+        recordId,
+        details: 'School year span cannot be more than 1 year',
       });
     }
 
@@ -127,9 +110,9 @@ exports.uploadSF10 = async (req, res) => {
       fs.unlinkSync(file.path);
       return res.status(400).json({
         success: false,
-        error: "Invalid grade level",
-        studentId,
-        details: "Grade level must be between 1 and 12",
+        error: 'Invalid grade level',
+        recordId,
+        details: 'Grade level must be between 1 and 12',
       });
     }
 
@@ -139,15 +122,24 @@ exports.uploadSF10 = async (req, res) => {
     fs.mkdirSync(finalDir, { recursive: true });
 
     const fileExt = path.extname(file.originalname);
-    const newFilename = `sf10-${studentId}-${Date.now()}${fileExt}`;
+    const newFilename = `sf10-${recordId}-${Date.now()}${fileExt}`;
     const absoluteFilePath = path.join(finalDir, newFilename);
+
+    // Delete old file if it exists
+    const [existingRecord] = await db.execute(
+      `SELECT sf10_document_path FROM school_records WHERE record_id = ? AND is_deleted = FALSE`,
+      [recordId]
+    );
+    if (existingRecord.length > 0 && existingRecord[0].sf10_document_path && fs.existsSync(existingRecord[0].sf10_document_path)) {
+      fs.unlinkSync(existingRecord[0].sf10_document_path);
+    }
 
     fs.renameSync(file.path, absoluteFilePath);
 
-    // Database record creation
+    // Database record update
     const userId = req.user.user_id;
-    const result = await createSchoolRecord(
-      studentId,
+    const result = await updateSchoolRecord(
+      recordId,
       {
         start_year: startYearNum,
         end_year: endYearNum,
@@ -159,10 +151,10 @@ exports.uploadSF10 = async (req, res) => {
     );
 
     // Success response
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "SF10 file uploaded successfully",
-      studentId,
+      message: 'SF10 file updated successfully',
+      recordId,
       document: {
         filename: newFilename,
         path: absoluteFilePath,
@@ -177,7 +169,7 @@ exports.uploadSF10 = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Upload Error:", error);
+    console.error('Update SF10 Error:', error);
 
     // Clean up file if error occurs
     if (req.file?.path && fs.existsSync(req.file.path)) {
@@ -186,9 +178,9 @@ exports.uploadSF10 = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      error: "Server error during file upload",
-      studentId,
-      details: process.env.NODE_ENV === "development" ? error.message : "Please try again later",
+      error: 'Server error during file update',
+      recordId,
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Please try again later',
       timestamp: new Date().toISOString(),
     });
   }

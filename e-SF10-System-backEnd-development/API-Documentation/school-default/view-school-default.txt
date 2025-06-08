@@ -1,0 +1,44 @@
+--------------------------------------------------
+## View School default
+--------------------------------------------------
+
+#Prerequisites
+    -Autorization
+        No Auth
+    -Headers (add)
+        Key:Authorization
+        Value:Bearer paste your generated token here
+    -Method
+        GET
+    -EndPoint
+       http://localhost:3001/esf10/school-defaults/1234567890
+
+
+--------------------------------------------------
+Response    (200 ok)
+--------------------------------------------------
+{
+    "message": "School default created successfully",
+    "data": {
+        "school_id": 1234567890,
+        "school_name": "School Name Here",
+        "school_address": "School Address",
+        "region": "School Region",
+        "division": "School Division",
+        "district": "School District",
+        "school_head": "School Head Name",
+        "school_logo": "/school_logos/1749257101975-688779572.png",
+        "contact_number": "09989888990",
+        "email": "admin@gmail.com",
+        "website": "www.example.com",
+        "created_at": "2025-06-07T00:45:01.000Z",
+        "updated_at": "2025-06-07T00:45:01.000Z",
+        "user": {
+            "user_id": 1,
+            "first_name": "Quivir",
+            "middle_name": "Anora",
+            "last_name": "Cutanda",
+            "email": "admin@gmail.com"
+        }
+    }
+}
