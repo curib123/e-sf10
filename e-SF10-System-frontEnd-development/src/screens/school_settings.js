@@ -12,9 +12,7 @@ const SchoolDefaultUpdateForm = () => {
   const schoolId = '1234567890';
   const token = sessionStorage.getItem('token');
 
-   useEffect(() => {
-                checkToken();
-               }, []);
+   
 
   useEffect(() => {
     
@@ -40,7 +38,10 @@ const SchoolDefaultUpdateForm = () => {
       });
   }, [schoolId, token]);
 
- 
+useEffect(() => {
+                checkToken();
+               }, []);
+               
   const handleChange = (e) => {
     const { name, value } = e.target;
     setSchoolData((prev) => ({ ...prev, [name]: value }));
