@@ -1,11 +1,14 @@
 
 
-.login-page-wrapper {
-    position: relative;
-    height: 100vh;
-  }
-  
-  .bg-image {
+
+/* login.css */
+body {
+  background-color: #f8f9fa;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+
+ .bg-image {
     position: fixed;
     top: 0;
     left: 0;
@@ -17,19 +20,44 @@
     filter: blur(30px);
     z-index: -1;
   }
-@keyframes fadeIn {
-  from {opacity: 0;}
-  to {opacity: 1;}
+
+.login-card {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  transition: transform 0.3s ease;
 }
 
-.input-group .form-control:focus {
-  box-shadow: 0 0 8px rgba(108, 117, 125, 0.6);
-  border-color: #6c757d;
+.login-card:hover {
+  transform: scale(1.01);
+}
+
+.input-group input:focus {
   outline: none;
-  transition: box-shadow 0.3s ease;
+  box-shadow: 0 0 0 0.15rem rgba(108, 117, 125, 0.4);
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background-color: #5a6268;
-  transition: background-color 0.3s ease;
+.alert {
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.letter-spacing-2 {
+  letter-spacing: 1.5px;
+}
+
+.text-shadow {
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+button.btn-secondary:hover {
+  background-color: #5a6268 !important;
 }

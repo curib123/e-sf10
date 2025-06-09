@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import AsyncSelect from "react-select/async";
 import StatusModal from "../components/status_modal";
-
+import { checkToken } from '../components/token_checker'; 
 export default function StudentRecord() {
   const [lrn, setLrn] = useState(null);
   const [studentId, setStudentId] = useState(null);
@@ -18,6 +18,10 @@ export default function StudentRecord() {
   });
   const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
 
+   useEffect(() => {
+                checkToken();
+               }, []);
+               
   useEffect(() => {
     if (message.text) {
       const timer = setTimeout(() => setMessage({ type: "", text: "" }), 5000);
@@ -26,7 +30,7 @@ export default function StudentRecord() {
   }, [message]);
 
   const fetchStudentOptions = async (inputValue) => {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     if (!token || !inputValue) return [];
 
     try {
@@ -52,7 +56,7 @@ export default function StudentRecord() {
   };
 
   const fetchDetails = async (selectedLrn) => {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     if (!token) {
       setMessage({ type: "error", text: "Missing authorization token." });
       return;
@@ -88,7 +92,7 @@ export default function StudentRecord() {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
 
     if (!token) return setMessage({ type: "error", text: "Missing authorization token." });
     if (!form.sf10) return setMessage({ type: "error", text: "Please select a file." });

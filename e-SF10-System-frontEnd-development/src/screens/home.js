@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { checkToken } from '../components/token_checker'; 
 import {
   Container,
   Row,
@@ -25,8 +26,12 @@ const Dashboard = () => {
   const [fetchError, setFetchError] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
 
+    useEffect(() => {
+              checkToken();
+             }, []);
+       
   // Fetch dashboard data
   useEffect(() => {
     const fetchData = async () => {
@@ -214,37 +219,29 @@ const Dashboard = () => {
         </Col>
       </Row>
 
-      {/* Recent Logs */}
-      <Card className="shadow-sm border-0">
-        <Card.Header className="bg-dark text-white d-flex align-items-center gap-2">
-          <FaClipboardList />
-          <span>Recent Logs</span>
-        </Card.Header>
-        <Card.Body className="p-0">
-          {recentLogs.length === 0 ? (
-            <p className="text-center my-4 text-muted">No recent logs available.</p>
-          ) : (
-            <Table striped hover responsive className="mb-0">
-              <thead className="table-dark">
-                <tr>
-                  <th>ID</th>
-                  <th>Action</th>
-                  <th>Timestamp</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentLogs.map(({ log_id, action, log_timestamp }) => (
-                  <tr key={log_id}>
-                    <td>{log_id}</td>
-                    <td>{action}</td>
-                    <td>{new Date(log_timestamp).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          )}
-        </Card.Body>
-      </Card>
+     {(!recentLogs || recentLogs.length === 0) ? (
+  <p className="text-center my-4 text-muted">No recent logs available.</p>
+) : (
+  <Table striped hover responsive className="mb-0">
+    <thead className="table-dark">
+      <tr>
+        <th>ID</th>
+        <th>Action</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody>
+      {recentLogs.map(({ log_id, action, log_timestamp }) => (
+        <tr key={log_id}>
+          <td>{log_id}</td>
+          <td>{action}</td>
+          <td>{new Date(log_timestamp).toLocaleString()}</td>
+        </tr>
+      ))}
+    </tbody>
+  </Table>
+)}
+
     </Container>
   );
 };

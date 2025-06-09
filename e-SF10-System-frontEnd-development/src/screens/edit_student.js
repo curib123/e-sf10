@@ -1,14 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import AddStudent from '../screens/add_students';
+import { checkToken } from '../components/token_checker'; 
 
 export default function EditStudentPage() {
   const { lrn } = useParams();
   const [studentData, setStudentData] = useState(null);
 
+    useEffect(() => {
+              checkToken();
+             }, []);
+       
   useEffect(() => {
     const fetchStudent = async () => {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token");
       if (!token) {
         alert("Authorization token missing.");
         return;

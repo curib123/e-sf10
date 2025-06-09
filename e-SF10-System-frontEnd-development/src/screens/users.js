@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { FaPlus, FaSearch } from "react-icons/fa";
-import "bootstrap/dist/css/bootstrap.min.css";
-
+import { getUserPermissions } from '../components/get_permission'; 
+import { checkToken } from '../components/token_checker'; 
 const User = () => {
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
@@ -20,8 +20,19 @@ const User = () => {
 
   const [currentPage, setCurrentPage] = useState(1);
   const usersPerPage = 10;
+  const token = sessionStorage.getItem("token");
+  const [permissions, setPermissions] = useState([]);
 
-  const token = localStorage.getItem("token");
+
+   useEffect(() => {
+                checkToken();
+               }, []);
+               
+  // === Effects ===
+  useEffect(() => {
+    const perms = getUserPermissions();
+    setPermissions(perms);
+  }, []);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -45,7 +56,7 @@ const User = () => {
         );
         setRoles([...new Set(allRoles)]);
 
-        const loggedInEmail = localStorage.getItem("user_email");
+        const loggedInEmail = sessionStorage.getItem("user_email");
         const loggedUser = data.find((user) => user.email === loggedInEmail);
         setCurrentUser(loggedUser || null);
       } catch (err) {
@@ -121,6 +132,7 @@ const User = () => {
 
   return (
     <div className="container py-4">
+
       {/* Search and Role Filter */}
       <div className="card shadow-sm border-0 mb-4">
         <div className="card-body">
@@ -139,6 +151,7 @@ const User = () => {
                 />
               </div>
             </div>
+
             <div className="col-md-4">
               <select
                 className="form-select"
@@ -153,15 +166,39 @@ const User = () => {
                 ))}
               </select>
             </div>
+
             <div className="col-md-4 d-flex justify-content-end gap-2">
-              <Link to="/create_roles" className="btn btn-primary shadow-sm">
-                <FaPlus className="me-1" />
-                Add User Roles
-              </Link>
-              <Link to="/add_user" className="btn btn-primary shadow-sm">
-                <FaPlus className="me-1" />
-                Create User Account
-              </Link>
+              {permissions.manage_roles ? (
+                <Link to="/create_roles" className="btn btn-primary shadow-sm">
+                  <FaPlus className="me-1" />
+                  Add User Roles
+                </Link>
+              ) : (
+                <button
+                  className="btn btn-primary shadow-sm disabled"
+                  disabled
+                  style={{ cursor: "not-allowed" }}
+                >
+                  <FaPlus className="me-1" />
+                  Add User Roles
+                </button>
+              )}
+
+              {permissions.manage_users ? (
+                <Link to="/add_user" className="btn btn-primary shadow-sm">
+                  <FaPlus className="me-1" />
+                  Create User Account
+                </Link>
+              ) : (
+                <button
+                  className="btn btn-primary shadow-sm disabled"
+                  disabled
+                  style={{ cursor: "not-allowed" }}
+                >
+                  <FaPlus className="me-1" />
+                  Create User Account
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -248,27 +285,59 @@ const User = () => {
                     </td>
                     <td>{new Date(user.created_at).toLocaleString()}</td>
                     <td>
-                      <Link
-                        to={`/edit-user/${user.user_id}`}
-                        className="btn btn-sm btn-outline-primary me-1"
-                      >
-                        Edit
-                      </Link>
-                      <button
-                        className="btn btn-sm btn-outline-danger me-1"
-                        onClick={() => {
-                          setUserToDelete(user.user_id);
-                          setShowConfirm(true);
-                        }}
-                      >
-                        Remove
-                      </button>
-                      <Link
-                        to={`/edit_permission/${user.user_id}`}
-                        className="btn btn-sm btn-outline-warning"
-                      >
-                        Permissions
-                      </Link>
+                      {permissions.manage_users ? (
+                        <Link
+                          to={`/edit-user/${user.user_id}`}
+                          className="btn btn-sm btn-outline-primary me-1"
+                        >
+                          Edit
+                        </Link>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-outline-primary me-1 disabled"
+                          disabled
+                          style={{ cursor: "not-allowed" }}
+                        >
+                          Edit
+                        </button>
+                      )}
+
+                      {permissions.manage_users ? (
+                        <button
+                          className="btn btn-sm btn-outline-danger me-1"
+                          onClick={() => {
+                            setUserToDelete(user.user_id);
+                            setShowConfirm(true);
+                          }}
+                        >
+                          Remove
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-outline-danger me-1 disabled"
+                          disabled
+                          style={{ cursor: "not-allowed" }}
+                        >
+                          Remove
+                        </button>
+                      )}
+
+                      {permissions.manage_permissions ? (
+                        <Link
+                          to={`/edit_permission/${user.user_id}`}
+                          className="btn btn-sm btn-outline-warning"
+                        >
+                          Permissions
+                        </Link>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-outline-warning disabled"
+                          disabled
+                          style={{ cursor: "not-allowed" }}
+                        >
+                          Permissions
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -396,6 +465,7 @@ const User = () => {
           <div className="modal-backdrop fade show"></div>
         </>
       )}
+
     </div>
   );
 };

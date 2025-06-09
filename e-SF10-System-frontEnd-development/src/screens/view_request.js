@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { FaEdit, FaTrash } from 'react-icons/fa';
+import { checkToken } from '../components/token_checker'; 
 
 const TransferRequestsTable = () => {
   const [allRequests, setAllRequests] = useState([]);
@@ -11,10 +12,14 @@ const TransferRequestsTable = () => {
   const [statusChanges, setStatusChanges] = useState({});
   const [message, setMessage] = useState(null); // { text: '', type: 'success' | 'error' }
 
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
   const baseUrl = "http://localhost:3001/esf10/transfer-request";
   const itemsPerPage = 10;
 
+   useEffect(() => {
+                checkToken();
+               }, []);
+               
   // Clear messages after 3 seconds
   useEffect(() => {
     if (message) {

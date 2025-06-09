@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import "bootstrap/dist/css/bootstrap.min.css";
+import { checkToken } from '../components/token_checker'; 
 
 function CreateRoleForm() {
   const [roleName, setRoleName] = useState("");
@@ -14,7 +14,12 @@ function CreateRoleForm() {
   const [message, setMessage] = useState(null);
   const [messageType, setMessageType] = useState(null);
 
-  const getToken = () => localStorage.getItem("token");
+  const getToken = () => sessionStorage.getItem("token");
+
+    useEffect(() => {
+              checkToken();
+             }, []);
+       
 
   useEffect(() => {
     const token = getToken();
@@ -138,7 +143,9 @@ function CreateRoleForm() {
   };
 
   return (
+    
     <div className="container my-5" >
+      
       <div className="card shadow rounded-4 border-0">
         <div className="card-body p-5">
           {message && (
@@ -147,11 +154,23 @@ function CreateRoleForm() {
             </div>
           )}
 
+ <div className="w-100 d-flex justify-content-end align-items-start" >
+        <button
+          type="button"
+          className="btn btn-outline-dark d-flex align-items-center gap-2 px-3 py-2 rounded-pill shadow-sm"
+          onClick={() => window.history.back()}
+        >
+          <i className="bi bi-arrow-left-circle-fill fs-5"></i>
+          <span>Back</span>
+        </button>
+      </div>
           {/* Form Section */}
           <section className="mb-5">
             <h5 className="mb-4 fw-semibold border-bottom pb-2 text-secondary">
               Create New Role
             </h5>
+
+          
 
             {loadingPermissions && (
               <div className="text-center py-5">

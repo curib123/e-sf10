@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { checkToken } from '../components/token_checker'; 
 
 function AssignPermissionsToUser() {
   const [permissions, setPermissions] = useState([]);
@@ -17,8 +18,13 @@ function AssignPermissionsToUser() {
   const { userId } = useParams();
   const navigate = useNavigate();
 
-  const getToken = () => localStorage.getItem("token");
+  const getToken = () => sessionStorage.getItem("token");
 
+    useEffect(() => {
+              checkToken();
+             }, []);
+       
+             
   useEffect(() => {
     const token = getToken();
     if (!token) {

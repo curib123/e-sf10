@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import StatusModal from "../components/status_modal";
-
+import { getUserPermissions } from '../components/get_permission'; 
+import { checkToken } from '../components/token_checker'; 
 export default function StudentRecord() {
   const { lrn } = useParams();
   const [studentId, setStudentId] = useState(null);
@@ -17,9 +18,13 @@ export default function StudentRecord() {
   });
   const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
 
+   useEffect(() => {
+                checkToken();
+               }, []);
+               
   useEffect(() => {
     const fetchDetails = async () => {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token");
       if (!token) return alert("Token missing. Please log in.");
 
       try {
@@ -54,7 +59,7 @@ export default function StudentRecord() {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     if (!token) return alert("Missing authorization token.");
     if (!form.sf10) return alert("Please select a file to upload.");
     if (!studentId) return alert("Student ID not available.");

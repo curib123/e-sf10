@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { getUserPermissions } from '../components/get_permission'; 
+import { checkToken } from '../components/token_checker'; 
 
 export default function StudentRecord() {
   const { lrn } = useParams();
@@ -8,40 +10,62 @@ export default function StudentRecord() {
   const [transferRequest, setTransferRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewingFile, setViewingFile] = useState(null);
+  const [permissions, setPermissions] = useState([]);
+  
+    useEffect(() => {
+              checkToken();
+             }, []);
+       
+             
+       // === Effects ===
+useEffect(() => {
+          const perms = getUserPermissions();
+          setPermissions(perms);
+        }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     if (!token) {
       alert("Token missing. Please log in.");
       setLoading(false);
       return;
     }
 
-    // Fetch all transfer requests, filter by LRN
-    async function fetchTransferRequests() {
+    async function fetchTransferRequestByLRN() {
+      const pageSize = 100;
+      let page = 1;
+      const maxPages = 50;
+      let found = null;
+
       try {
-        const res = await fetch(
-          `http://localhost:3001/esf10/transfer-request/view-all-requests?page=1&limit=10`,
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
+        while (!found && page <= maxPages) {
+          const res = await fetch(
+            `http://localhost:3001/esf10/transfer-request/view-all-requests?page=${page}&limit=${pageSize}`,
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          if (!res.ok) throw new Error("Failed to fetch transfer requests");
+
+          const data = await res.json();
+          const match = data?.data?.find((req) => req.lrn === lrn);
+
+          if (match) {
+            found = match;
+            setTransferRequest(match);
           }
-        );
-        if (!res.ok) throw new Error("Failed to fetch transfer requests");
-        const data = await res.json();
-        if (data.success) {
-          const filtered = data.data.filter((req) => req.lrn === lrn);
-          setTransferRequest(filtered.length > 0 ? filtered[0] : null);
+
+          if (data.data.length < pageSize) break; // End of pages
+          page++;
         }
       } catch (error) {
-        console.error("Transfer requests fetch error:", error);
+        console.error("Transfer request fetch error:", error);
       }
     }
 
-    // Fetch student details by LRN
     async function fetchStudentDetails() {
       try {
         const res = await fetch(
@@ -59,37 +83,25 @@ export default function StudentRecord() {
       }
     }
 
-    if (lrn) {
-      setLoading(true);
-      Promise.all([fetchTransferRequests(), fetchStudentDetails()]).finally(() =>
-        setLoading(false)
-      );
-    }
+    setLoading(true);
+    Promise.all([fetchTransferRequestByLRN(), fetchStudentDetails()]).finally(() =>
+      setLoading(false)
+    );
   }, [lrn]);
 
-  // File viewer helpers
-  const getFileExtension = (filename) => {
-    if (!filename) return "";
-    const parts = filename.split(".");
-    return parts.length > 1 ? parts.pop().toLowerCase() : "";
-  };
-
-  const openFileViewer = (file) => setViewingFile(file);
-  const closeFileViewer = () => setViewingFile(null);
+  const getFileExtension = (filename) => filename?.split(".").pop().toLowerCase();
 
   const handleDownload = async (url) => {
     try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Failed to download: ${url}`);
-      const blob = await response.blob();
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to download file");
+      const blob = await res.blob();
       const link = document.createElement("a");
-      const fileName = url.split("/").pop();
-      link.href = window.URL.createObjectURL(blob);
-      link.download = fileName || "document";
+      link.href = URL.createObjectURL(blob);
+      link.download = url.split("/").pop();
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(link.href);
     } catch (err) {
       alert(`❌ ${err.message}`);
     }
@@ -98,38 +110,47 @@ export default function StudentRecord() {
   const handleDownloadAll = async () => {
     for (const card of eCards) {
       if (card.sf10_document_path) {
-        try {
-          const response = await fetch(card.sf10_document_path);
-          if (!response.ok)
-            throw new Error(`Failed to download ${card.sf10_document_path}`);
-          const blob = await response.blob();
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          const fileName = card.sf10_document_path.split("/").pop();
-
-          a.href = url;
-          a.download = fileName || "document";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          window.URL.revokeObjectURL(url);
-
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        } catch (err) {
-          console.error(`❌ Error downloading ${card.sf10_document_path}:`, err);
-        }
+        await handleDownload(card.sf10_document_path);
+        await new Promise((r) => setTimeout(r, 300)); // wait between downloads
       }
     }
   };
 
+  const handleDeleteECard = async (recordId) => {
+    if (!window.confirm("Are you sure you want to delete this eCard?")) return;
+
+    const token = sessionStorage.getItem("token");
+    try {
+      const res = await fetch(
+        `http://localhost:3001/esf10/students/${recordId}/delete-sf10`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to delete eCard");
+
+      const result = await res.json();
+      if (result.success) {
+        setECards((prev) => prev.filter((c) => c._id !== recordId));
+        alert("✅ E-Card deleted successfully.");
+      } else {
+        throw new Error(result.message || "Unknown error.");
+      }
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  };
+
+  const openFileViewer = (file) => setViewingFile(file);
+  const closeFileViewer = () => setViewingFile(null);
+
   if (loading)
     return (
       <div className="d-flex justify-content-center align-items-center vh-100">
-        <div
-          className="spinner-border text-primary"
-          role="status"
-          aria-label="Loading spinner"
-        >
+        <div className="spinner-border text-primary" role="status">
           <span className="visually-hidden">Loading...</span>
         </div>
       </div>
@@ -144,156 +165,106 @@ export default function StudentRecord() {
 
   return (
     <div className="container">
-    
-
       {/* Header */}
       <div className="d-flex justify-content-end align-items-center mb-4">
         <button
           className="btn btn-outline-dark btn-lg d-flex align-items-center gap-2"
           onClick={() => window.history.back()}
-          aria-label="Back"
-          style={{ transition: "background-color 0.3s" }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
         >
           <i className="bi bi-arrow-left"></i> Back
         </button>
       </div>
 
-     {/* Student Info Card */}
-<div
-  className="card shadow-sm rounded-4 border-0 mb-5"
-  style={{ transition: "transform 0.3s", cursor: "default" }}
->
-  <div className="card-header bg-dark text-white rounded-top-4 fs-4 fw-semibold d-flex align-items-center gap-3">
-    <i className="bi bi-info-circle"></i> Student Information
-  </div>
-  <div className="card-body p-4">
-    {/* Transfer Status Badge */}
-    {transferRequest?.request_status === "Approved" && (
-      <div
-        className="alert alert-success text-center fw-bold fs-5 mb-4"
-        role="alert"
-        style={{ borderRadius: "0.375rem" }}
-      >
-        TRANSFERRED STUDENT
-      </div>
-    )}
-
-    <div className="row gy-3">
-      <div className="col-md-4">
-        <div className="text-uppercase text-secondary fw-semibold small">LRN</div>
-        <div className="fs-5">{student.lrn}</div>
-      </div>
-      <div className="col-md-8">
-        <div className="text-uppercase text-secondary fw-semibold small">Full Name</div>
-        <div className="fs-5">
-          {`${student.first_name} ${student.middle_name || ""} ${student.last_name}`}
+      {/* Student Info */}
+      <div className="card shadow-sm rounded-4 border-0 mb-5">
+        <div className="card-header bg-dark text-white rounded-top-4 fs-4 fw-semibold">
+          <i className="bi bi-info-circle me-2"></i> Student Information
+        </div>
+        <div className="card-body p-4">
+          {transferRequest?.request_status === "Approved" && (
+            <div className="alert alert-success text-center fw-bold fs-5 mb-4">
+              TRANSFERRED STUDENT
+            </div>
+          )}
+          <div className="row gy-3">
+            <div className="col-md-4">
+              <strong>LRN:</strong> {student.lrn}
+            </div>
+            <div className="col-md-8">
+              <strong>Full Name:</strong> {student.first_name} {student.middle_name} {student.last_name}
+            </div>
+            <div className="col-md-4">
+              <strong>Gender:</strong> {student.gender}
+            </div>
+            <div className="col-md-4">
+              <strong>Date of Birth:</strong> {new Date(student.date_of_birth).toLocaleDateString()}
+            </div>
+            <div className="col-md-4">
+              <strong>Guardian:</strong> {student.guardian_name}
+            </div>
+            <div className="col-md-4">
+              <strong>Contact:</strong> {student.contact_number}
+            </div>
+            <div className="col-md-8">
+              <strong>Address:</strong> {`${student.street}, ${student.city}, ${student.province}, ${student.zip_code}`}
+            </div>
+          </div>
         </div>
       </div>
-      <div className="col-md-4">
-        <div className="text-uppercase text-secondary fw-semibold small">Gender</div>
-        <div className="fs-6">{student.gender}</div>
-      </div>
-      <div className="col-md-4">
-        <div className="text-uppercase text-secondary fw-semibold small">Date of Birth</div>
-        <div className="fs-6">
-          {new Date(student.date_of_birth).toLocaleDateString()}
-        </div>
-      </div>
-      <div className="col-md-4">
-        <div className="text-uppercase text-secondary fw-semibold small">Guardian</div>
-        <div className="fs-6">{student.guardian_name}</div>
-      </div>
-      <div className="col-md-4">
-        <div className="text-uppercase text-secondary fw-semibold small">Contact</div>
-        <div className="fs-6">{student.contact_number}</div>
-      </div>
-      <div className="col-md-8">
-        <div className="text-uppercase text-secondary fw-semibold small">Address</div>
-        <div className="fs-6">
-          {`${student.street}, ${student.city}, ${student.province}, ${student.zip_code}`}
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
 
       {/* E-Cards Section */}
       <div className="d-flex justify-content-between align-items-center mb-3">
-        <h2 className="fw-bold text-success fs-3 d-flex align-items-center gap-2">
-          <i className="bi bi-journal-text"></i> E-Cards
+        <h2 className="fw-bold text-success fs-3">
+          <i className="bi bi-journal-text me-2"></i> E-Cards
         </h2>
         {eCards.length > 0 && (
-          <button
-            className="btn btn-success btn-lg d-flex align-items-center gap-2"
-            onClick={handleDownloadAll}
-            aria-label="Download all eCards"
-            style={{ transition: "transform 0.2s" }}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.05)")}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
-          >
-            <i className="bi bi-download"></i> Download All
+          <button className="btn btn-success btn-lg" onClick={handleDownloadAll}   disabled={!permissions.download_documents}>
+            <i className="bi bi-download me-2"></i> Download All
           </button>
         )}
       </div>
 
-      {/* eCards Grid */}
       {eCards.length === 0 ? (
-        <p className="text-muted fst-italic fs-5 text-center my-5">No eCards available.</p>
+        <p className="text-muted fst-italic text-center">No eCards available.</p>
       ) : (
         <div className="row row-cols-1 row-cols-md-3 g-4">
-          {eCards.map((card, index) => (
-            <div key={index} className="col">
-              <div
-                className="card h-100 shadow-sm rounded-4 border-0"
-                style={{
-                  transition: "transform 0.3s, box-shadow 0.3s",
-                  cursor: "pointer",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "scale(1.03)";
-                  e.currentTarget.style.boxShadow = "0 10px 20px rgba(0,0,0,0.12)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "scale(1)";
-                  e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
-                }}
-              >
+          {eCards.map((card) => (
+            <div key={card._id} className="col">
+              <div className="card h-100 shadow-sm border-0 rounded-4">
                 <div className="card-body d-flex flex-column justify-content-between">
-                  <h5
-                    className="card-title text-truncate fw-semibold"
-                    title={card.sf10_document_path || `E-Card ${index + 1}`}
-                  >
-                    {card.sf10_document_path
-                      ? card.sf10_document_path.split("/").pop()
-                      : `E-Card ${index + 1}`}
+                  <h5 className="card-title text-truncate">
+                    {card.sf10_document_path?.split("/").pop() || "Unnamed eCard"}
                   </h5>
-                  <p className="card-text text-muted small mb-3">
-                    <b>Grade:</b> {card.grade_level} | <b>Section:</b> {card.section}
-                    <br />
-                    <b>School Year:</b> {card.start_year} - {card.end_year}
-                    <br />
-                    <b>Uploaded:</b> {new Date(card.uploaded_at).toLocaleString()}
+                  <p className="card-text small text-muted">
+                    Grade: {card.grade_level} | Section: {card.section} <br />
+                    SY: {card.start_year}-{card.end_year} <br />
+                    Uploaded: {new Date(card.uploaded_at).toLocaleString()}
                   </p>
-                  <div className="d-flex gap-2">
-                    <button
-                      className="btn btn-outline-primary flex-grow-1"
-                      onClick={() => openFileViewer(card)}
-                      aria-label={`View document ${index + 1}`}
-                    >
-                      <i className="bi bi-eye-fill me-1"></i> View
-                    </button>
-                    {card.sf10_document_path && (
+                  <div className="d-flex flex-column gap-2">
+                    <div className="d-flex gap-2">
+                      <button
+                      view_ecards
+                       disabled={!permissions.view_ecards}
+                        className="btn btn-outline-primary flex-grow-1"
+                        onClick={() => openFileViewer(card)}
+                      >
+                        <i className="bi bi-eye-fill me-1"></i> View
+                      </button>
                       <button
                         className="btn btn-outline-success flex-grow-1"
                         onClick={() => handleDownload(card.sf10_document_path)}
-                        aria-label={`Download document ${index + 1}`}
+                          disabled={!permissions.download_documents}
                       >
                         <i className="bi bi-download me-1"></i> Download
                       </button>
-                    )}
+                    </div>
+                    <button
+                     disabled={!permissions.delete_documents}
+                      className="btn btn-outline-danger"
+                      onClick={() => handleDeleteECard(card._id)}
+                    >
+                      <i className="bi bi-trash-fill me-1"></i> Delete
+                    </button>
                   </div>
                 </div>
               </div>
@@ -302,63 +273,25 @@ export default function StudentRecord() {
         </div>
       )}
 
-      {/* Modal File Viewer */}
+      {/* Modal for File Viewer */}
       {viewingFile && viewingFile.sf10_document_path && (
-        <div
-          className="modal fade show d-block"
-          tabIndex="-1"
-          onClick={closeFileViewer}
-          style={{ backgroundColor: "rgba(0,0,0,0.6)", animation: "fadeIn 0.3s ease" }}
-          aria-modal="true"
-          role="dialog"
-        >
-          <div
-            className="modal-dialog modal-xl modal-dialog-centered"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxHeight: "90vh", animation: "scaleIn 0.3s ease" }}
-          >
+        <div className="modal fade show d-block" tabIndex="-1" role="dialog" style={{ backgroundColor: "rgba(0,0,0,0.6)" }} onClick={closeFileViewer}>
+          <div className="modal-dialog modal-xl modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
             <div className="modal-content rounded-4 shadow-lg" style={{ height: "80vh" }}>
               <div className="modal-header border-0">
-                <h5 className="modal-title text-truncate" style={{ maxWidth: "80%" }}>
-                  {viewingFile.sf10_document_path.split("/").pop()}
-                </h5>
-                <button
-                  type="button"
-                  className="btn-close"
-                  onClick={closeFileViewer}
-                  aria-label="Close modal"
-                ></button>
+                <h5 className="modal-title text-truncate">{viewingFile.sf10_document_path.split("/").pop()}</h5>
+                <button type="button" className="btn-close" onClick={closeFileViewer}></button>
               </div>
-              <div
-                className="modal-body p-0 bg-light"
-                style={{ height: "calc(100% - 56px)", overflow: "hidden" }}
-              >
+              <div className="modal-body p-0 bg-light" style={{ height: "calc(100% - 56px)" }}>
                 {(() => {
                   const ext = getFileExtension(viewingFile.sf10_document_path);
                   if (["png", "jpg", "jpeg", "gif", "bmp", "webp"].includes(ext)) {
-                    return (
-                      <img
-                        src={viewingFile.sf10_document_path}
-                        alt="Document preview"
-                        className="img-fluid h-100 mx-auto d-block"
-                        style={{ objectFit: "contain" }}
-                      />
-                    );
+                    return <img src={viewingFile.sf10_document_path} className="img-fluid h-100 mx-auto d-block" style={{ objectFit: "contain" }} alt="Document" />;
                   }
                   if (ext === "pdf") {
-                    return (
-                      <iframe
-                        src={viewingFile.sf10_document_path}
-                        title="PDF Viewer"
-                        className="w-100 h-100 border-0"
-                      />
-                    );
+                    return <iframe src={viewingFile.sf10_document_path} title="PDF Viewer" className="w-100 h-100 border-0" />;
                   }
-                  return (
-                    <p className="text-center fs-5 fw-semibold my-auto text-muted">
-                      Preview not available for this file type.
-                    </p>
-                  );
+                  return <p className="text-center fs-5 fw-semibold my-auto text-muted">Preview not available for this file type.</p>;
                 })()}
               </div>
             </div>

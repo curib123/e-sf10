@@ -53,12 +53,14 @@ const Login = ({ onLogin }) => {
 
         if (response.ok && data?.token) {
             // Store the entire response data object as a JSON string
-          localStorage.setItem("loginResponse", JSON.stringify(data));
-          localStorage.setItem("token", data.token);
-          localStorage.setItem("user_id", data.user.user_id);
-          localStorage.setItem("user_email", data.user.email);
+       sessionStorage.setItem("loginResponse", JSON.stringify(data));
+       sessionStorage.setItem("token", data.token);
+       sessionStorage.setItem("user_id", data.user.user_id);
+       sessionStorage.setItem("user_email", data.user.email);
+       sessionStorage.setItem("user_role", data.user.role);
+
           setSuccessMessage("Login successful! Redirecting...");
-          setTimeout(() => onLogin(), 1500);
+          setTimeout(() => onLogin(), 2000);
         } else {
           setPassword(""); // Clear password on failure
           const message = data?.message || `Login failed (${response.status})`;
@@ -145,7 +147,7 @@ const Login = ({ onLogin }) => {
             />
             <button
               type="submit"
-              className="btn btn-secondary py-3 fs-5 fw-semibold rounded-pill"
+              className="btn btn-secondary py-1 fs-5 fw-semibold rounded"
               disabled={loading}
               style={{ transition: "background-color 0.3s ease" }}
               aria-disabled={loading}

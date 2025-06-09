@@ -1,124 +1,243 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { checkToken } from '../components/token_checker';
 
 const UserForm = () => {
   const { userId } = useParams();
   const isEditing = !!userId;
 
+  // ----------------------------
+  // Form State
+  // ----------------------------
   const [formData, setFormData] = useState({
     first_name: '',
     middle_name: '',
     last_name: '',
     email: '',
     password: '',
-    role: '',  // start empty, will set after roles load
+    role: '',
     currentPassword: '',
     newPassword: '',
   });
 
   const [roles, setRoles] = useState([]);
   const [response, setResponse] = useState(null);
+  const [loading, setLoading] = useState(false);
 
+  // ----------------------------
+  // Token Check on Mount
+  // ----------------------------
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    checkToken();
+  }, []);
 
-    // Fetch roles and permissions
-    fetch('http://localhost:3001/esf10/roles/roles-and-permissions/all', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.data.roles) {
-          setRoles(data.data.roles);
+  // ----------------------------
+  // Fetch Roles
+  // ----------------------------
+  useEffect(() => {
+    const fetchRoles = async () => {
+      const token = sessionStorage.getItem('token');
+      if (!token) return;
 
-          // Set default role in formData if none set
-          if (!formData.role) {
-            setFormData((prev) => ({
-              ...prev,
-              role: data.data.roles[0]?.role_name || '',
-            }));
+      try {
+        const res = await fetch('http://localhost:3001/esf10/roles/Roles-and-Permissions', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) throw new Error('Failed to fetch roles');
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.roles)) {
+          setRoles(data.roles);
+
+          // Preselect role for new user
+          if (!isEditing && !formData.role && data.roles.length > 0) {
+            setFormData(prev => ({ ...prev, role: data.roles[0].role_name }));
           }
         } else {
-          setResponse({ type: 'danger', message: 'Failed to load roles' });
+          throw new Error('Invalid roles response');
         }
-      })
-      .catch(() =>
-        setResponse({ type: 'danger', message: 'Error fetching roles' })
-      );
-  }, []); // Run once on mount
+      } catch (error) {
+        console.error(error);
+        setResponse({ type: 'danger', message: 'Failed to load roles.' });
+      }
+    };
 
+    fetchRoles();
+  }, [isEditing, formData.role]);
+
+  // ----------------------------
+  // Fetch Existing User Data for Editing
+  // ----------------------------
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    const fetchUserData = async () => {
+      const token = sessionStorage.getItem('token');
+      if (!token || !isEditing) return;
 
-    if (isEditing) {
-      fetch(`http://localhost:3001/esf10/users/${userId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-        .then(async (res) => {
-          if (res.status === 404) {
-            setResponse({ type: 'danger', message: 'User not found' });
-            return null;
-          }
-          return res.json();
-        })
-        .then((data) => {
-          if (data) {
-            setFormData({
-              first_name: data.first_name || '',
-              middle_name: data.middle_name || '',
-              last_name: data.last_name || '',
-              email: data.email || '',
-              password: '',
-              // Assuming `data.roles` is an array of role names or role objects
-              role:
-                typeof data.roles === 'string'
-                  ? data.roles
-                  : data.roles?.[0]?.role_name || '', 
-              currentPassword: '',
-              newPassword: '',
-            });
-          }
-        })
-        .catch(() =>
-          setResponse({ type: 'danger', message: 'Failed to load user data' })
-        );
-    }
+      try {
+        const res = await fetch(`http://localhost:3001/esf10/users/${userId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (res.status === 404) {
+          setResponse({ type: 'danger', message: 'User not found' });
+          return;
+        }
+
+        if (!res.ok) throw new Error('Failed to fetch user data');
+        const data = await res.json();
+
+        setFormData({
+          first_name: data.first_name || '',
+          middle_name: data.middle_name || '',
+          last_name: data.last_name || '',
+          email: data.email || '',
+          password: '',
+          role: data.roles || '',
+          currentPassword: '',
+          newPassword: '',
+        });
+
+        console.log(data);
+      } catch (error) {
+        console.error(error);
+        setResponse({ type: 'danger', message: 'Failed to load user data' });
+      }
+    };
+
+    fetchUserData();
   }, [isEditing, userId]);
 
+  // ----------------------------
+  // Handle Input Changes
+  // ----------------------------
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  // ----------------------------
+  // Submit Handler
+  // ----------------------------
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (!token) {
       setResponse({ type: 'danger', message: 'No authorization token found.' });
       return;
     }
 
+    if (!isEditing && formData.password.length < 6) {
+      setResponse({ type: 'danger', message: 'Password must be at least 6 characters.' });
+      return;
+    }
+
+    setLoading(true);
+
     try {
       if (isEditing) {
-        // update user info, roles, and password (same as your original)
-        // no change here, omitted for brevity
+        // Update User Info (without role)
+        const resUser = await fetch(`http://localhost:3001/esf10/users/${userId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            first_name: formData.first_name,
+            middle_name: formData.middle_name,
+            last_name: formData.last_name,
+            email: formData.email,
+            // role omitted on update as requested
+          }),
+        });
+
+        const userData = await resUser.json();
+        if (!resUser.ok) {
+          setResponse({ type: 'danger', message: userData.message || 'Failed to update user' });
+          return;
+        }
+
+        // Role update removed per request
+
+        // Update Password (if provided)
+        if (formData.currentPassword || formData.newPassword) {
+          if (!formData.currentPassword || !formData.newPassword) {
+            setResponse({ type: 'danger', message: 'Both current and new passwords are required to update the password.' });
+            setLoading(false);
+            return;
+          }
+
+          const resPassword = await fetch(`http://localhost:3001/esf10/user/${userId}/update-password`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              currentPassword: formData.currentPassword,
+              newPassword: formData.newPassword,
+            }),
+          });
+
+          const passwordData = await resPassword.json();
+
+          if (!resPassword.ok) {
+            setResponse({ type: 'danger', message: passwordData.message || 'Password update failed' });
+            setLoading(false);
+            return;
+          }
+
+          setFormData(prev => ({
+            ...prev,
+            currentPassword: '',
+            newPassword: '',
+          }));
+
+          setResponse({ type: 'success', message: passwordData.message || 'Password updated successfully' });
+        }
+
+        setResponse({ type: 'success', message: 'User updated successfully' });
       } else {
-        // create user logic (same as your original)
+        // Create New User
+        const res = await fetch('http://localhost:3001/esf10/register-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            first_name: formData.first_name,
+            middle_name: formData.middle_name,
+            last_name: formData.last_name,
+            email: formData.email,
+            password: formData.password,
+            role: formData.role,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          setResponse({ type: 'success', message: data.message || 'User created successfully' });
+        } else {
+          setResponse({ type: 'danger', message: data.message || 'Failed to create user' });
+        }
       }
     } catch (err) {
+      console.error(err);
       setResponse({ type: 'danger', message: 'Network error or server unavailable' });
+    } finally {
+      setLoading(false);
     }
   };
 
+  // ----------------------------
+  // Render UI
+  // ----------------------------
   return (
     <div className="container-fluid d-flex flex-column align-items-center justify-content-start min-vh-100 py-5">
-      <div className="w-100 d-flex justify-content-end align-items-center px-3 mb-3" style={{ maxWidth: '1140px' }}>
+      <div className="w-100 d-flex justify-content-between align-items-center px-3 mb-3" style={{ maxWidth: '1140px' }}>
+        <h2 className="text-center display-5 fw-bold mb-2">{isEditing ? 'Update' : 'Create'} User</h2>
         <button
           type="button"
           className="btn btn-outline-dark d-flex align-items-center gap-2 px-3 py-2 rounded-pill shadow-sm"
@@ -152,7 +271,7 @@ const UserForm = () => {
                     name={field}
                     value={formData[field]}
                     onChange={handleChange}
-                    required
+                    required={field !== 'middle_name'}
                   />
                 </div>
               ))}
@@ -210,7 +329,10 @@ const UserForm = () => {
                 </>
               )}
 
-              <div className="col-md-6">
+                {!isEditing && (
+                <>
+
+                    <div className="col-md-6">
                 <label className="form-label">Role</label>
                 <select
                   className="form-select rounded-pill px-4"
@@ -219,23 +341,28 @@ const UserForm = () => {
                   onChange={handleChange}
                   required
                 >
-                  {roles.length > 0 ? (
-                    roles.map(({ role_id, role_name }) => (
-                      <option key={role_id} value={role_name}>
-                        {role_name.charAt(0).toUpperCase() + role_name.slice(1).replace('_', ' ')}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="" disabled>
-                      Loading roles...
+                  <option disabled>Select a role</option>
+                  {roles.map((roleObj) => (
+                    <option key={roleObj.role_id} value={roleObj.role_name}>
+                      {roleObj.role_name.charAt(0).toUpperCase() + roleObj.role_name.slice(1).replace(/_/g, ' ')}
                     </option>
-                  )}
+                  ))}
                 </select>
               </div>
+                </>
+              )} 
+              
+              
+
+
 
               <div className="col-12 mt-4">
-                <button type="submit" className="btn btn-primary w-100 py-2 rounded-pill fs-5">
-                  {isEditing ? 'Update User' : 'Create User'}
+                <button
+                  type="submit"
+                  className="btn btn-primary w-100 py-2 rounded-pill fs-5"
+                  disabled={loading}
+                >
+                  {loading ? 'Processing...' : isEditing ? 'Update User' : 'Create User'}
                 </button>
               </div>
             </div>

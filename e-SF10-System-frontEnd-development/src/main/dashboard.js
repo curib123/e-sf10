@@ -15,6 +15,7 @@ import {
   FaUpload,
   FaExchangeAlt ,
   FaClipboardList ,
+  FaHistory
 } from 'react-icons/fa';
 
 
@@ -35,10 +36,10 @@ import EditPermission from '../screens/edit_permission';
 import RequestTransfer from '../screens/request_transfer';
 import ViewRequest from '../screens/view_request';
 import AllLogs from '../screens/all_logs';
+import NotFound from '../screens/not_found';
 
-import { isTokenExpired } from '../components/token_checker'; 
-
-
+import { checkToken } from '../components/token_checker'; 
+import { getUserPermissions } from '../components/get_permission'; 
 import './dashboard.css';
 
 const Dashboard = ({ onLogout }) => {
@@ -52,17 +53,21 @@ const Dashboard = ({ onLogout }) => {
 
 
   const schoolId = '1234567890';
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
+  const [permissions, setPermissions] = useState({});
+  const userRole = sessionStorage.getItem("user_role");
+
+    
+         // === Effects ===
+useEffect(() => {
+  const perms = getUserPermissions();
+  setPermissions(perms || {}); // Ensure it's always an object
+}, []);
+
       
-   
-     useEffect(() => {
-       const token = localStorage.getItem('token');
-       
-       if (isTokenExpired(token)) {
-         window.location.reload();
-          localStorage.clear();
-       } 
-     }, []);
+    useEffect(() => {
+  checkToken();
+}, []);
 
   const navLinks = [
     { to: '/dashboard', icon: <FaHome />, label: 'Dashboard' },
@@ -76,19 +81,30 @@ const Dashboard = ({ onLogout }) => {
   ];
 
   useEffect(() => {
+    
     const fetchUser = async () => {
-      const userId = localStorage.getItem('user_id');
-      if (!userId || !token) return;
+  try {
+    const loginRaw = sessionStorage.getItem("loginResponse");
+    if (!loginRaw) {
+      console.warn("loginResponse not found in sessionStorage");
+      return;
+    }
 
-      try {
-        const res = await axios.get(`http://localhost:3001/esf10/users/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setUser(res.data);
-      } catch (err) {
-        console.error('Failed to load user', err);
-      }
-    };
+    const loginData = JSON.parse(loginRaw);
+
+    if (loginData && typeof loginData === 'object' && loginData.user) {
+      setUser(loginData.user);
+    } else {
+      console.warn("User data not found or malformed in loginResponse");
+    }
+  } catch (err) {
+    console.error("Failed to parse loginResponse from sessionStorage:", err);
+  }
+};
+
+
+
+
 
     const fetchSchoolData = async () => {
       try {
@@ -117,12 +133,21 @@ const Dashboard = ({ onLogout }) => {
     fetchSchoolData();
   }, []);
 
-  const fullName = user
-    ? [user.first_name, user.middle_name, user.last_name].filter(Boolean).join(' ')
-    : 'Loading...';
+ const fullName = user && typeof user === 'object'
+  ? [user.first_name, user.middle_name, user.last_name]
+      .filter(name => typeof name === 'string' && name.trim())
+      .join(' ')
+  : 'Loading...';
 
-  const avatarInitial = user?.first_name?.charAt(0).toUpperCase() || '?';
-  const role = Array.isArray(user?.roles) ? user.roles[0] : user?.roles || 'User';
+const avatarInitial = typeof user?.first_name === 'string'
+  ? user.first_name.charAt(0).toUpperCase()
+  : '?';
+
+const role = Array.isArray(user?.role)
+  ? user.role[0]
+  : typeof user?.role === 'string'
+    ? user.role
+    : 'User';
 
   return (
     <div className="dashboard-container">
@@ -144,15 +169,19 @@ const Dashboard = ({ onLogout }) => {
   )}
 </div>
   <ul className="nav-links" style={{ fontSize: '0.9rem' }}>
-      <li>
-        <NavLink
-          to="/dashboard"
-          className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-        >
-          <FaHome />
-          {!collapsed && <span className="ms-2">Dashboard Overview</span>}
-        </NavLink>
-      </li>
+{(userRole === "admin" || userRole === "registrar" || permissions.view_reports  ) && (
+  <li>
+    <NavLink
+      to="/dashboard"
+      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
+    >
+      <FaHome />
+      {!collapsed && <span className="ms-2">Dashboard Overview</span>}
+    </NavLink>
+  </li>
+)}
+
+
 
       {/* Manage Student Records Dropdown */}
       <li className="dropdown-link">
@@ -176,15 +205,19 @@ const Dashboard = ({ onLogout }) => {
           className={`submenu ${isStudentMenuOpen ? 'show' : ''}`}
           style={{ display: collapsed ? 'none' : undefined }}
         >
-          <li>
-            <NavLink
-              to="/add_student"
-              className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-            >
-              <FaPlus />
-              {!collapsed && <span className="ms-4">Add New Student</span>}
-            </NavLink>
-          </li>
+
+         {permissions.register_student && (
+  <li>
+    <NavLink
+      to="/add_student"
+      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
+    >
+      <FaPlus />
+      {!collapsed && <span className="ms-4">Add New Student</span>}
+    </NavLink>
+  </li>
+)}
+
 
           <li>
             <NavLink
@@ -196,7 +229,9 @@ const Dashboard = ({ onLogout }) => {
             </NavLink>
           </li>
 
-          <li>
+        {permissions.upload_documents && (
+  
+      <li>
             <NavLink
               to="/upload_ecards_all"
               className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
@@ -205,8 +240,11 @@ const Dashboard = ({ onLogout }) => {
               {!collapsed && <span className="ms-4">Upload Student SF10</span>}
             </NavLink>
           </li>
+  
+)}
 
-           <li>
+        {permissions.approve_transfers && (
+         <li>
     <NavLink
       to="/view_request"
       className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
@@ -215,75 +253,85 @@ const Dashboard = ({ onLogout }) => {
       {!collapsed && <span className="ms-4">Student Transfer Requests</span>}
     </NavLink>
   </li>
+)}
+
+       
+
+   
         </ul>
       </li>
 
-      {/* System Administrator Dropdown */}
-      <li className="dropdown-link">
-        <div
-          className="link d-flex justify-content-between align-items-center"
-          onClick={() => setIsSysAdminOpen(prev => !prev)}
-          style={{ cursor: 'pointer' }}
+      {userRole === "admin" && (
+  <li className="dropdown-link">
+    <div
+      className="link d-flex justify-content-between align-items-center"
+      onClick={() => setIsSysAdminOpen(prev => !prev)}
+      style={{ cursor: 'pointer' }}
+    >
+      <div className="d-flex align-items-center">
+        <FaUsersCog />
+        {!collapsed && <span className="ms-2">System Administrator Panel</span>}
+      </div>
+      {!collapsed && (
+        <FaChevronDown
+          className={`dropdown-icon ${isSysAdminOpen ? 'rotate' : ''}`}
+        />
+      )}
+    </div>
+
+    <ul
+      className={`submenu ${isSysAdminOpen ? 'show' : ''}`}
+      style={{ display: collapsed ? 'none' : undefined }}
+    >
+      <li>
+        <NavLink
+          to="/users_account"
+          className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
         >
-          <div className="d-flex align-items-center">
-            <FaUsersCog />
-            {!collapsed && <span className="ms-2">System Administrator Panel</span>}
-          </div>
-          {!collapsed && (
-            <FaChevronDown
-              className={`dropdown-icon ${isSysAdminOpen ? 'rotate' : ''}`}
-            />
-          )}
-        </div>
-
-      <ul
-  className={`submenu ${isSysAdminOpen ? 'show' : ''}`}
-  style={{ display: collapsed ? 'none' : undefined }}
->
-
-
-    <li>
-    <NavLink
-      to="/users_account"
-      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-    >
-      <FaUsersCog />
-      {!collapsed && <span className="ms-4">User Roles & Permissions</span>}
-    </NavLink>
-  </li>
-
-  <li>
-    <NavLink
-      to="/school_settings"
-      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-    >
-      <FaBuilding />
-      {!collapsed && <span className="ms-4">School Default Settings</span>}
-    </NavLink>
-  </li>
-
-    <li>
-    <NavLink
-      to="/all_logs"
-      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-    >
-      <FaClipboardList  />
-      {!collapsed && <span className="ms-4">View Activity Logs</span>}
-    </NavLink>
-  </li>
-
-  <li>
-    <NavLink
-      to="/backup"
-      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-    >
-      <FaDatabase />
-      {!collapsed && <span className="ms-4">Backup System Database</span>}
-    </NavLink>
-  </li>
-</ul>
-
+          <FaUsersCog />
+          {!collapsed && <span className="ms-4">User Roles & Permissions</span>}
+        </NavLink>
       </li>
+
+      {permissions.manage_school_settings && (
+        <li>
+          <NavLink
+            to="/school_settings"
+            className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
+          >
+            <FaBuilding />
+            {!collapsed && <span className="ms-4">School Default Settings</span>}
+          </NavLink>
+        </li>
+      )}
+
+      {permissions.view_logs && (
+        <li>
+          <NavLink
+            to="/all_logs"
+            className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
+          >
+            <FaHistory />
+            {!collapsed && <span className="ms-4">System Logs</span>}
+          </NavLink>
+        </li>
+      )}
+
+      {permissions.export_data && (
+        <li>
+          <NavLink
+            to="/backup"
+            className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
+          >
+            <FaDatabase />
+            {!collapsed && <span className="ms-4">Backup System Database</span>}
+          </NavLink>
+        </li>
+      )}
+    </ul>
+  </li>
+)}
+
     </ul>
 
 
@@ -340,8 +388,8 @@ const Dashboard = ({ onLogout }) => {
             </div>
           )}
             <div className='mx-3'>
-              <h5 className="mb-0 fw-bold">{schoolData.school_name || 'Loading...'}</h5>
-              <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+              <h1 className="mb-0 fw-bold ">{schoolData.school_name || 'Loading...'}</h1>
+              <small className="text-muted" style={{ fontSize: '1rem' }}>
                  {schoolData.school_address || 'N/A'}
               </small>
             </div>
@@ -394,27 +442,72 @@ const Dashboard = ({ onLogout }) => {
         </div>
 
         <div className="main-content">
-          <Routes>
-            <Route path="/dashboard" element={<Home />} />
-            <Route path="/student_information" element={<StudentInformation />} />
-            <Route path="/add_student" element={<AddStudent />} />
-            <Route path="/add_user" element={<AddUser />} />
-            <Route path="/users_account" element={<User />} />
-            <Route path="/edit_student/:lrn" element={<EditStudent />} />
-            <Route path="/record_student/:lrn" element={<StudentRecord />} />
-            <Route path="/upload_ecards/:lrn" element={<UploadEcard />} />
-            <Route path="/upload_ecards_all" element={<UploadEcardAll />} />
-            <Route path="/edit-user/:userId" element={<AddUser />} />
-            <Route path="/school_settings" element={<SchoolSettings />} />
-            <Route path="/backup" element={<Backup />} />
-            <Route path="/create_roles" element={<CreateRoles />} />
-           <Route path="/edit_permission/:userId" element={<EditPermission />} />
-            <Route path="/request_transfer/:studentId" element={<RequestTransfer />} />
-            <Route path="/view_request" element={<ViewRequest />} />
-            <Route path="/all_logs" element={<AllLogs />} />
+     <Routes>
+  {permissions.view_reports && (
+    <Route path="/dashboard" element={<Home />} />
+  )}
 
-            {/* <Route path="*" element={<NotFound />} /> */}
-          </Routes>
+  {/* Manage Student Information */}
+  {permissions.view_student_info && (
+    <Route path="/student_information" element={<StudentInformation />} />
+  )}
+
+  {permissions.register_student && (
+    <Route path="/add_student" element={<AddStudent />} />
+  )}
+
+  {permissions.upload_documents && (
+    <>
+      <Route path="/upload_ecards/:lrn" element={<UploadEcard />} />
+      <Route path="/upload_ecards_all" element={<UploadEcardAll />} />
+    </>
+  )}
+
+  {permissions.edit_student_info && (
+    <Route path="/edit_student/:lrn" element={<EditStudent />} />
+  )}
+
+  {permissions.view_student_info && (
+    <Route path="/record_student/:lrn" element={<StudentRecord />} />
+  )}
+
+  {/* Transfer */}
+  {permissions.request_transfers && (
+    <Route path="/request_transfer/:studentId" element={<RequestTransfer />} />
+  )}
+
+  {permissions.approve_transfers && (
+    <Route path="/view_request" element={<ViewRequest />} />
+  )}
+
+  {/* System Admin Permissions */}
+  {permissions.manage_users && (
+    <>
+      <Route path="/users_account" element={<User />} />
+      <Route path="/add_user" element={<AddUser />} />
+      <Route path="/edit-user/:userId" element={<AddUser />} />
+      <Route path="/edit_permission/:userId" element={<EditPermission />} />
+      <Route path="/create_roles" element={<CreateRoles />} />
+    </>
+  )}
+
+  {permissions.manage_school_settings && (
+    <Route path="/school_settings" element={<SchoolSettings />} />
+  )}
+
+  {permissions.export_data && (
+    <Route path="/backup" element={<Backup />} />
+  )}
+
+  {permissions.view_logs && (
+    <Route path="/all_logs" element={<AllLogs />} />
+  )}
+
+  {/* Catch-all route for undefined paths */}
+  <Route path="*" element={<NotFound />} />
+</Routes>
+
+
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-
+import { checkToken } from '../components/token_checker'; 
 const SchoolDefaultUpdateForm = () => {
   const [schoolData, setSchoolData] = useState({}); 
   const [logoPreview, setLogoPreview] = useState(null); 
@@ -10,7 +10,11 @@ const SchoolDefaultUpdateForm = () => {
   const [successMsg, setSuccessMsg] = useState('');
 
   const schoolId = '1234567890';
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
+
+   useEffect(() => {
+                checkToken();
+               }, []);
 
   useEffect(() => {
     

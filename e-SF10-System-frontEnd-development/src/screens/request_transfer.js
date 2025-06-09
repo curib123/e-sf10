@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { checkToken } from '../components/token_checker'; 
 
 const RequestTransferForm = () => {
   const { studentId } = useParams();
@@ -11,14 +12,21 @@ const RequestTransferForm = () => {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+    useEffect(() => {
+              checkToken();
+             }, []);
+       
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     if (!token) return setError("Missing token. Please log in again.");
 
     setLoading(true);
     setMessage("");
     setError("");
+
+    
 
     try {
       const response = await axios.post(

@@ -7,26 +7,33 @@ import { isTokenExpired } from './components/token_checker';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
+ const userRole = sessionStorage.getItem("user_role");
  
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
+   
 
     if (token && !isTokenExpired(token)) {
       setIsLoggedIn(true);
     } else {
-      localStorage.clear();
+      sessionStorage.clear();
       setIsLoggedIn(false);
     }
   }, []);
-
+  
   const handleLogin = () => {
     setIsLoggedIn(true);
-    window.location.href = '/dashboard'; 
+    console.log(userRole);
+    if(userRole == "admin"){
+ window.location.href = '/dashboard'; 
+    }else{
+      window.location.href = '/dashboard'; 
+    }
+   
   };
 
   const handleLogout = () => {
-    localStorage.clear();
+    sessionStorage.clear();
     setIsLoggedIn(false);
     window.location.href = '/login'; 
   };

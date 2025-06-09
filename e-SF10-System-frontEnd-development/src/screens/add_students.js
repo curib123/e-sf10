@@ -1,6 +1,6 @@
-
 import React, { useState, useEffect } from "react";
 import StatusModal from "../components/status_modal";
+import { checkToken } from '../components/token_checker'; 
 
 const initialStudent = {
   student_id: null,
@@ -24,26 +24,28 @@ const initialStudent = {
 export default function StudentForm({ initialData = null, onSubmit }) {
   const [student, setStudent] = useState(initialStudent);
   const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
-    const token = localStorage.getItem("token");
-
-
+  const token = sessionStorage.getItem("token");
 
   
-useEffect(() => {
-  if (initialData) {
-    if (initialData.date_of_birth) {
-      let date = new Date(initialData.date_of_birth);
-      date = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-      const formattedDate = date.toISOString().split("T")[0];
-      setStudent({
-        ...initialData,
-        date_of_birth: formattedDate,
-      });
-    } else {
-      setStudent(initialData);
+   useEffect(() => {
+  checkToken();
+}, []);
+
+  useEffect(() => {
+    if (initialData) {
+      if (initialData.date_of_birth) {
+        let date = new Date(initialData.date_of_birth);
+        date = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        const formattedDate = date.toISOString().split("T")[0];
+        setStudent({
+          ...initialData,
+          date_of_birth: formattedDate,
+        });
+      } else {
+        setStudent(initialData);
+      }
     }
-  }
-}, [initialData]);
+  }, [initialData]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -57,7 +59,6 @@ useEffect(() => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-
     if (!token) {
       setModal({
         show: true,
@@ -67,25 +68,17 @@ useEffect(() => {
       });
       return;
     }
-    
 
-    
-    const {
-      student_id,
-      created_at,
-      updated_at,
-      ...payload
-    } = student;
+    const { student_id, created_at, updated_at, ...payload } = student;
 
     try {
       let url = "";
       let method = "";
+
       if (student_id && student.lrn) {
-       
         url = `http://localhost:3001/esf10/students/${student.lrn}/update`;
         method = "PUT";
       } else {
-       
         url = "http://localhost:3001/esf10/students/register";
         method = "POST";
       }
@@ -99,28 +92,24 @@ useEffect(() => {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Something went wrong.");
-      }
-      
       const data = await response.json();
-      
+
+      if (!response.ok) {
+        throw new Error(data.message || "Something went wrong.");
+      }
+
       setModal({
         show: true,
         title: "Success",
-        message: data.message,
+        message: data.message || (student_id ? "Student updated successfully." : "Student registered successfully."),
         variant: "success",
       });
-      
 
       if (onSubmit) {
-       
         onSubmit(data.student || payload);
       }
 
       if (!student_id) {
-     
         setStudent(initialStudent);
       }
     } catch (err) {
@@ -131,31 +120,29 @@ useEffect(() => {
         variant: "danger",
       });
     }
-    
   };
 
   return (
     <form onSubmit={handleSubmit} className="p-4 bg-light rounded shadow-sm border">
-    <div className="d-flex justify-content-between">
-  <h4 className="mb-4 text-secondary">
-    <i className="bi bi-person-badge-fill me-2"></i>
-    {student.student_id ? "Update Student" : "Register New Student"}
-  </h4>
+      <div className="d-flex justify-content-between">
+        <h4 className="mb-4 text-secondary">
+          <i className="bi bi-person-badge-fill me-2"></i>
+          {student.student_id ? "Update Student" : "Register New Student"}
+        </h4>
 
-  {!student.student_id ? (
-   <h1></h1>
-  ) : (
-    <button
-      type="button"
-      className="btn btn-outline-secondary mb-3"
-      onClick={() => window.history.back()}
-    >
-      <i className="bi bi-arrow-left-circle me-2"></i>
-      Back
-    </button>
-  )}
-</div>
-
+        {!student.student_id ? (
+          <h1></h1>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-outline-secondary mb-3"
+            onClick={() => window.history.back()}
+          >
+            <i className="bi bi-arrow-left-circle me-2"></i>
+            Back
+          </button>
+        )}
+      </div>
 
       {/* LRN */}
       <div className="mb-3">
@@ -171,7 +158,6 @@ useEffect(() => {
           onChange={handleChange}
           placeholder="Enter 12-digit LRN"
           required
-        
         />
         <div className="form-text">Must be exactly 12 digits.</div>
       </div>
@@ -330,14 +316,13 @@ useEffect(() => {
           </div>
         </div>
       </div>
+
       <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
-      {/* Submit Button */}
+
       <button type="submit" className="btn btn-success w-100">
         <i className="bi bi-check-circle-fill me-2"></i>
         {student.student_id ? "Update Student" : "Add Student"}
       </button>
     </form>
-
-    
   );
 }
