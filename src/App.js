@@ -23,7 +23,6 @@ function App() {
   
   const handleLogin = () => {
     setIsLoggedIn(true);
-    console.log(userRole);
     if(userRole == "admin"){
  window.location.href = '/dashboard'; 
     }else{

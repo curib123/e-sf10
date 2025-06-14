@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import StatusModal from "../components/status_modal";
 import { getUserPermissions } from '../components/get_permission'; 
 import { checkToken } from '../components/token_checker'; 
@@ -138,24 +138,22 @@ export default function StudentRecord() {
           encType="multipart/form-data"
           noValidate
         >
-          {["start_year", "end_year", "section", "grade_level"].map((field, idx) => (
-            <div key={idx} className="col-md-3">
-              <label htmlFor={field} className="form-label text-dark fw-semibold text-uppercase small">
-                {field.replace("_", " ")}
-              </label>
-              <input
-                type="text"
-                className="form-control shadow-sm border-dark"
-                id={field}
-                name={field}
-                value={form[field]}
-                onChange={handleUploadChange}
-                placeholder={field === "grade_level" ? "1 - 12" : field === "section" ? "e.g., Emerald" : `e.g., ${field === "start_year" ? "2024" : "2025"}`}
-                required
-                autoComplete="off"
-              />
-            </div>
-          ))}
+         {["start_year", "end_year", "section", "grade_level"].map((field, i) => (
+  <div className="col-md-3" key={i}>
+    <label className="form-label text-uppercase small fw-semibold">
+      {field.replace("_", " ")}
+    </label>
+    <input
+      type="text"
+      name={field}
+      className="form-control border-dark shadow-sm"
+      value={form[field]}
+      onChange={handleUploadChange}
+      required={field !== "section"} // 👈 Only require if not "section"
+    />
+  </div>
+))}
+
 
           <div className="col-md-12">
             <label htmlFor="sf10" className="form-label text-dark fw-semibold text-uppercase small">
@@ -184,47 +182,55 @@ export default function StudentRecord() {
       </div>
 
      
-      <div className="card shadow border-0">
-        <div className="card-header bg-dark text-white fw-semibold fs-5 d-flex align-items-center gap-2">
-          <i className="bi bi-card-list fs-4"></i> Uploaded SF10 eCards
-        </div>
-        <div className="card-body">
-          {eCards.length === 0 ? (
-            <p className="text-muted fst-italic">No eCards uploaded yet.</p>
-          ) : (
-            <div className="row g-4">
-              {eCards.map((ecard, idx) => (
-                <div key={ecard.id || idx} className="col-md-4">
-                  <div className="card h-100 border-dark shadow-sm rounded">
-                    <div className="card-body d-flex flex-column">
-                      <h6
-                        className="card-title text-truncate"
-                        title={ecard.file_name || ecard.name}
-                      >
-                        {ecard.file_name || ecard.name}
-                      </h6>
-                      <p className="card-text mb-1 text-dark small fw-semibold">
-                        Section: {ecard.section || "-"} | Grade: {ecard.grade_level || "-"}
-                      </p>
-                      <p className="card-text text-secondary small fst-italic">
-                        School Year: {ecard.start_year || "-"} - {ecard.end_year || "-"}
-                      </p>
-                      <a
-                        href={`http://localhost:3001${ecard.path || ecard.file_path}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-outline-dark mt-auto rounded-pill px-3"
-                      >
-                        View Document
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+     <div className="card shadow border-0">
+  <div className="card-header bg-success text-white d-flex justify-content-between align-items-center">
+    <div>
+      <i className="bi bi-cloud-check-fill me-2"></i> Uploaded SF10 eCards
+    </div>
+  <Link
+  to={`/record_student/${lrn}`}
+  className="btn btn-light btn-sm rounded-pill px-3 fw-semibold d-flex align-items-center gap-2 shadow-sm"
+>
+  <i className="bi bi-folder2-open text-success"></i>
+  <span className="text-success">View Student Record</span>
+</Link>
+
+
+  </div>
+
+  <div className="card-body">
+    {eCards.length === 0 ? (
+      <div className="alert alert-warning mb-0" role="alert">
+        <i className="bi bi-exclamation-circle me-2"></i>
+        No eCards uploaded yet.
       </div>
+    ) : (
+      <>
+        <div className="row g-3 mb-3">
+          {eCards.map((ecard, idx) => (
+            <div className="col-12 col-md-6 col-lg-4" key={idx}>
+              <div className="card border-start border-4 border-success-subtle shadow-sm h-100">
+                <div className="card-body">
+                  <h6 className="card-title text-success mb-2">
+                    <i className="bi bi-check-circle-fill me-2"></i> Successfully Uploaded
+                  </h6>
+                  <p className="card-text small text-muted mb-0">
+                    {new Date(ecard.uploaded_at).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="alert alert-success border-success-subtle" role="alert">
+          <i className="bi bi-info-circle me-2"></i>
+          To <strong>view or download</strong> the uploaded SF10 documents, please go to the{" "}
+          <strong>"Student Records"</strong> section.
+        </div>
+      </>
+    )}
+  </div>
+</div>
     </div>
   );
 }

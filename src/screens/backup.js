@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import { checkToken } from '../components/token_checker'; 
-     
-     
+import { checkToken } from "../components/token_checker";
 
 const API_URL = "http://localhost:3001/esf10/backups";
 
@@ -13,14 +11,11 @@ export default function BackupManager() {
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
-
   const navigate = useNavigate();
 
-    useEffect(() => {
-            checkToken();
-           }, []);
-     
-     
+  useEffect(() => {
+    checkToken();
+  }, []);
 
   const loadBackups = async () => {
     const token = sessionStorage.getItem("token");
@@ -69,42 +64,33 @@ export default function BackupManager() {
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
+          responseType: "blob",
         }
       );
-      setMessage(res.data.message);
-      await loadBackups();
-    } catch (err) {
-      setError(err.response?.data?.message || "Backup creation failed.");
-    } finally {
-      setCreating(false);
-    }
-  };
 
-  const handleDownload = async (url) => {
-    const token = sessionStorage.getItem("token");
-    if (!token) {
-      alert("Access denied. Please log in.");
-      navigate("/login");
-      return;
-    }
+      const contentDisposition = res.headers["content-disposition"];
+      let filename = "backup.zip";
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?(.+)"?/);
+        if (match?.[1]) {
+          filename = match[1];
+        }
+      }
 
-    try {
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) throw new Error("Failed to download file");
-
-      const blob = await res.blob();
+      const blob = new Blob([res.data], { type: "application/zip" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      const filename = url.split("/").pop() || "backup.zip";
       link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      await loadBackups();
+      setMessage(`✅ Backup created and downloaded: ${filename}`);
     } catch (err) {
-      alert(`❌ ${err.message}`);
+      setError(err.response?.data?.message || "Backup creation failed.");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -122,7 +108,7 @@ export default function BackupManager() {
   }, [navigate]);
 
   return (
-    <div className="container my-4" >
+    <div className="container my-4">
       <div className="card shadow-sm">
         <div className="card-header d-flex justify-content-between align-items-center">
           <h4 className="mb-0">Database Backup Management</h4>
@@ -171,7 +157,6 @@ export default function BackupManager() {
                     <th>Filename</th>
                     <th>Date</th>
                     <th>Created By</th>
-                    <th>Download</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -181,16 +166,6 @@ export default function BackupManager() {
                       <td className="text-break">{b.backup_filename}</td>
                       <td>{new Date(b.backup_date).toLocaleString()}</td>
                       <td>{b.user_name}</td>
-                      <td>
-                        <button
-                          onClick={() =>
-                            handleDownload(`${API_URL}/${b.backup_filename}`)
-                          }
-                          className="btn btn-sm btn-outline-secondary"
-                        >
-                          Download
-                        </button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
