@@ -345,26 +345,26 @@ const StudentInformation = () => {
               onChange={handleFileChange}
             />
           </div>
-             {/* ✅ Successfully Uploaded */}
-{uploadResult.successful?.length > 0 && (
+          {/* ✅ Successfully Uploaded */}
+{Array.isArray(uploadResult?.successful) && uploadResult.successful.length > 0 && (
   <p className="mb-2 mt-2 text-success">
     ✅ Successfully uploaded rows:{" "}
     <strong>
       {uploadResult.successful.length > 1
-        ? `${uploadResult.successful[0]?.row}–${uploadResult.successful[uploadResult.successful.length - 1]?.row}`
-        : `${uploadResult.successful[0]?.row}`}
+        ? `${uploadResult.successful[0]?.row ?? "?"}–${uploadResult.successful[uploadResult.successful.length - 1]?.row ?? "?"}`
+        : `${uploadResult.successful[0]?.row ?? "?"}`}
     </strong>
   </p>
 )}
 
 {/* ⚠️ Skipped Rows */}
-{uploadResult.skipped?.length > 0 && (
+{Array.isArray(uploadResult?.skipped) && uploadResult.skipped.length > 0 && (
   <div className="mt-2 text-warning small">
-    <strong>⚠️ Skipped rows due to something wrong check it:</strong>
+    <strong>⚠️ Skipped rows due to something wrong, check it:</strong>
     <ul className="mb-0">
       {uploadResult.skipped.map((entry, i) => (
         <li key={i}>
-         <em>{entry}</em>
+          <em>{typeof entry === 'string' ? entry : JSON.stringify(entry)}</em>
         </li>
       ))}
     </ul>
@@ -372,17 +372,24 @@ const StudentInformation = () => {
 )}
 
 {/* ❌ Errors */}
-{uploadResult.errors?.length > 0 && (
+{Array.isArray(uploadResult?.errors) && uploadResult.errors.length > 0 && (
   <div className="mt-3 text-danger small">
     <strong>❌ Validation/Database Errors:</strong>
     <ul className="mb-0">
       {uploadResult.errors
         .filter((err) => {
           const rowNum = parseInt(err.match(/Row\s+(\d+)/)?.[1], 10);
-          return (
-            !uploadResult.successful?.some((s) => s.row === rowNum) &&
-            !uploadResult.skipped?.some((s) => s.row === rowNum)
-          );
+
+          // Skip check if rowNum is not a valid number
+          if (isNaN(rowNum)) return true;
+
+          const isInSuccessful = Array.isArray(uploadResult.successful) &&
+            uploadResult.successful.some((s) => s?.row === rowNum);
+
+          const isInSkipped = Array.isArray(uploadResult.skipped) &&
+            uploadResult.skipped.some((s) => typeof s === 'object' && s?.row === rowNum);
+
+          return !isInSuccessful && !isInSkipped;
         })
         .map((err, i) => (
           <li key={i}>{err}</li>
@@ -397,6 +404,7 @@ const StudentInformation = () => {
     <strong>❌ {uploadResult?.message || "Upload failed."}</strong>
   </div>
 )}
+
 
         </div>
 
