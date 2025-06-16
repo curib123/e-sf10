@@ -11,6 +11,8 @@ export default function StudentRecord() {
   const [loading, setLoading] = useState(true);
   const [viewingFile, setViewingFile] = useState(null);
   const [permissions, setPermissions] = useState([]);
+
+ 
   
     useEffect(() => {
               checkToken();
@@ -136,6 +138,7 @@ useEffect(() => {
       if (result.success) {
         setECards((prev) => prev.filter((c) => c._id !== recordId));
         alert("✅ E-Card deleted successfully.");
+        window.location.reload();
       } else {
         throw new Error(result.message || "Unknown error.");
       }
@@ -294,7 +297,7 @@ useEffect(() => {
                     <button
                      disabled={!permissions.delete_documents}
                       className="btn btn-outline-danger"
-                      onClick={() => handleDeleteECard(card._id)}
+                      onClick={() => handleDeleteECard(card.record_id)}
                     >
                       <i className="bi bi-trash-fill me-1"></i> Delete
                     </button>
