@@ -1,0 +1,33 @@
+--------------------------------------------------
+## Upload exel to bulk register student 
+--------------------------------------------------
+
+#Prerequisites
+    -Autorization
+        No Auth
+    -Headers (add)
+        Key:Authorization
+        Value:Bearer paste your generated token here
+    -Method
+        POST
+    -EndPoint
+        http://localhost:3001/esf10/students/bulk-register
+
+    -Body:form-data
+--------------------------------------------------
+Example requist
+--------------------------------------------------
+required form
+key           type             Value
+file          file            student-data.xlsx
+
+
+--------------------------------------------------
+Response    (200 OK)
+--------------------------------------------------
+{
+  "message": "Bulk registration processed",
+  "successful": [], // Array of successfully registered students
+  "skipped": [],   // Array of students skipped due to duplicates (LRN or name)
+  "errors": []     // Array of errors (validation or database errors)
+}
