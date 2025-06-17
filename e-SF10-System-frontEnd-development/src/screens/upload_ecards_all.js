@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import {  Link } from "react-router-dom";
 import AsyncSelect from "react-select/async";
 import StatusModal from "../components/status_modal";
 import { checkToken } from '../components/token_checker'; 
@@ -181,21 +182,21 @@ export default function StudentRecord() {
               onSubmit={handleUpload}
               encType="multipart/form-data"
             >
-              {["start_year", "end_year", "section", "grade_level"].map((field, i) => (
-                <div className="col-md-3" key={i}>
-                  <label className="form-label text-uppercase small fw-semibold">
-                    {field.replace("_", " ")}
-                  </label>
-                  <input
-                    type="text"
-                    name={field}
-                    className="form-control border-dark shadow-sm"
-                    value={form[field]}
-                    onChange={handleUploadChange}
-                    required
-                  />
-                </div>
-              ))}
+            {["start_year", "end_year", "section", "grade_level"].map((field, i) => (
+  <div className="col-md-3" key={i}>
+    <label className="form-label text-uppercase small fw-semibold">
+      {field.replace("_", " ")}
+    </label>
+    <input
+      type="text"
+      name={field}
+      className="form-control border-dark shadow-sm"
+      value={form[field]}
+      onChange={handleUploadChange}
+      required={field !== "section"} // 👈 Only require if not "section"
+    />
+  </div>
+))}
 
               <div className="col-md-12">
                 <label className="form-label text-uppercase small fw-semibold">Select File</label>
@@ -218,44 +219,54 @@ export default function StudentRecord() {
           </div>
 
           <div className="card shadow border-0">
-            <div className="card-header bg-dark text-white fw-bold">
-              <i className="bi bi-card-list me-2"></i> Uploaded SF10 eCards
-            </div>
-            <div className="card-body">
-              {eCards.length === 0 ? (
-                <p className="text-muted fst-italic">No eCards uploaded yet.</p>
-              ) : (
-                <div className="row g-4">
-                  {eCards.map((ecard, idx) => (
-                    <div className="col-md-4" key={idx}>
-                      <div className="card h-100 shadow-sm">
-                        <div className="card-header fw-semibold">{ecard.section}</div>
-                        <div className="card-body p-3">
-                          <p className="mb-1">
-                            <strong>Grade Level:</strong> {ecard.grade_level}
-                          </p>
-                          <p className="mb-1">
-                            <strong>Start Year:</strong> {ecard.start_year}
-                          </p>
-                          <p className="mb-1">
-                            <strong>End Year:</strong> {ecard.end_year}
-                          </p>
-                          <a
-                            href={`http://localhost:3001${ecard.path || ecard.file_path}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn btn-outline-dark btn-sm w-100"
-                          >
-                            View Document
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+  <div className="card-header bg-success text-white d-flex justify-content-between align-items-center">
+    <div>
+      <i className="bi bi-cloud-check-fill me-2"></i> Uploaded SF10 eCards
+    </div>
+<Link
+  to={`/record_student/${lrn}`}
+  className="btn btn-light btn-sm rounded-pill px-3 fw-semibold d-flex align-items-center gap-2 shadow-sm"
+>
+  <i className="bi bi-folder2-open text-success"></i>
+  <span className="text-success">View Student Record</span>
+</Link>
+
+
+  </div>
+
+  <div className="card-body">
+    {eCards.length === 0 ? (
+      <div className="alert alert-warning mb-0" role="alert">
+        <i className="bi bi-exclamation-circle me-2"></i>
+        No eCards uploaded yet.
+      </div>
+    ) : (
+      <>
+        <div className="row g-3 mb-3">
+          {eCards.map((ecard, idx) => (
+            <div className="col-12 col-md-6 col-lg-4" key={idx}>
+              <div className="card border-start border-4 border-success-subtle shadow-sm h-100">
+                <div className="card-body">
+                  <h6 className="card-title text-success mb-2">
+                    <i className="bi bi-check-circle-fill me-2"></i> Successfully Uploaded
+                  </h6>
+                  <p className="card-text small text-muted mb-0">
+                    {new Date(ecard.uploaded_at).toLocaleString()}
+                  </p>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
+          ))}
+        </div>
+        <div className="alert alert-success border-success-subtle" role="alert">
+          <i className="bi bi-info-circle me-2"></i>
+          To <strong>view or download</strong> the uploaded SF10 documents, please go to the{" "}
+          <strong>"Student Records"</strong> section.
+        </div>
+      </>
+    )}
+  </div>
+</div>
         </>
       ) : (
         <p className="text-muted fst-italic">Please select a student from the dropdown above.</p>

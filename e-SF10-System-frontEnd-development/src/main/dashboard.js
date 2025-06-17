@@ -206,18 +206,6 @@ const role = Array.isArray(user?.role)
           style={{ display: collapsed ? 'none' : undefined }}
         >
 
-         {permissions.register_student && (
-  <li>
-    <NavLink
-      to="/add_student"
-      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-    >
-      <FaPlus />
-      {!collapsed && <span className="ms-4">Add New Student</span>}
-    </NavLink>
-  </li>
-)}
-
 
           <li>
             <NavLink
@@ -228,6 +216,18 @@ const role = Array.isArray(user?.role)
               {!collapsed && <span className="ms-4">View All Students</span>}
             </NavLink>
           </li>
+
+                {permissions.register_student && (
+  <li>
+    <NavLink
+      to="/add_student"
+      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
+    >
+      <FaPlus />
+      {!collapsed && <span className="ms-4">Add New Student</span>}
+    </NavLink>
+  </li>
+)}
 
         {permissions.upload_documents && (
   

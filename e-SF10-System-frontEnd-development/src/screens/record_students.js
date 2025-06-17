@@ -164,7 +164,7 @@ useEffect(() => {
     );
 
   return (
-    <div className="container">
+    <div className="container-sm">
       {/* Header */}
       <div className="d-flex justify-content-end align-items-center mb-4">
         <button
@@ -232,9 +232,42 @@ useEffect(() => {
             <div key={card._id} className="col">
               <div className="card h-100 shadow-sm border-0 rounded-4">
                 <div className="card-body d-flex flex-column justify-content-between">
-                  <h5 className="card-title text-truncate">
-                    {card.sf10_document_path?.split("/").pop() || "Unnamed eCard"}
-                  </h5>
+                <div className="d-flex align-items-center gap-3 mb-3">
+  {(() => {
+    const filePath = card.sf10_document_path;
+    const ext = getFileExtension(filePath);
+    if (["png", "jpg", "jpeg", "gif", "bmp", "webp"].includes(ext)) {
+      return (
+        <img
+          src={filePath}
+          alt="Preview"
+          className="rounded shadow-sm"
+          style={{ width: "60px", height: "60px", objectFit: "cover" }}
+        />
+      );
+    } else if (ext === "pdf") {
+      return (
+        <div
+          className="bg-danger d-flex align-items-center justify-content-center text-white rounded"
+          style={{ width: "60px", height: "60px" }}
+        >
+          <i className="bi bi-file-earmark-pdf-fill fs-2"></i>
+        </div>
+      );
+    } else {
+      return (
+        <div
+          className="bg-secondary d-flex align-items-center justify-content-center text-white rounded"
+          style={{ width: "60px", height: "60px" }}
+        >
+          <i className="bi bi-file-earmark-text-fill fs-2"></i>
+        </div>
+      );
+    }
+  })()}
+  <h5 className="mb-0 text-truncate">{card.sf10_document_path?.split("/").pop() || "Unnamed eCard"}</h5>
+</div>
+
                   <p className="card-text small text-muted">
                     Grade: {card.grade_level} | Section: {card.section} <br />
                     SY: {card.start_year}-{card.end_year} <br />

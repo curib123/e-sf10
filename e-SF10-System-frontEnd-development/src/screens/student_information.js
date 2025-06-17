@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { FaPlus, FaSearch } from "react-icons/fa";
@@ -6,7 +8,6 @@ import { checkToken } from '../components/token_checker';
 import { getUserPermissions } from '../components/get_permission'; 
 
 const StudentInformation = () => {
-  // === State Management ===
   const [students, setStudents] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -17,7 +18,12 @@ const StudentInformation = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [permissions, setPermissions] = useState([]);
 
-  // === Utility Function ===
+  // === Bulk Upload State ===
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState(null);
+  const [uploadResult, setUploadResult] = useState(null);
+
   const buildQueryParams = () => {
     const params = new URLSearchParams();
     params.append("page", currentPage);
@@ -25,16 +31,12 @@ const StudentInformation = () => {
     return params.toString();
   };
 
-   useEffect(() => {
-                checkToken();
-               }, []);
-               
-  // === Effects ===
+  useEffect(() => { checkToken(); }, []);
+
   useEffect(() => {
     const perms = getUserPermissions();
     setPermissions(perms);
   }, []);
-
 
   useEffect(() => {
     if (searchQuery.trim()) {
@@ -44,7 +46,6 @@ const StudentInformation = () => {
     }
   }, [currentPage, searchQuery]);
 
-  // === Data Fetching ===
   const fetchStudents = async () => {
     setIsSearching(false);
     const token = sessionStorage.getItem("token");
@@ -67,54 +68,79 @@ const StudentInformation = () => {
   };
 
   const searchStudents = async (query) => {
-    setIsSearching(true);
-    setSearchLoading(true);
-    const token = sessionStorage.getItem("token");
-    if (!token) return;
+  setIsSearching(true);
+  setSearchLoading(true);
+  const token = sessionStorage.getItem("token");
+  if (!token) return;
 
-    try {
-      const response = await axios.get(
-        `http://localhost:3001/esf10/students/search?query=${encodeURIComponent(query)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = response.data;
-      setStudents(Array.isArray(data) ? data : []);
-      setTotal(data.length || 0);
-      setCurrentPage(1);
-    } catch (error) {
-      console.error("Error searching students:", error);
-      setStudents([]);
-      setTotal(0);
-    } finally {
-      setSearchLoading(false);
-    }
-  };
+  try {
+    const response = await axios.get(
+      `http://localhost:3001/esf10/students/search?query=${encodeURIComponent(query)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const data = response.data;
+    setStudents(Array.isArray(data) ? data.slice(0, 5) : []); // Show only first 10
+    setTotal(data.length || 0); // Optional: if you want total for pagination info
+    setCurrentPage(1);
+  } catch (error) {
+    console.error("Error searching students:", error);
+    setStudents([]);
+    setTotal(0);
+  } finally {
+    setSearchLoading(false);
+  }
+};
 
-  // === Handlers ===
+
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchQuery(value);
     setCurrentPage(1);
-
     if (value.trim() === "") {
       setIsSearching(false);
       fetchStudents();
     }
   };
 
-  // === Render ===
+  // === Bulk Upload Handlers ===
+  const handleFileChange = (e) => {
+    setSelectedFile(e.target.files[0]);
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) return;
+    const token = sessionStorage.getItem("token");
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    try {
+      const response = await axios.post(
+        "http://localhost:3001/esf10/students/bulk-register",
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data"
+          },
+        }
+      );
+      setUploadStatus("success");
+      setUploadResult(response.data);
+      fetchStudents();
+    } catch (error) {
+      setUploadStatus("error");
+      setUploadResult(error.response?.data || { message: "Upload failed." });
+    }
+  };
+
   return (
     <div className="container-fluid my-1">
-      {/* Search and Add Student */}
+      {/* Search and Buttons */}
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-4">
         {/* Search Input */}
         <div className="position-relative flex-grow-1" style={{ maxWidth: "600px" }}>
           <FaSearch className="position-absolute" style={{
-            top: "50%",
-            left: "16px",
-            transform: "translateY(-50%)",
-            color: "#6c757d",
-            fontSize: "20px"
+            top: "50%", left: "16px", transform: "translateY(-50%)", color: "#6c757d", fontSize: "20px"
           }} />
           <input
             type="text"
@@ -133,32 +159,30 @@ const StudentInformation = () => {
           />
         </div>
 
-        {/* Add Student Button */}
-        {permissions.register_student ? (
-          <Link to="/add_student" className="btn d-flex align-items-center gap-2 px-4 py-2 rounded-pill shadow text-white fw-semibold"
-            style={{
-              background: "linear-gradient(135deg, #28a745, #85e89d)",
-              boxShadow: "0 4px 12px rgba(40, 167, 69, 0.5)",
-              border: "none"
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "linear-gradient(135deg, #218838, #70d870)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "linear-gradient(135deg, #28a745, #85e89d)")}
-          >
-            <FaPlus /> Add Student
-          </Link>
-        ) : (
-          <button disabled className="btn d-flex align-items-center gap-2 px-4 py-2 rounded-pill shadow text-white fw-semibold"
-            style={{
-              background: "linear-gradient(135deg, #ccc, #ddd)",
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-              cursor: "not-allowed",
-              opacity: 0.6
-            }}
-            title="You don't have permission to add students"
-          >
-            <FaPlus /> Add Student
-          </button>
-        )}
+        {/* Add + Upload Buttons */}
+        <div className="d-flex gap-2">
+          {permissions.register_student && (
+          <>
+  {/* Outline → Fill (Green) on Hover */}
+  <button
+    className="btn btn-outline-success fw-semibold rounded-pill px-4 py-2 d-flex align-items-center gap-2 shadow-sm"
+    onClick={() => setShowUploadModal(true)}
+  >
+    <i className="bi bi-upload"></i>
+    Bulk Upload Student (Excel)
+  </button>
+
+  {/* Fill (Blue) Button */}
+  <Link
+    to="/add_student"
+    className="btn btn-primary d-flex align-items-center gap-2 px-4 py-2 rounded-pill shadow fw-semibold"
+  >
+    <FaPlus /> Add New Student
+  </Link>
+</>
+
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -192,12 +216,7 @@ const StudentInformation = () => {
                   </tr>
                 ) : (
                   students.map((student) => (
-                    <tr
-                      key={student.lrn}
-                      style={{ cursor: "default", transition: "background-color 0.3s" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e9f7ef")}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                    >
+                    <tr key={student.lrn}>
                       <td className="text-muted fw-medium">{student.lrn}</td>
                       <td>{student.last_name}</td>
                       <td>{student.first_name}</td>
@@ -206,76 +225,25 @@ const StudentInformation = () => {
                       <td>{student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString("en-CA") : ""}</td>
                       <td>
                         <div className="d-flex flex-wrap gap-1 justify-content-center">
-                          {/* Edit */}
                           {permissions.edit_student_info ? (
-                            <Link to={`/edit_student/${student.lrn}`} className="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold"
-                              style={{ minWidth: "70px" }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = "#28a745";
-                                e.currentTarget.style.color = "#fff";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = "transparent";
-                                e.currentTarget.style.color = "#198754";
-                              }}
-                            >
-                              Edit
-                            </Link>
+                            <Link to={`/edit_student/${student.lrn}`} className="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold">Edit</Link>
                           ) : (
-                            <button disabled className="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold"
-                              style={{ minWidth: "70px", cursor: "not-allowed", opacity: 0.6 }}
-                              title="Disabled"
-                            >
-                              Edit
-                            </button>
+                            <button disabled className="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold">Edit</button>
                           )}
-
-                          {/* Records */}
                           {permissions.view_student_info ? (
-                            <Link to={`/record_student/${student.lrn}`} className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold"
-                              style={{ minWidth: "70px" }}
-                            >
-                              Records
-                            </Link>
+                            <Link to={`/record_student/${student.lrn}`} className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold">Records</Link>
                           ) : (
-                            <button disabled className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold"
-                              style={{ minWidth: "70px", cursor: "not-allowed", opacity: 0.6 }}
-                              title="Disabled"
-                            >
-                              Records
-                            </button>
+                            <button disabled className="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold">Records</button>
                           )}
-
-                          {/* Upload E-SF10 */}
                           {permissions.upload_documents ? (
-                            <Link to={`/upload_ecards/${student.lrn}`} className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold"
-                              style={{ minWidth: "80px" }}
-                            >
-                              Upload E-SF10
-                            </Link>
+                            <Link to={`/upload_ecards/${student.lrn}`} className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold">Upload E-SF10</Link>
                           ) : (
-                            <button disabled className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold"
-                              style={{ minWidth: "80px", cursor: "not-allowed", opacity: 0.6 }}
-                              title="Disabled"
-                            >
-                              Upload E-SF10
-                            </button>
+                            <button disabled className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold">Upload E-SF10</button>
                           )}
-
-                          {/* Request Transfer */}
                           {permissions.request_transfers ? (
-                            <Link to={`/request_transfer/${student.student_id}`} className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold"
-                              style={{ minWidth: "80px" }}
-                            >
-                              Request Transfer
-                            </Link>
+                            <Link to={`/request_transfer/${student.student_id}`} className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold">Request Transfer</Link>
                           ) : (
-                            <button disabled className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold"
-                              style={{ minWidth: "80px", cursor: "not-allowed", opacity: 0.6 }}
-                              title="Disabled"
-                            >
-                              Request Transfer
-                            </button>
+                            <button disabled className="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold">Request Transfer</button>
                           )}
                         </div>
                       </td>
@@ -297,26 +265,170 @@ const StudentInformation = () => {
           <nav>
             <ul className="pagination pagination-sm mb-0">
               <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
-                <button className="page-link" onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}>
-                  &laquo;
-                </button>
+                <button className="page-link" onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}>&laquo;</button>
               </li>
               {Array.from({ length: totalPages }, (_, i) => (
                 <li key={i} className={`page-item ${currentPage === i + 1 ? "active" : ""}`}>
-                  <button className="page-link" onClick={() => setCurrentPage(i + 1)}>
-                    {i + 1}
-                  </button>
+                  <button className="page-link" onClick={() => setCurrentPage(i + 1)}>{i + 1}</button>
                 </li>
               ))}
               <li className={`page-item ${currentPage === totalPages ? "disabled" : ""}`}>
-                <button className="page-link" onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}>
-                  &raquo;
-                </button>
+                <button className="page-link" onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}>&raquo;</button>
               </li>
             </ul>
           </nav>
         </div>
       )}
+
+      
+{/* Bulk Upload Modal */}
+{showUploadModal && (
+  <div
+    className="modal fade show d-block"
+    tabIndex="-1"
+    style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+  >
+    <div className="modal-dialog modal-lg modal-dialog-centered">
+      <div className="modal-content rounded-4 shadow-lg border-0">
+        <div className="modal-header bg-light rounded-top-4 px-4">
+          <h5 className="modal-title fw-semibold">
+            <i className="bi bi-upload me-2 text-success"></i>
+            Bulk Student Upload
+          </h5>
+          <button
+            type="button"
+            className="btn-close"
+            onClick={() => {
+              setShowUploadModal(false);
+              setSelectedFile(null);
+              setUploadStatus(null);
+              setUploadResult(null);
+            }}
+          ></button>
+        </div>
+
+        {/* Scrollable Body */}
+        <div
+          className="modal-body px-4 py-3"
+          style={{ maxHeight: "65vh", overflowY: "auto" }}
+        >
+          <div className="mb-4">
+            <p className="mb-2">📥 Download the official template:</p>
+            <a
+              href="http://localhost:3001/esf10/generate-excel"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-outline-primary btn-sm"
+            >
+              <i className="bi bi-file-earmark-excel me-1"></i>
+              Download Template
+            </a>
+
+            <div className="alert alert-info mt-3 small">
+              <strong className="d-block mb-1">📝 Upload Guidelines:</strong>
+              <ul className="mb-0">
+                <li>Do not change column headers.</li>
+                <li>Each LRN must be unique and valid.</li>
+                <li>Use <code>YYYY-MM-DD</code> for dates.</li>
+                <li>Only <code>Male</code> or <code>Female</code> as gender.</li>
+                <li>Leave middle name empty if not available.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <label className="form-label fw-medium">Choose Excel File</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              className="form-control"
+              onChange={handleFileChange}
+            />
+          </div>
+          {/* ✅ Successfully Uploaded */}
+{Array.isArray(uploadResult?.successful) && uploadResult.successful.length > 0 && (
+  <p className="mb-2 mt-2 text-success">
+    ✅ Successfully uploaded rows:{" "}
+    <strong>
+      {uploadResult.successful.length > 1
+        ? `${uploadResult.successful[0]?.row ?? "?"}–${uploadResult.successful[uploadResult.successful.length - 1]?.row ?? "?"}`
+        : `${uploadResult.successful[0]?.row ?? "?"}`}
+    </strong>
+  </p>
+)}
+
+{/* ⚠️ Skipped Rows */}
+{Array.isArray(uploadResult?.skipped) && uploadResult.skipped.length > 0 && (
+  <div className="mt-2 text-warning small">
+    <strong>⚠️ Skipped rows due to something wrong, check it:</strong>
+    <ul className="mb-0">
+      {uploadResult.skipped.map((entry, i) => (
+        <li key={i}>
+          <em>{typeof entry === 'string' ? entry : JSON.stringify(entry)}</em>
+        </li>
+      ))}
+    </ul>
+  </div>
+)}
+
+{/* ❌ Errors */}
+{Array.isArray(uploadResult?.errors) && uploadResult.errors.length > 0 && (
+  <div className="mt-3 text-danger small">
+    <strong>❌ Validation/Database Errors:</strong>
+    <ul className="mb-0">
+      {uploadResult.errors
+        .filter((err) => {
+          const rowNum = parseInt(err.match(/Row\s+(\d+)/)?.[1], 10);
+
+          // Skip check if rowNum is not a valid number
+          if (isNaN(rowNum)) return true;
+
+          const isInSuccessful = Array.isArray(uploadResult.successful) &&
+            uploadResult.successful.some((s) => s?.row === rowNum);
+
+          const isInSkipped = Array.isArray(uploadResult.skipped) &&
+            uploadResult.skipped.some((s) => typeof s === 'object' && s?.row === rowNum);
+
+          return !isInSuccessful && !isInSkipped;
+        })
+        .map((err, i) => (
+          <li key={i}>{err}</li>
+        ))}
+    </ul>
+  </div>
+)}
+
+{/* General Upload Error */}
+{uploadStatus === "error" && (
+  <div className="alert alert-danger mt-4">
+    <strong>❌ {uploadResult?.message || "Upload failed."}</strong>
+  </div>
+)}
+
+
+        </div>
+
+        <div className="modal-footer bg-light rounded-bottom-4 border-0 px-4 py-3">
+          <button
+            className="btn btn-outline-secondary"
+            onClick={() => setShowUploadModal(false)}
+          >
+            <i className="bi bi-x-circle me-1"></i> Cancel
+          </button>
+          <button
+            className="btn btn-success"
+            disabled={!selectedFile}
+            onClick={handleUpload}
+          >
+            <i className="bi bi-upload me-1"></i> Upload
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+
     </div>
   );
 };

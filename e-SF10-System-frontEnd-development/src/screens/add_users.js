@@ -6,16 +6,13 @@ const UserForm = () => {
   const { userId } = useParams();
   const isEditing = !!userId;
 
-  // ----------------------------
-  // Form State
-  // ----------------------------
   const [formData, setFormData] = useState({
     first_name: '',
     middle_name: '',
     last_name: '',
     email: '',
     password: '',
-    role: '',
+    role: '', // Stores role_name
     currentPassword: '',
     newPassword: '',
   });
@@ -24,16 +21,12 @@ const UserForm = () => {
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // ----------------------------
-  // Token Check on Mount
-  // ----------------------------
+  const selectedRoleId = roles.find((r) => r.role_name === formData.role)?.role_id || '';
+
   useEffect(() => {
     checkToken();
   }, []);
 
-  // ----------------------------
-  // Fetch Roles
-  // ----------------------------
   useEffect(() => {
     const fetchRoles = async () => {
       const token = sessionStorage.getItem('token');
@@ -44,13 +37,11 @@ const UserForm = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) throw new Error('Failed to fetch roles');
         const data = await res.json();
-
-        if (data.success && Array.isArray(data.roles)) {
+        if (res.ok && data.success && Array.isArray(data.roles)) {
           setRoles(data.roles);
 
-          // Preselect role for new user
+          // Set default role for new users
           if (!isEditing && !formData.role && data.roles.length > 0) {
             setFormData(prev => ({ ...prev, role: data.roles[0].role_name }));
           }
@@ -66,9 +57,6 @@ const UserForm = () => {
     fetchRoles();
   }, [isEditing, formData.role]);
 
-  // ----------------------------
-  // Fetch Existing User Data for Editing
-  // ----------------------------
   useEffect(() => {
     const fetchUserData = async () => {
       const token = sessionStorage.getItem('token');
@@ -84,8 +72,8 @@ const UserForm = () => {
           return;
         }
 
-        if (!res.ok) throw new Error('Failed to fetch user data');
         const data = await res.json();
+        if (!res.ok) throw new Error('Failed to fetch user data');
 
         setFormData({
           first_name: data.first_name || '',
@@ -93,12 +81,10 @@ const UserForm = () => {
           last_name: data.last_name || '',
           email: data.email || '',
           password: '',
-          role: data.roles || '',
+          role: data.roles, // This should be role_name
           currentPassword: '',
           newPassword: '',
         });
-
-        console.log(data);
       } catch (error) {
         console.error(error);
         setResponse({ type: 'danger', message: 'Failed to load user data' });
@@ -108,17 +94,21 @@ const UserForm = () => {
     fetchUserData();
   }, [isEditing, userId]);
 
-  // ----------------------------
-  // Handle Input Changes
-  // ----------------------------
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    if (name === "role") {
+      const selectedRole = roles.find((r) => r.role_id === parseInt(value));
+      if (selectedRole) {
+        setFormData((prev) => ({
+          ...prev,
+          role: selectedRole.role_name, // Always store role_name
+        }));
+      }
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
-  // ----------------------------
-  // Submit Handler
-  // ----------------------------
   const handleSubmit = async (e) => {
     e.preventDefault();
     const token = sessionStorage.getItem('token');
@@ -136,7 +126,6 @@ const UserForm = () => {
 
     try {
       if (isEditing) {
-        // Update User Info (without role)
         const resUser = await fetch(`http://localhost:3001/esf10/users/${userId}`, {
           method: 'PUT',
           headers: {
@@ -148,7 +137,6 @@ const UserForm = () => {
             middle_name: formData.middle_name,
             last_name: formData.last_name,
             email: formData.email,
-            // role omitted on update as requested
           }),
         });
 
@@ -158,12 +146,27 @@ const UserForm = () => {
           return;
         }
 
-        // Role update removed per request
+        const resRole = await fetch('http://localhost:3001/esf10/roles/update-user-role', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            user_id: Number(userId),
+            role_ids: [roles.find(r => r.role_name === formData.role)?.role_id],
+          }),
+        });
 
-        // Update Password (if provided)
+        const roleData = await resRole.json();
+        if (!resRole.ok || !roleData.success) {
+          setResponse({ type: 'danger', message: roleData.message || 'Failed to update role.' });
+          return;
+        }
+
         if (formData.currentPassword || formData.newPassword) {
           if (!formData.currentPassword || !formData.newPassword) {
-            setResponse({ type: 'danger', message: 'Both current and new passwords are required to update the password.' });
+            setResponse({ type: 'danger', message: 'Both current and new passwords are required.' });
             setLoading(false);
             return;
           }
@@ -181,25 +184,18 @@ const UserForm = () => {
           });
 
           const passwordData = await resPassword.json();
-
           if (!resPassword.ok) {
             setResponse({ type: 'danger', message: passwordData.message || 'Password update failed' });
             setLoading(false);
             return;
           }
 
-          setFormData(prev => ({
-            ...prev,
-            currentPassword: '',
-            newPassword: '',
-          }));
-
+          setFormData(prev => ({ ...prev, currentPassword: '', newPassword: '' }));
           setResponse({ type: 'success', message: passwordData.message || 'Password updated successfully' });
         }
 
         setResponse({ type: 'success', message: 'User updated successfully' });
       } else {
-        // Create New User
         const res = await fetch('http://localhost:3001/esf10/register-user', {
           method: 'POST',
           headers: {
@@ -212,7 +208,7 @@ const UserForm = () => {
             last_name: formData.last_name,
             email: formData.email,
             password: formData.password,
-            role: formData.role,
+            role: formData.role, // role_name
           }),
         });
 
@@ -231,9 +227,6 @@ const UserForm = () => {
     }
   };
 
-  // ----------------------------
-  // Render UI
-  // ----------------------------
   return (
     <div className="container-fluid d-flex flex-column align-items-center justify-content-start min-vh-100 py-5">
       <div className="w-100 d-flex justify-content-between align-items-center px-3 mb-3" style={{ maxWidth: '1140px' }}>
@@ -329,32 +322,23 @@ const UserForm = () => {
                 </>
               )}
 
-                {!isEditing && (
-                <>
-
-                    <div className="col-md-6">
+              <div className="col-md-6">
                 <label className="form-label">Role</label>
                 <select
                   className="form-select rounded-pill px-4"
                   name="role"
-                  value={formData.role}
+                  value={selectedRoleId}
                   onChange={handleChange}
                   required
                 >
-                  <option disabled>Select a role</option>
+                  <option disabled value="">Select a role</option>
                   {roles.map((roleObj) => (
-                    <option key={roleObj.role_id} value={roleObj.role_name}>
+                    <option key={roleObj.role_id} value={roleObj.role_id}>
                       {roleObj.role_name.charAt(0).toUpperCase() + roleObj.role_name.slice(1).replace(/_/g, ' ')}
                     </option>
                   ))}
                 </select>
               </div>
-                </>
-              )} 
-              
-              
-
-
 
               <div className="col-12 mt-4">
                 <button
