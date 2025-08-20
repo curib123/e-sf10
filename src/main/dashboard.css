@@ -1,0 +1,261 @@
+/* === Reset and base styles === */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  background-color: #f5f7fa;
+  color: #222;
+  -webkit-font-smoothing: antialiased;
+}
+
+.school-info {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-top: auto;
+}
+
+
+/* === Layout Container === */
+.dashboard-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: #f5f7fa;
+}
+
+/* === Sidebar === */
+.sidebar {
+  width: 320px;
+  background: rgba(6, 12, 31, 0.85);
+  color: #e0e6f2;
+  padding: 16px 12px;
+  backdrop-filter: blur(20px);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25);
+  display: flex;
+  height: 100vh;          /* Full viewport height */
+  overflow-y: auto;       /* Enable vertical scrolling */
+  flex-direction: column;
+  transition: width 0.3s ease;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar.collapsed {
+  width: 72px;
+}
+
+.sidebar-header {
+  font-weight: 900;
+  font-size: 1.8rem;
+  text-align: center;
+  margin-bottom: 30px;
+  color: #4f8edc;
+  letter-spacing: 2px;
+  user-select: none;
+}
+
+/* === Navigation Links === */
+.nav-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex-grow: 1;
+}
+
+.nav-links li {
+  margin: 18px 0;
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: #cdd9e5;
+  text-decoration: none;
+  transition: all 0.25s ease;
+}
+
+.link svg {
+  font-size: 1.3rem;
+  color: #aab7d6;
+  transition: color 0.3s ease;
+}
+
+.link:hover {
+  background-color: #4c6ec5;
+  color: #ffffff;
+  transform: translateX(4px);
+}
+
+.link:hover svg {
+  color: #ffffff;
+}
+
+.link.active {
+  background-color: #3f63c7;
+  color: #ffffff;
+  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+.link.active svg {
+  color: #ffffff;
+}
+
+/* Collapsed Sidebar Adjustments */
+.sidebar.collapsed .link span,
+.sidebar.collapsed .logo {
+  display: none;
+}
+
+.submenu {
+  list-style: none;
+  padding-left: 10px;
+  margin-top: 5px;
+  display: none;
+  transition: all 0.3s ease;
+}
+
+.submenu.show {
+  display: block;
+}
+
+.dropdown-icon {
+  transition: transform 0.3s ease;
+}
+
+.dropdown-icon.rotate {
+  transform: rotate(180deg);
+}
+
+.nav-links .link {
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.nav-links .submenu .link {
+  padding-left: 35px;
+  font-size: 0.85rem;
+}
+
+/* === Main Content === */
+.main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.04);
+  overflow-y: auto;
+}
+
+/* === Topbar === */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #fff;
+  padding: 14px 32px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.toggle-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  color: #07122e;
+  cursor: pointer;
+  padding: 8px 12px;
+  margin-right: 20px;
+  border-radius: 10px;
+  transition: background-color 0.2s ease;
+}
+
+.toggle-btn:hover {
+  background-color: #e2e8ff;
+}
+
+.topbar h3 {
+  font-weight: 700;
+  color: #1e2a78;
+  user-select: none;
+  margin: 0;
+  flex-grow: 1;
+  text-align: center;
+  letter-spacing: 0.7px;
+}
+
+/* === Logout Button === */
+.logout-btn {
+  background-color: #d43f3a;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.logout-btn:hover {
+  background-color: #a7332f;
+  transform: scale(1.03);
+}
+
+.logout-btn svg {
+  font-size: 1.25rem;
+}
+
+/* === Main Content Area === */
+.main-content {
+  padding: 32px 48px;
+  background-color: #f9fbff;
+  flex-grow: 1;
+  min-height: calc(100vh - 64px);
+  overflow-y: auto;
+  border-radius: 0 16px 16px 0;
+  box-shadow: inset 0 0 25px rgba(0, 0, 0, 0.03);
+}
+
+/* Scrollbar Styling */
+.main-content::-webkit-scrollbar {
+  width: 10px;
+}
+.main-content::-webkit-scrollbar-track {
+  background: #f9fbff;
+}
+.main-content::-webkit-scrollbar-thumb {
+  background-color: #316dff;
+  border-radius: 10px;
+}
+
+/* === Responsive Design === */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    height: 100%;
+    z-index: 20;
+    left: -240px;
+    transition: left 0.3s ease;
+  }
+  .sidebar.collapsed {
+    left: 0;
+    width: 240px;
+  }
+  .main-content {
+    padding: 20px;
+  }
+  .main {
+    margin-left: 0;
+  }
+}
