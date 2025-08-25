@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import StatusModal from "../components/status_modal";
-import { checkToken } from '../components/token_checker'; 
+import { checkToken } from "../components/token_checker";
 
 const initialStudent = {
   student_id: null,
@@ -18,18 +18,22 @@ const initialStudent = {
   guardian_name: "",
   contact_number: "",
   created_at: "",
-  updated_at: ""
+  updated_at: "",
 };
 
 export default function StudentForm({ initialData = null, onSubmit }) {
   const [student, setStudent] = useState(initialStudent);
-  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
+  const [modal, setModal] = useState({
+    show: false,
+    title: "",
+    message: "",
+    variant: "danger",
+  });
   const token = sessionStorage.getItem("token");
 
-  
-   useEffect(() => {
-  checkToken();
-}, []);
+  useEffect(() => {
+    checkToken();
+  }, []);
 
   useEffect(() => {
     if (initialData) {
@@ -37,10 +41,7 @@ export default function StudentForm({ initialData = null, onSubmit }) {
         let date = new Date(initialData.date_of_birth);
         date = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
         const formattedDate = date.toISOString().split("T")[0];
-        setStudent({
-          ...initialData,
-          date_of_birth: formattedDate,
-        });
+        setStudent({ ...initialData, date_of_birth: formattedDate });
       } else {
         setStudent(initialData);
       }
@@ -72,16 +73,10 @@ export default function StudentForm({ initialData = null, onSubmit }) {
     const { student_id, created_at, updated_at, ...payload } = student;
 
     try {
-      let url = "";
-      let method = "";
-
-      if (student_id && student.lrn) {
-        url = `http://localhost:3001/esf10/students/${student.lrn}/update`;
-        method = "PUT";
-      } else {
-        url = "http://localhost:3001/esf10/students/register";
-        method = "POST";
-      }
+      const url = student_id && student.lrn
+        ? `http://localhost:3001/esf10/students/${student.lrn}/update`
+        : "http://localhost:3001/esf10/students/register";
+      const method = student_id && student.lrn ? "PUT" : "POST";
 
       const response = await fetch(url, {
         method,
@@ -93,25 +88,22 @@ export default function StudentForm({ initialData = null, onSubmit }) {
       });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Something went wrong.");
-      }
+      if (!response.ok) throw new Error(data.message || "Something went wrong.");
 
       setModal({
         show: true,
         title: "Success",
-        message: data.message || (student_id ? "Student updated successfully." : "Student registered successfully."),
+        message:
+          data.message ||
+          (student_id
+            ? "Student updated successfully."
+            : "Student registered successfully."),
         variant: "success",
       });
 
-      if (onSubmit) {
-        onSubmit(data.student || payload);
-      }
+      if (onSubmit) onSubmit(data.student || payload);
 
-      if (!student_id) {
-        setStudent(initialStudent);
-      }
+      if (!student_id) setStudent(initialStudent);
     } catch (err) {
       setModal({
         show: true,
@@ -123,19 +115,21 @@ export default function StudentForm({ initialData = null, onSubmit }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 bg-light rounded shadow-sm border">
-      <div className="d-flex justify-content-between">
-        <h4 className="mb-4 text-secondary">
+    <form
+      onSubmit={handleSubmit}
+      className="p-4 bg-white rounded-3 shadow-sm border"
+    >
+      {/* Header */}
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h4 className="mb-0 text-secondary fw-bold">
           <i className="bi bi-person-badge-fill me-2"></i>
           {student.student_id ? "Update Student" : "Register New Student"}
         </h4>
 
-        {!student.student_id ? (
-          <h1></h1>
-        ) : (
+        {student.student_id && (
           <button
             type="button"
-            className="btn btn-outline-secondary mb-3"
+            className="btn btn-outline-secondary"
             onClick={() => window.history.back()}
           >
             <i className="bi bi-arrow-left-circle me-2"></i>
@@ -145,7 +139,7 @@ export default function StudentForm({ initialData = null, onSubmit }) {
       </div>
 
       {/* LRN */}
-      <div className="mb-3">
+      <div className="mb-4">
         <label className="form-label fw-semibold">
           LRN <span className="text-danger">*</span>
         </label>
@@ -163,8 +157,8 @@ export default function StudentForm({ initialData = null, onSubmit }) {
       </div>
 
       {/* Personal Info */}
-      <div className="card mb-4">
-        <div className="card-header bg-secondary text-white">
+      <section className="card border-0 shadow-sm mb-4">
+        <div className="card-header bg-primary text-white fw-semibold">
           <i className="bi bi-person-lines-fill me-2"></i> Personal Information
         </div>
         <div className="card-body row g-3">
@@ -237,11 +231,11 @@ export default function StudentForm({ initialData = null, onSubmit }) {
             </select>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Address */}
-      <div className="card mb-4">
-        <div className="card-header bg-secondary text-white">
+      <section className="card border-0 shadow-sm mb-4">
+        <div className="card-header bg-primary text-white fw-semibold">
           <i className="bi bi-geo-alt-fill me-2"></i> Address
         </div>
         <div className="card-body row g-3">
@@ -286,11 +280,11 @@ export default function StudentForm({ initialData = null, onSubmit }) {
             />
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Guardian Info */}
-      <div className="card mb-4">
-        <div className="card-header bg-secondary text-white">
+      <section className="card border-0 shadow-sm mb-4">
+        <div className="card-header bg-primary text-white fw-semibold">
           <i className="bi bi-person-hearts me-2"></i> Guardian Information
         </div>
         <div className="card-body row g-3">
@@ -315,11 +309,16 @@ export default function StudentForm({ initialData = null, onSubmit }) {
             />
           </div>
         </div>
-      </div>
+      </section>
 
-      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
+      {/* Modal */}
+      <StatusModal
+        {...modal}
+        onHide={() => setModal({ ...modal, show: false })}
+      />
 
-      <button type="submit" className="btn btn-success w-100">
+      {/* Submit */}
+      <button type="submit" className="btn btn-success w-100 py-2 fw-semibold">
         <i className="bi bi-check-circle-fill me-2"></i>
         {student.student_id ? "Update Student" : "Add Student"}
       </button>

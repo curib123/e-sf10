@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { getUserPermissions } from '../components/get_permission'; 
-import { checkToken } from '../components/token_checker'; 
+import { useParams, useNavigate } from "react-router-dom";
+import { getUserPermissions } from "../components/get_permission";
+import { checkToken } from "../components/token_checker";
 
 export default function StudentRecord() {
   const { lrn } = useParams();
+  const navigate = useNavigate();
+
   const [student, setStudent] = useState(null);
   const [eCards, setECards] = useState([]);
   const [transferRequest, setTransferRequest] = useState(null);
@@ -12,23 +14,15 @@ export default function StudentRecord() {
   const [viewingFile, setViewingFile] = useState(null);
   const [permissions, setPermissions] = useState([]);
 
- 
-  
-    useEffect(() => {
-              checkToken();
-             }, []);
-       
-             
-       // === Effects ===
-useEffect(() => {
-          const perms = getUserPermissions();
-          setPermissions(perms);
-        }, []);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedCardId, setSelectedCardId] = useState(null);
+
+  useEffect(() => { checkToken(); }, []);
+  useEffect(() => { setPermissions(getUserPermissions()); }, []);
 
   useEffect(() => {
     const token = sessionStorage.getItem("token");
     if (!token) {
-      alert("Token missing. Please log in.");
       setLoading(false);
       return;
     }
@@ -43,24 +37,16 @@ useEffect(() => {
         while (!found && page <= maxPages) {
           const res = await fetch(
             `http://localhost:3001/esf10/transfer-request/view-all-requests?page=${page}&limit=${pageSize}`,
-            {
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-            }
+            { headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } }
           );
           if (!res.ok) throw new Error("Failed to fetch transfer requests");
-
           const data = await res.json();
           const match = data?.data?.find((req) => req.lrn === lrn);
-
           if (match) {
             found = match;
             setTransferRequest(match);
           }
-
-          if (data.data.length < pageSize) break; // End of pages
+          if (data.data.length < pageSize) break;
           page++;
         }
       } catch (error) {
@@ -70,25 +56,20 @@ useEffect(() => {
 
     async function fetchStudentDetails() {
       try {
-        const res = await fetch(
-          `http://localhost:3001/esf10/students/${lrn}/details`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        const res = await fetch(`http://localhost:3001/esf10/students/${lrn}/details`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!res.ok) throw new Error("Failed to fetch student details");
         const data = await res.json();
         setStudent(data.student);
         setECards(data.eCards || []);
       } catch (err) {
-        alert(`❌ ${err.message}`);
+        console.error(err.message);
       }
     }
 
     setLoading(true);
-    Promise.all([fetchTransferRequestByLRN(), fetchStudentDetails()]).finally(() =>
-      setLoading(false)
-    );
+    Promise.all([fetchTransferRequestByLRN(), fetchStudentDetails()]).finally(() => setLoading(false));
   }, [lrn]);
 
   const getFileExtension = (filename) => filename?.split(".").pop().toLowerCase();
@@ -105,7 +86,7 @@ useEffect(() => {
       link.click();
       document.body.removeChild(link);
     } catch (err) {
-      alert(`❌ ${err.message}`);
+      console.error(err.message);
     }
   };
 
@@ -113,37 +94,29 @@ useEffect(() => {
     for (const card of eCards) {
       if (card.sf10_document_path) {
         await handleDownload(card.sf10_document_path);
-        await new Promise((r) => setTimeout(r, 300)); // wait between downloads
+        await new Promise((r) => setTimeout(r, 300));
       }
     }
   };
 
-  const handleDeleteECard = async (recordId) => {
-    if (!window.confirm("Are you sure you want to delete this eCard?")) return;
-
+  const handleDeleteECard = async () => {
+    const recordId = selectedCardId;
+    if (!recordId) return;
     const token = sessionStorage.getItem("token");
     try {
-      const res = await fetch(
-        `http://localhost:3001/esf10/students/${recordId}/delete-sf10`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const res = await fetch(`http://localhost:3001/esf10/students/${recordId}/delete-sf10`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!res.ok) throw new Error("Failed to delete eCard");
-
       const result = await res.json();
       if (result.success) {
-        setECards((prev) => prev.filter((c) => c._id !== recordId));
-        alert("✅ E-Card deleted successfully.");
-        window.location.reload();
-      } else {
-        throw new Error(result.message || "Unknown error.");
-      }
+        setShowDeleteModal(false);
+        window.location.reload(); // reload page after delete
+      } else throw new Error(result.message || "Unknown error.");
     } catch (err) {
-      alert(`❌ ${err.message}`);
+      console.error(err.message);
+      setShowDeleteModal(false);
     }
   };
 
@@ -167,22 +140,28 @@ useEffect(() => {
     );
 
   return (
-    <div className="container-sm">
-      {/* Header */}
-      <div className="d-flex justify-content-end align-items-center mb-4">
-        <button
-          className="btn btn-outline-dark btn-lg d-flex align-items-center gap-2"
-          onClick={() => window.history.back()}
-        >
-          <i className="bi bi-arrow-left"></i> Back
-        </button>
+    <div className="container py-4">
+      {/* Go Back Button */}
+      <button className="btn btn-outline-secondary mb-3 " onClick={() => navigate(-1)}>
+        <i className="bi bi-arrow-left me-2"></i> Go Back
+      </button>
+
+      {/* Profile Header */}
+      <div className="d-flex align-items-center justify-content-between mb-4">
+        <h1 className="fw-bold fs-2 text-primary">{student.first_name} {student.last_name}</h1>
+        {eCards.length > 0 && (
+          <button
+            className="btn btn-success btn-lg"
+            onClick={handleDownloadAll}
+            disabled={!permissions.download_documents}
+          >
+            <i className="bi bi-download me-2"></i> Download All
+          </button>
+        )}
       </div>
 
-      {/* Student Info */}
+      {/* Student Info Card */}
       <div className="card shadow-sm rounded-4 border-0 mb-5">
-        <div className="card-header bg-dark text-white rounded-top-4 fs-4 fw-semibold">
-          <i className="bi bi-info-circle me-2"></i> Student Information
-        </div>
         <div className="card-body p-4">
           {transferRequest?.request_status === "Approved" && (
             <div className="alert alert-success text-center fw-bold fs-5 mb-4">
@@ -190,87 +169,41 @@ useEffect(() => {
             </div>
           )}
           <div className="row gy-3">
-            <div className="col-md-4">
-              <strong>LRN:</strong> {student.lrn}
-            </div>
-            <div className="col-md-8">
-              <strong>Full Name:</strong> {student.first_name} {student.middle_name} {student.last_name}
-            </div>
-            <div className="col-md-4">
-              <strong>Gender:</strong> {student.gender}
-            </div>
-            <div className="col-md-4">
-              <strong>Date of Birth:</strong> {new Date(student.date_of_birth).toLocaleDateString()}
-            </div>
-            <div className="col-md-4">
-              <strong>Guardian:</strong> {student.guardian_name}
-            </div>
-            <div className="col-md-4">
-              <strong>Contact:</strong> {student.contact_number}
-            </div>
-            <div className="col-md-8">
-              <strong>Address:</strong> {`${student.street}, ${student.city}, ${student.province}, ${student.zip_code}`}
-            </div>
+            <div className="col-md-4"><strong>LRN:</strong> {student.lrn}</div>
+            <div className="col-md-8"><strong>Full Name:</strong> {student.first_name} {student.middle_name} {student.last_name}</div>
+            <div className="col-md-4"><strong>Gender:</strong> {student.gender}</div>
+            <div className="col-md-4"><strong>Date of Birth:</strong> {new Date(student.date_of_birth).toLocaleDateString()}</div>
+            <div className="col-md-4"><strong>Guardian:</strong> {student.guardian_name}</div>
+            <div className="col-md-4"><strong>Contact:</strong> {student.contact_number}</div>
+            <div className="col-md-8"><strong>Address:</strong> {`${student.street}, ${student.city}, ${student.province}, ${student.zip_code}`}</div>
           </div>
         </div>
       </div>
 
       {/* E-Cards Section */}
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h2 className="fw-bold text-success fs-3">
-          <i className="bi bi-journal-text me-2"></i> E-Cards
-        </h2>
-        {eCards.length > 0 && (
-          <button className="btn btn-success btn-lg" onClick={handleDownloadAll}   disabled={!permissions.download_documents}>
-            <i className="bi bi-download me-2"></i> Download All
-          </button>
-        )}
-      </div>
-
+      <h2 className="fw-bold text-secondary mb-3"><i className="bi bi-journal-text me-2"></i>E-Cards</h2>
       {eCards.length === 0 ? (
         <p className="text-muted fst-italic text-center">No eCards available.</p>
       ) : (
         <div className="row row-cols-1 row-cols-md-3 g-4">
           {eCards.map((card) => (
             <div key={card._id} className="col">
-              <div className="card h-100 shadow-sm border-0 rounded-4">
+              <div className="card h-100 shadow-sm rounded-4 border-0">
                 <div className="card-body d-flex flex-column justify-content-between">
-                <div className="d-flex align-items-center gap-3 mb-3">
-  {(() => {
-    const filePath = card.sf10_document_path;
-    const ext = getFileExtension(filePath);
-    if (["png", "jpg", "jpeg", "gif", "bmp", "webp"].includes(ext)) {
-      return (
-        <img
-          src={filePath}
-          alt="Preview"
-          className="rounded shadow-sm"
-          style={{ width: "60px", height: "60px", objectFit: "cover" }}
-        />
-      );
-    } else if (ext === "pdf") {
-      return (
-        <div
-          className="bg-danger d-flex align-items-center justify-content-center text-white rounded"
-          style={{ width: "60px", height: "60px" }}
-        >
-          <i className="bi bi-file-earmark-pdf-fill fs-2"></i>
-        </div>
-      );
-    } else {
-      return (
-        <div
-          className="bg-secondary d-flex align-items-center justify-content-center text-white rounded"
-          style={{ width: "60px", height: "60px" }}
-        >
-          <i className="bi bi-file-earmark-text-fill fs-2"></i>
-        </div>
-      );
-    }
-  })()}
-  <h5 className="mb-0 text-truncate">{card.sf10_document_path?.split("/").pop() || "Unnamed eCard"}</h5>
-</div>
-
+                  <div className="d-flex align-items-center gap-3 mb-3">
+                    {(() => {
+                      const filePath = card.sf10_document_path;
+                      const ext = getFileExtension(filePath);
+                      if (["png","jpg","jpeg","gif","bmp","webp"].includes(ext)) {
+                        return <img src={filePath} alt="Preview" className="rounded shadow-sm" style={{ width: "60px", height: "60px", objectFit: "cover" }} />;
+                      } else if (ext === "pdf") {
+                        return <div className="bg-danger d-flex align-items-center justify-content-center text-white rounded" style={{ width: "60px", height: "60px" }}><i className="bi bi-file-earmark-pdf-fill fs-2"></i></div>;
+                      } else {
+                        return <div className="bg-secondary d-flex align-items-center justify-content-center text-white rounded" style={{ width: "60px", height: "60px" }}><i className="bi bi-file-earmark-text-fill fs-2"></i></div>;
+                      }
+                    })()}
+                    <h5 className="mb-0 text-truncate">{card.sf10_document_path?.split("/").pop() || "Unnamed eCard"}</h5>
+                  </div>
                   <p className="card-text small text-muted">
                     Grade: {card.grade_level} | Section: {card.section} <br />
                     SY: {card.start_year}-{card.end_year} <br />
@@ -278,26 +211,20 @@ useEffect(() => {
                   </p>
                   <div className="d-flex flex-column gap-2">
                     <div className="d-flex gap-2">
-                      <button
-                      view_ecards
-                       disabled={!permissions.view_ecards}
-                        className="btn btn-outline-primary flex-grow-1"
-                        onClick={() => openFileViewer(card)}
-                      >
+                      <button disabled={!permissions.view_ecards} className="btn btn-outline-primary flex-grow-1" onClick={() => openFileViewer(card)}>
                         <i className="bi bi-eye-fill me-1"></i> View
                       </button>
-                      <button
-                        className="btn btn-outline-success flex-grow-1"
-                        onClick={() => handleDownload(card.sf10_document_path)}
-                          disabled={!permissions.download_documents}
-                      >
+                      <button disabled={!permissions.download_documents} className="btn btn-outline-success flex-grow-1" onClick={() => handleDownload(card.sf10_document_path)}>
                         <i className="bi bi-download me-1"></i> Download
                       </button>
                     </div>
                     <button
-                     disabled={!permissions.delete_documents}
+                      disabled={!permissions.delete_documents}
                       className="btn btn-outline-danger"
-                      onClick={() => handleDeleteECard(card.record_id)}
+                      onClick={() => {
+                        setSelectedCardId(card.record_id);
+                        setShowDeleteModal(true);
+                      }}
                     >
                       <i className="bi bi-trash-fill me-1"></i> Delete
                     </button>
@@ -309,9 +236,30 @@ useEffect(() => {
         </div>
       )}
 
-      {/* Modal for File Viewer */}
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: "rgba(0,0,0,0.6)" }} onClick={() => setShowDeleteModal(false)}>
+          <div className="modal-dialog modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content rounded-4 shadow-lg">
+              <div className="modal-header border-0">
+                <h5 className="modal-title">Confirm Delete</h5>
+                <button type="button" className="btn-close" onClick={() => setShowDeleteModal(false)}></button>
+              </div>
+              <div className="modal-body">
+                Are you sure you want to delete this eCard? This action cannot be undone.
+              </div>
+              <div className="modal-footer border-0">
+                <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)}>Cancel</button>
+                <button className="btn btn-danger" onClick={handleDeleteECard}>Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File Viewer Modal */}
       {viewingFile && viewingFile.sf10_document_path && (
-        <div className="modal fade show d-block" tabIndex="-1" role="dialog" style={{ backgroundColor: "rgba(0,0,0,0.6)" }} onClick={closeFileViewer}>
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: "rgba(0,0,0,0.6)" }} onClick={closeFileViewer}>
           <div className="modal-dialog modal-xl modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
             <div className="modal-content rounded-4 shadow-lg" style={{ height: "80vh" }}>
               <div className="modal-header border-0">
@@ -321,7 +269,7 @@ useEffect(() => {
               <div className="modal-body p-0 bg-light" style={{ height: "calc(100% - 56px)" }}>
                 {(() => {
                   const ext = getFileExtension(viewingFile.sf10_document_path);
-                  if (["png", "jpg", "jpeg", "gif", "bmp", "webp"].includes(ext)) {
+                  if (["png","jpg","jpeg","gif","bmp","webp"].includes(ext)) {
                     return <img src={viewingFile.sf10_document_path} className="img-fluid h-100 mx-auto d-block" style={{ objectFit: "contain" }} alt="Document" />;
                   }
                   if (ext === "pdf") {

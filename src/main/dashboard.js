@@ -1,586 +1,336 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Route, Routes, NavLink, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { Route, Routes, NavLink } from "react-router-dom";
 import {
-  FaHome,
-  FaUserGraduate,
-  FaUsersCog,
-  FaChevronDown,
-  FaBuilding,
-  FaBars,
-  FaPlus,
-  FaSignOutAlt,
-  FaDatabase,
-  FaListAlt,
-  FaUpload,
-  FaExchangeAlt,
-  FaClipboardList,
-  FaHistory,
-  FaBook,
-  FaChalkboardTeacher,
+  FaHome, FaUserGraduate, FaUsersCog, FaChevronDown, FaBuilding, FaBars,
+  FaPlus, FaSignOutAlt, FaDatabase, FaListAlt, FaUpload, FaExchangeAlt,
+  FaClipboardList, FaHistory, FaBook, FaChalkboardTeacher, FaCalendarAlt
 } from "react-icons/fa";
 
-
 // Screens
-import Home from '../screens/home';
-import StudentInformation from '../screens/student_information';
-import AddStudent from '../screens/add_students';
-import AddUser from '../screens/add_users';
-import EditStudent from '../screens/edit_student';
-import StudentRecord from '../screens/record_students';
-import UploadEcard from '../screens/upload_ecards';
-import UploadEcardAll from '../screens/upload_ecards_all';
-import User from '../screens/users';
-import SubjectUpsert from '../screens/subject_upsert';
-import SubjectList from '../screens/subject_list';
-import SchoolSettings from '../screens/school_settings';
-import Backup from '../screens/backup';
-import CreateRoles from '../screens/create_roles';
-import EditPermission from '../screens/edit_permission';
-import RequestTransfer from '../screens/request_transfer';
-import ViewRequest from '../screens/view_request';
-import AllLogs from '../screens/all_logs';
-import NotFound from '../screens/not_found';
+import Home from "../screens/home";
+import StudentInformation from "../screens/student_information";
+import AddStudent from "../screens/add_students";
+import AddUser from "../screens/add_users";
+import EditStudent from "../screens/edit_student";
+import StudentRecord from "../screens/record_students";
+import UploadEcard from "../screens/upload_ecards";
+import UploadEcardAll from "../screens/upload_ecards_all";
+import User from "../screens/users";
+import SubjectUpsert from "../screens/subject_upsert";
+import SubjectList from "../screens/subject_list";
+import SchoolSettings from "../screens/school_settings";
+import Backup from "../screens/backup";
+import CreateRoles from "../screens/create_roles";
+import EditPermission from "../screens/edit_permission";
+import RequestTransfer from "../screens/request_transfer";
+import ViewRequest from "../screens/view_request";
+import AllLogs from "../screens/all_logs";
+import DisplaySchoolYear from "../screens/display_school_year";
+import UpsertSchoolYear from "../screens/upsert_school_year";
+import NotFound from "../screens/not_found";
 
 // Helpers
-import { checkToken } from '../components/token_checker';
-import { getUserPermissions } from '../components/get_permission';
+import { checkToken } from "../components/token_checker";
+import { getUserPermissions } from "../components/get_permission";
 
 // Styles
-import './dashboard.css';
+import "./dashboard.css";
+
+const SidebarLink = ({ to, icon: Icon, label, collapsed }) => (
+  <NavLink to={to} className={({ isActive }) => `link ${isActive ? "active" : ""}`}>
+    <Icon /> {!collapsed && <span className="ms-2">{label}</span>}
+  </NavLink>
+);
+
+const SidebarDropdown = ({ label, icon: Icon, collapsed, open, setOpen, children }) => (
+  <li className="dropdown-link">
+    <div
+      className="link d-flex justify-content-between align-items-center"
+      onClick={() => setOpen(!open)}
+      style={{ cursor: "pointer" }}
+    >
+      <div className="d-flex align-items-center">
+        <Icon /> {!collapsed && <span className="ms-2">{label}</span>}
+      </div>
+      {!collapsed && <FaChevronDown className={`dropdown-icon ${open ? "rotate" : ""}`} />}
+    </div>
+    <ul className={`submenu ${open ? "show" : ""}`} style={{ display: collapsed ? "none" : undefined }}>
+      {children}
+    </ul>
+  </li>
+);
 
 const Dashboard = ({ onLogout }) => {
-  // === States ===
   const [collapsed, setCollapsed] = useState(false);
-  const [isStudentMenuOpen, setIsStudentMenuOpen] = useState(false);
-  const [isSysAdminOpen, setIsSysAdminOpen] = useState(false);
-  const [isCurriculumMenuOpen, setIsCurriculumMenuOpen] = useState(false);
+  const [openMenus, setOpenMenus] = useState({});
   const [user, setUser] = useState(null);
   const [schoolData, setSchoolData] = useState({});
   const [logoUrl, setLogoUrl] = useState(null);
   const [permissions, setPermissions] = useState({});
 
-  const location = useLocation();
-  const schoolId = '1234567890';
-  const token = sessionStorage.getItem('token');
-  const userRole = sessionStorage.getItem('user_role');
+  const schoolId = "1234567890";
+  const token = sessionStorage.getItem("token");
+  const userRole = sessionStorage.getItem("user_role");
 
-  // === Effects ===
-  useEffect(() => {
-    const perms = getUserPermissions();
-    setPermissions(perms || {});
-  }, []);
+  // ---- Config Menus ----
+const menus = [
+  {
+    type: "link",
+    roles: ["admin", "registrar"],
+    permission: "view_reports",
+    to: "/dashboard",
+    icon: FaHome,
+    label: "Dashboard Overview",
+  },
+  {
+    type: "dropdown",
+    label: "Manage Student Records",
+    icon: FaUserGraduate,
+    key: "student",
+    children: [
+      { to: "/student_information", icon: FaListAlt, label: "Student Information", permission: "view_student_info" },
+      { to: "/add_student", icon: FaPlus, label: "Register New Student", permission: "register_student" },
+      { to: "/upload_ecards_all", icon: FaUpload, label: "Upload SF10 Records", permission: "upload_documents" },
+      { to: "/view_request", icon: FaExchangeAlt, label: "Transfer Requests", permission: "approve_transfers" },
+    ],
+  },
+  {
+    type: "dropdown",
+    label: "Academic Settings",
+    icon: FaUsersCog,
+    key: "academic_settings",
+    roles: ["admin"],
+    children: [
+      { to: "/curriculum", icon: FaClipboardList, label: "Curriculum" },
+      { to: "/subjects", icon: FaBook, label: "Subjects" },
+      { to: "/assign-teachers", icon: FaChalkboardTeacher, label: "Teacher Assignments" },
+    ],
+  },
+  {
+    type: "dropdown",
+    label: "System Administration",
+    icon: FaUsersCog,
+    key: "sysadmin",
+    roles: ["admin"],
+    children: [
+      { to: "/users_account", icon: FaUsersCog, label: "User Accounts & Roles" },
+      { to: "/school_settings", icon: FaBuilding, label: "School Information", permission: "manage_school_settings" },
+      { to: "/school_year", icon: FaCalendarAlt, label: "School Year" },
+      { to: "/all_logs", icon: FaHistory, label: "System Logs", permission: "view_logs" },
+      { to: "/backup", icon: FaDatabase, label: "Database Backup", permission: "export_data" },
+    ],
+  },
+];
 
+
+  // ---- Effects ----
   useEffect(() => {
     checkToken();
-  }, []);
+    setPermissions(getUserPermissions() || {});
 
-  useEffect(() => {
-    const fetchUser = async () => {
+    const loginRaw = sessionStorage.getItem("loginResponse");
+    if (loginRaw) {
       try {
-        const loginRaw = sessionStorage.getItem('loginResponse');
-        if (!loginRaw) {
-          console.warn('loginResponse not found in sessionStorage');
-          return;
-        }
-
         const loginData = JSON.parse(loginRaw);
-        if (loginData && typeof loginData === 'object' && loginData.user) {
-          setUser(loginData.user);
-        } else {
-          console.warn('User data not found or malformed in loginResponse');
-        }
-      } catch (err) {
-        console.error('Failed to parse loginResponse from sessionStorage:', err);
+        if (loginData?.user) setUser(loginData.user);
+      } catch (e) {
+        console.error("Invalid loginResponse:", e);
       }
-    };
+    }
 
-    const fetchSchoolData = async () => {
-      try {
-        const res = await axios.get(
-          `http://localhost:3001/esf10/school-defaults/${schoolId}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        const data = res.data || {};
-        const { user, school_id, created_at, updated_at, ...filtered } = data;
+    axios
+      .get(`http://localhost:3001/esf10/school-defaults/${schoolId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then(({ data }) => {
+        const { user, school_id, created_at, updated_at, ...filtered } = data || {};
         setSchoolData(filtered);
-
-        if (data?.school_logo) {
-          const logo = data.school_logo.startsWith('http')
-            ? data.school_logo
-            : `http://localhost:3001${data.school_logo}`;
-          setLogoUrl(logo);
-        } else {
-          setLogoUrl(null);
-        }
-      } catch (err) {
-        console.error('Failed to fetch school defaults', err);
-      }
-    };
-
-    fetchUser();
-    fetchSchoolData();
+        setLogoUrl(
+          data?.school_logo
+            ? data.school_logo.startsWith("http")
+              ? data.school_logo
+              : `http://localhost:3001${data.school_logo}`
+            : null
+        );
+      })
+      .catch((err) => console.error("Failed to fetch school defaults", err));
   }, []);
 
-  // === Derived Values ===
-  const fullName =
-    user && typeof user === 'object'
-      ? [user.first_name, user.middle_name, user.last_name]
-          .filter(name => typeof name === 'string' && name.trim())
-          .join(' ')
-      : 'Loading...';
+  const fullName = user
+    ? [user.first_name, user.middle_name, user.last_name].filter(Boolean).join(" ")
+    : "Loading...";
+  const avatarInitial = user?.first_name?.[0]?.toUpperCase() || "?";
+  const role = Array.isArray(user?.role) ? user.role[0] : user?.role || "User";
 
-  const avatarInitial =
-    typeof user?.first_name === 'string'
-      ? user.first_name.charAt(0).toUpperCase()
-      : '?';
+  // ---- Sidebar Renderer ----
+  const renderMenu = (menu) => {
+    if (menu.roles && !menu.roles.includes(userRole)) return null;
+    if (menu.permission && !permissions[menu.permission]) return null;
 
-  const role = Array.isArray(user?.role)
-    ? user.role[0]
-    : typeof user?.role === 'string'
-    ? user.role
-    : 'User';
+    if (menu.type === "link") {
+      return (
+        <li key={menu.to}>
+          <SidebarLink to={menu.to} icon={menu.icon} label={menu.label} collapsed={collapsed} />
+        </li>
+      );
+    }
 
-  // === Render ===
+    if (menu.type === "dropdown") {
+      const isOpen = openMenus[menu.key];
+      return (
+        <SidebarDropdown
+          key={menu.key}
+          label={menu.label}
+          icon={menu.icon}
+          collapsed={collapsed}
+          open={isOpen}
+          setOpen={() => setOpenMenus((prev) => ({ ...prev, [menu.key]: !isOpen }))}
+        >
+          {menu.children.map((child) => {
+            if (child.permission && !permissions[child.permission]) return null;
+            return (
+              <li key={child.to}>
+                <SidebarLink to={child.to} icon={child.icon} label={child.label} collapsed={collapsed} />
+              </li>
+            );
+          })}
+        </SidebarDropdown>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="dashboard-container">
       {/* Sidebar */}
-      <div className={`sidebar glass ${collapsed ? 'collapsed' : ''}`}>
+      <div className={`sidebar glass ${collapsed ? "collapsed" : ""}`}>
         <div className="sidebar-header p-3 border-bottom border-secondary">
           {!collapsed && (
             <>
-              <h2
-                className="fw-bold text-white mb-1"
-                style={{ letterSpacing: '2px', fontSize: '1.8rem' }}
-              >
+              <h2 className="fw-bold text-white mb-1" style={{ letterSpacing: "2px", fontSize: "1.8rem" }}>
                 E-SF10 SYSTEM
               </h2>
-              <p
-                className="text-white-50 mt-3"
-                style={{ maxWidth: '260px', lineHeight: '1.2', fontSize: '0.5rem' }}
-              >
+              <p className="text-white-50 mt-3" style={{ maxWidth: "260px", fontSize: "0.5rem" }}>
                 Manage student forms easily and securely.
               </p>
             </>
           )}
         </div>
 
-        <ul className="nav-links" style={{ fontSize: '0.9rem' }}>
-          {(userRole === 'admin' ||
-            userRole === 'registrar' ||
-            permissions.view_reports) && (
-            <li>
-              <NavLink
-                to="/dashboard"
-                className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-              >
-                <FaHome />
-                {!collapsed && <span className="ms-2">Dashboard Overview</span>}
-              </NavLink>
-            </li>
-          )}
-
-          {/* Manage Student Records Dropdown */}
-          <li className="dropdown-link">
-            <div
-              className="link d-flex justify-content-between align-items-center"
-              onClick={() => setIsStudentMenuOpen(prev => !prev)}
-              style={{ cursor: 'pointer' }}
-            >
-              <div className="d-flex align-items-center">
-                <FaUserGraduate />
-                {!collapsed && <span className="ms-2">Manage Student Records</span>}
-              </div>
-              {!collapsed && (
-                <FaChevronDown
-                  className={`dropdown-icon ${isStudentMenuOpen ? 'rotate' : ''}`}
-                />
-              )}
-            </div>
-
-            <ul
-              className={`submenu ${isStudentMenuOpen ? 'show' : ''}`}
-              style={{ display: collapsed ? 'none' : undefined }}
-            >
-              <li>
-                <NavLink
-                  to="/student_information"
-                  className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-                >
-                  <FaListAlt />
-                  {!collapsed && <span className="ms-4">View All Students</span>}
-                </NavLink>
-              </li>
-
-              {permissions.register_student && (
-                <li>
-                  <NavLink
-                    to="/add_student"
-                    className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-                  >
-                    <FaPlus />
-                    {!collapsed && <span className="ms-4">Add New Student</span>}
-                  </NavLink>
-                </li>
-              )}
-
-              {permissions.upload_documents && (
-                <li>
-                  <NavLink
-                    to="/upload_ecards_all"
-                    className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-                  >
-                    <FaUpload />
-                    {!collapsed && <span className="ms-4">Upload Student SF10</span>}
-                  </NavLink>
-                </li>
-              )}
-
-              {permissions.approve_transfers && (
-                <li>
-                  <NavLink
-                    to="/view_request"
-                    className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-                  >
-                    <FaExchangeAlt />
-                    {!collapsed && (
-                      <span className="ms-4">Student Transfer Requests</span>
-                    )}
-                  </NavLink>
-                </li>
-              )}
-            </ul>
-          </li>
-
-
-       {/* School Curriculum */}
-{userRole === 'admin' && (
-  <li className="dropdown-link">
-    <div
-      className="link d-flex justify-content-between align-items-center"
-      onClick={() => setIsCurriculumMenuOpen(prev => !prev)}
-      style={{ cursor: 'pointer' }}
-    >
-      <div className="d-flex align-items-center">
-        <FaUsersCog />
-        {!collapsed && (
-          <span className="ms-2">School Curriculum</span>
-        )}
-      </div>
-      {!collapsed && (
-        <FaChevronDown
-          className={`dropdown-icon ${isCurriculumMenuOpen ? 'rotate' : ''}`}
-        />
-      )}
-    </div>
-
-    <ul
-      className={`submenu ${isCurriculumMenuOpen ? 'show' : ''}`}
-      style={{ display: collapsed ? 'none' : undefined }}
-    >
-      {/* Manage Subjects */}
-      <li>
-        <NavLink
-          to="/subjects"
-          className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-        >
-          <FaBook />
-          {!collapsed && <span className="ms-4">Subjects</span>}
-        </NavLink>
-      </li>
-
-      {/* Curriculum */}
-      <li>
-        <NavLink
-          to="/curriculum"
-          className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-        >
-          <FaClipboardList />
-          {!collapsed && <span className="ms-4">Curriculum</span>}
-        </NavLink>
-      </li>
-
-      {/* Assign Teachers */}
-      <li>
-        <NavLink
-          to="/assign-teachers"
-          className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-        >
-          <FaChalkboardTeacher />
-          {!collapsed && <span className="ms-4">Assign Teachers</span>}
-        </NavLink>
-      </li>
-    </ul>
-  </li>
-)}
-
-
-          {/* Sys Admin Panel */}
-          {userRole === 'admin' && (
-            <li className="dropdown-link">
-              <div
-                className="link d-flex justify-content-between align-items-center"
-                onClick={() => setIsSysAdminOpen(prev => !prev)}
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="d-flex align-items-center">
-                  <FaUsersCog />
-                  {!collapsed && (
-                    <span className="ms-2">System Administrator Panel</span>
-                  )}
-                </div>
-                {!collapsed && (
-                  <FaChevronDown
-                    className={`dropdown-icon ${isSysAdminOpen ? 'rotate' : ''}`}
-                  />
-                )}
-              </div>
-
-              <ul
-                className={`submenu ${isSysAdminOpen ? 'show' : ''}`}
-                style={{ display: collapsed ? 'none' : undefined }}
-              >
-                <li>
-                  <NavLink
-                    to="/users_account"
-                    className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-                  >
-                    <FaUsersCog />
-                    {!collapsed && (
-                      <span className="ms-4">User Roles & Permissions</span>
-                    )}
-                  </NavLink>
-                </li>
-
-                {permissions.manage_school_settings && (
-                  <li>
-                    <NavLink
-                      to="/school_settings"
-                      className={({ isActive }) =>
-                        `link ${isActive ? 'active' : ''}`
-                      }
-                    >
-                      <FaBuilding />
-                      {!collapsed && (
-                        <span className="ms-4">School Default Settings</span>
-                      )}
-                    </NavLink>
-                  </li>
-                )}
-
-                {permissions.view_logs && (
-                  <li>
-                    <NavLink
-                      to="/all_logs"
-                      className={({ isActive }) =>
-                        `link ${isActive ? 'active' : ''}`
-                      }
-                    >
-                      <FaHistory />
-                      {!collapsed && <span className="ms-4">System Logs</span>}
-                    </NavLink>
-                  </li>
-                )}
-
-                {permissions.export_data && (
-                  <li>
-                    <NavLink
-                      to="/backup"
-                      className={({ isActive }) =>
-                        `link ${isActive ? 'active' : ''}`
-                      }
-                    >
-                      <FaDatabase />
-                      {!collapsed && (
-                        <span className="ms-4">Backup System Database</span>
-                      )}
-                    </NavLink>
-                  </li>
-                )}
-              </ul>
-            </li>
-          )}
+        <ul className="nav-links" style={{ fontSize: "0.9rem" }}>
+          {menus.map(renderMenu)}
         </ul>
 
-        {/* Footer */}
         {!collapsed && (
-          <div
-            className="school-info p-3 text-white small"
-            style={{ fontSize: '0.75rem' }}
-          >
+          <div className="school-info p-3 text-white small" style={{ fontSize: "0.75rem" }}>
             <hr className="bg-light" />
-            <p
-              className="text-center mb-0"
-              style={{ fontSize: '0.7rem', opacity: 0.7 }}
-            >
+            <p className="text-center mb-0" style={{ fontSize: "0.7rem", opacity: 0.7 }}>
               &copy; {new Date().getFullYear()} All rights reserved.
             </p>
-            <p
-              className="text-center mb-0"
-              style={{
-                fontSize: '0.7rem',
-                opacity: 0.7,
-                fontStyle: 'italic',
-              }}
-            >
+            <p className="text-center mb-0" style={{ fontSize: "0.7rem", opacity: 0.7, fontStyle: "italic" }}>
               Extension Project by TMC Coding Club
             </p>
           </div>
         )}
       </div>
 
-      {/* Main */}
-      <div className="main">
-        <div className="topbar">
-          <div className="d-flex align-items-center justify-content-between">
-            <button
-              className="toggle-btn"
-              onClick={() => setCollapsed(!collapsed)}
-              aria-label="Toggle sidebar"
-            >
-              <FaBars />
-            </button>
+     {/* Main */}
+<div className="main">
+  <div className="topbar d-flex justify-content-between align-items-center">
+    {/* Left side: menu, logo, school name */}
+    <div className="d-flex align-items-center gap-3">
+      <button
+        className="toggle-btn"
+        onClick={() => setCollapsed(!collapsed)}
+        aria-label="Toggle sidebar"
+      >
+        <FaBars />
+      </button>
 
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt="School Logo"
-                style={{
-                  width: '60px',
-                  height: '60px',
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  border: '2px solid #fff',
-                  backgroundColor: '#e9ecef',
-                }}
-              />
-            ) : (
-              <div
-                className="rounded-circle bg-secondary d-flex justify-content-center align-items-center text-white"
-                style={{
-                  width: '60px',
-                  height: '60px',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                }}
-              >
-                N/A
-              </div>
-            )}
-
-            <div className="mx-3">
-              <h1 className="mb-0 fw-bold ">
-                {schoolData.school_name || 'Loading...'}
-              </h1>
-              <small className="text-muted" style={{ fontSize: '1rem' }}>
-                {schoolData.school_address || 'N/A'}
-              </small>
-            </div>
-          </div>
-
-          <div className="dropdown">
-            <button
-              className="btn bg-white border rounded-pill d-flex align-items-center gap-2 px-3 py-1"
-              type="button"
-              id="profileDropdown"
-              data-bs-toggle="dropdown"
-              aria-expanded="false"
-            >
-              <div
-                className="rounded-circle bg-primary text-white d-flex justify-content-center align-items-center"
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  fontSize: '1rem',
-                  fontWeight: '500',
-                  userSelect: 'none',
-                }}
-              >
-                {avatarInitial}
-              </div>
-
-              <div className="d-none d-md-flex flex-column text-start ms-2">
-                <span className="text-dark fw-medium">{fullName}</span>
-                <small className="text-muted" style={{ fontSize: '0.75rem' }}>
-                  {role}
-                </small>
-              </div>
-
-              <FaChevronDown className="text-muted small d-none d-md-inline ms-2" />
-            </button>
-
-            <ul
-              className="dropdown-menu dropdown-menu-end mt-2 shadow-sm"
-              aria-labelledby="profileDropdown"
-            >
-              <li>
-                <button
-                  className="dropdown-item d-flex align-items-center gap-2"
-                  onClick={onLogout}
-                >
-                  <FaSignOutAlt className="text-danger" />
-                  <span className="text-danger fw-semibold">Logout</span>
-                </button>
-              </li>
-            </ul>
-          </div>
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt="School Logo"
+          className="rounded-circle border"
+          style={{ width: 60, height: 60, objectFit: "cover" }}
+        />
+      ) : (
+        <div
+          className="rounded-circle bg-secondary text-white d-flex justify-content-center align-items-center"
+          style={{ width: 60, height: 60 }}
+        >
+          N/A
         </div>
+      )}
+
+      <div className="mx-2">
+        <h1 className="mb-0 fw-bold">
+          {schoolData.school_name || "Loading..."}
+        </h1>
+        <small className="text-muted">
+          {schoolData.school_address || "N/A"}
+        </small>
+      </div>
+    </div>
+
+    {/* Right side: profile dropdown */}
+    <div className="dropdown">
+      <button
+        className="btn bg-white border rounded-pill d-flex align-items-center gap-2 px-3 py-1"
+        data-bs-toggle="dropdown"
+      >
+        <div
+          className="rounded-circle bg-primary text-white d-flex justify-content-center align-items-center"
+          style={{ width: 36, height: 36 }}
+        >
+          {avatarInitial}
+        </div>
+        <div className="d-none d-md-flex flex-column text-start ms-2">
+          <span className="fw-medium">{fullName}</span>
+          <small className="text-muted">{role}</small>
+        </div>
+        <FaChevronDown className="text-muted small d-none d-md-inline ms-2" />
+      </button>
+      <ul className="dropdown-menu dropdown-menu-end mt-2 shadow-sm">
+        <li>
+          <button
+            className="dropdown-item d-flex align-items-center gap-2"
+            onClick={onLogout}
+          >
+            <FaSignOutAlt className="text-danger" />
+            <span className="text-danger fw-semibold">Logout</span>
+          </button>
+        </li>
+      </ul>
+    </div>
+  </div>
+
 
         {/* Routes */}
         <div className="main-content">
           <Routes>
-            {permissions.view_reports && (
-              <Route path="/dashboard" element={<Home />} />
-            )}
-
-            {/* Student */}
-            {permissions.view_student_info && (
-              <Route
-                path="/student_information"
-                element={<StudentInformation />}
-              />
-            )}
-            {permissions.register_student && (
-              <Route path="/add_student" element={<AddStudent />} />
-            )}
+            {permissions.view_reports && <Route path="/dashboard" element={<Home />} />}
+            {permissions.view_student_info && <Route path="/student_information" element={<StudentInformation />} />}
+            {permissions.register_student && <Route path="/add_student" element={<AddStudent />} />}
             {permissions.upload_documents && (
               <>
                 <Route path="/upload_ecards/:lrn" element={<UploadEcard />} />
-                <Route
-                  path="/upload_ecards_all"
-                  element={<UploadEcardAll />}
-                />
+                <Route path="/upload_ecards_all" element={<UploadEcardAll />} />
               </>
             )}
-            {permissions.edit_student_info && (
-              <Route path="/edit_student/:lrn" element={<EditStudent />} />
-            )}
-            {permissions.view_student_info && (
-              <Route path="/record_student/:lrn" element={<StudentRecord />} />
-            )}
+            {permissions.edit_student_info && <Route path="/edit_student/:lrn" element={<EditStudent />} />}
+            {permissions.view_student_info && <Route path="/record_student/:lrn" element={<StudentRecord />} />}
+            {permissions.request_transfers && <Route path="/request_transfer/:studentId" element={<RequestTransfer />} />}
+            {permissions.approve_transfers && <Route path="/view_request" element={<ViewRequest />} />}
 
-            {/* Transfers */}
-            {permissions.request_transfers && (
-              <Route
-                path="/request_transfer/:studentId"
-                element={<RequestTransfer />}
-              />
-            )}
-            {permissions.approve_transfers && (
-              <Route path="/view_request" element={<ViewRequest />} />
-            )}
-
-
-
-          {/* Curriculum */}
-               <Route path="/subjects" element={<SubjectList />} />
-               <Route path="/subjects/create" element={<SubjectUpsert />} />
-               <Route path="/subjects/edit/:id" element={<SubjectUpsert />} />
-
-
+            {/* Curriculum */}
+            <Route path="/subjects" element={<SubjectList />} />
+            <Route path="/subjects/create" element={<SubjectUpsert />} />
+            <Route path="/subjects/edit/:id" element={<SubjectUpsert />} />
+            <Route path="/school_year" element={<DisplaySchoolYear />} />
+            <Route path="/school_year/create" element={<UpsertSchoolYear />} />
+            <Route path="/school_year/edit/:id" element={<UpsertSchoolYear />} />
 
             {/* Admin */}
             {permissions.manage_users && (
@@ -588,24 +338,14 @@ const Dashboard = ({ onLogout }) => {
                 <Route path="/users_account" element={<User />} />
                 <Route path="/add_user" element={<AddUser />} />
                 <Route path="/edit-user/:userId" element={<AddUser />} />
-                <Route
-                  path="/edit_permission/:userId"
-                  element={<EditPermission />}
-                />
+                <Route path="/edit_permission/:userId" element={<EditPermission />} />
                 <Route path="/create_roles" element={<CreateRoles />} />
               </>
             )}
-            {permissions.manage_school_settings && (
-              <Route path="/school_settings" element={<SchoolSettings />} />
-            )}
-            {permissions.export_data && (
-              <Route path="/backup" element={<Backup />} />
-            )}
-            {permissions.view_logs && (
-              <Route path="/all_logs" element={<AllLogs />} />
-            )}
+            {permissions.manage_school_settings && <Route path="/school_settings" element={<SchoolSettings />} />}
+            {permissions.export_data && <Route path="/backup" element={<Backup />} />}
+            {permissions.view_logs && <Route path="/all_logs" element={<AllLogs />} />}
 
-            {/* Fallback */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </div>
