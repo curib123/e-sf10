@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 const UpsertSchoolYear = () => {
   const navigate = useNavigate();
-  const { id } = useParams(); 
+  const { id } = useParams();
   const isEdit = Boolean(id);
 
   const [formData, setFormData] = useState({
@@ -13,7 +13,7 @@ const UpsertSchoolYear = () => {
     end_year: "",
   });
 
-  const [isActive, setIsActive] = useState(false); // ✅ separate state for toggle
+  const [isActive, setIsActive] = useState(false); // ✅ toggle switch state
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
   const [toggleLoading, setToggleLoading] = useState(false);
@@ -43,7 +43,7 @@ const UpsertSchoolYear = () => {
               start_year: data.schoolYear.start_year || "",
               end_year: data.schoolYear.end_year || "",
             });
-            setIsActive(data.schoolYear.is_active === 1); // ✅ store toggle separately
+            setIsActive(data.schoolYear.is_active === 1);
           } else {
             setResponse({ success: false, message: "❌ Failed to load school year!" });
           }
@@ -70,42 +70,49 @@ const UpsertSchoolYear = () => {
     }
   };
 
-  // 📌 Submit handler
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+// 📌 Submit handler (Create / Update)
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      const url = isEdit
-        ? `http://localhost:3001/esf10/school-year/update-school-year/${id}`
-        : "http://localhost:3001/esf10/school-year/create-school-year";
+  try {
+    const url = isEdit
+      ? `http://localhost:3001/esf10/school-year/update-school-year/${id}`
+      : "http://localhost:3001/esf10/school-year/create-school-year";
 
-      const method = isEdit ? "PUT" : "POST";
+    const method = isEdit ? "PUT" : "POST";
 
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          start_year: parseInt(formData.start_year),
-          end_year: parseInt(formData.end_year),
-        }),
-      });
+    const res = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        start_year: parseInt(formData.start_year),
+        end_year: parseInt(formData.end_year),
+      }),
+    });
 
-      const data = await res.json();
-      setResponse(data);
+    const data = await res.json();
+    setResponse(data);
 
-      if (data.success && !isEdit) {
+    if (data.success) {
+      if (isEdit) {
+        // ✅ Go back automatically if edit is successful
+        setTimeout(() => navigate(-1), 1200); 
+      } else {
+        // ✅ Reset form if creating
         setFormData({ start_year: "", end_year: "" });
       }
-    } catch (err) {
-      setResponse({ success: false, message: "⚠️ Something went wrong!" });
-    } finally {
-      setLoading(false);
     }
-  };
+  } catch (err) {
+    setResponse({ success: false, message: "⚠️ Something went wrong!" });
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // 📌 Toggle Active Status (PATCH)
   const handleToggleActive = async () => {
@@ -119,6 +126,7 @@ const UpsertSchoolYear = () => {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
+          body: JSON.stringify({ is_active: !isActive ? 1 : 0 }),
         }
       );
 
@@ -126,7 +134,7 @@ const UpsertSchoolYear = () => {
       setResponse(data);
 
       if (data.success) {
-        setIsActive(true); // ✅ once toggled, it becomes active
+        setIsActive((prev) => !prev);
       }
     } catch (err) {
       setResponse({ success: false, message: "⚠️ Toggle failed!" });
@@ -150,7 +158,7 @@ const UpsertSchoolYear = () => {
           <div className="card shadow-lg border-0 rounded-4">
             <div className="card-body p-5">
               <h3 className="text-center mb-4 fw-bold">
-                {isEdit ? " Edit School Year" : "Create School Year"}
+                {isEdit ? "Edit School Year" : "Create School Year"}
               </h3>
 
               {/* FORM */}
@@ -185,8 +193,32 @@ const UpsertSchoolYear = () => {
                   <label htmlFor="end_year">End Year</label>
                 </div>
 
+             {/* ✅ Toggle Switch only in Edit Mode */}
+              {isEdit && (
+                <div className="border rounded-3 p-3 bg-light d-flex justify-content-between align-items-center m-3">
+                  <span className="fw-semibold">School Year Status</span>
+                  <div className="form-check form-switch">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="toggleActive"
+                      checked={isActive}
+                      onChange={handleToggleActive}
+                      disabled={toggleLoading}
+                    />
+                    <label className="form-check-label ms-2" htmlFor="toggleActive">
+                      {toggleLoading
+                        ? "Updating..."
+                        : isActive
+                        ? "Active"
+                        : "Inactive"}
+                    </label>
+                  </div>
+                </div>
+              )}
+
                 {/* Buttons */}
-                <div className="d-flex gap-2">
+                <div className="d-flex gap-2 mb-4">
                   <button
                     type="button"
                     className="btn btn-secondary w-50 py-2 fw-semibold rounded-3"
@@ -211,34 +243,7 @@ const UpsertSchoolYear = () => {
                 </div>
               </form>
 
-              {/* Toggle only for Edit */}
-              {isEdit && (
-                <div className="mt-4 text-center">
-                  <button
-                    onClick={handleToggleActive}
-                    className={`btn ${isActive ? "btn-success" : "btn-outline-success"} w-100 py-2 fw-semibold rounded-3`}
-                    disabled={toggleLoading || isActive}
-                  >
-                    {toggleLoading
-                      ? "Activating..."
-                      : isActive
-                      ? "✅ Active School Year"
-                      : "Set as Active"}
-                  </button>
-                </div>
-              )}
-
-              {/* Response Message */}
-              {response && (
-                <div
-                  className={`alert mt-4 fade show ${
-                    response.success ? "alert-success" : "alert-danger"
-                  }`}
-                  role="alert"
-                >
-                  {response.message}
-                </div>
-              )}
+      
             </div>
           </div>
         </div>

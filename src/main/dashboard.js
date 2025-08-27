@@ -2,9 +2,9 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Route, Routes, NavLink } from "react-router-dom";
 import {
-  FaHome, FaUserGraduate, FaUsersCog, FaChevronDown, FaBuilding, FaBars,
+  FaHome, FaUserGraduate, FaUsersCog, FaChevronDown,FaSchool, FaBuilding, FaBars,
   FaPlus, FaSignOutAlt, FaDatabase, FaListAlt, FaUpload, FaExchangeAlt,
-  FaClipboardList, FaHistory, FaBook, FaChalkboardTeacher, FaCalendarAlt
+  FaClipboardList, FaHistory, FaBook, FaChalkboardTeacher, FaCalendarAlt,FaClipboardCheck
 } from "react-icons/fa";
 
 // Screens
@@ -17,8 +17,15 @@ import StudentRecord from "../screens/record_students";
 import UploadEcard from "../screens/upload_ecards";
 import UploadEcardAll from "../screens/upload_ecards_all";
 import User from "../screens/users";
+import GradeLevelList from "../screens/grade_level_list";
+import GradeLevelUpsert from "../screens/grade_level_upsert";
 import SubjectUpsert from "../screens/subject_upsert";
 import SubjectList from "../screens/subject_list";
+import Curriculum from "../screens/curriculum_list";
+import CurriculumUpsert from "../screens/curriculum_upsert";
+import CurriculumAssign from "../screens/curriculum_assign";
+import AssignSubjectPerYearLevel from "../screens/assign_subject_per_level_list";
+import AssignSubjectPerYearLevelForm from "../screens/assign_subject_per_year_form";
 import SchoolSettings from "../screens/school_settings";
 import Backup from "../screens/backup";
 import CreateRoles from "../screens/create_roles";
@@ -104,6 +111,7 @@ const menus = [
     children: [
       { to: "/curriculum", icon: FaClipboardList, label: "Curriculum" },
       { to: "/subjects", icon: FaBook, label: "Subjects" },
+      { to: "/assign-subject-per-year-level", icon: FaClipboardCheck, label: "Subject Per Year Level" },
       { to: "/assign-teachers", icon: FaChalkboardTeacher, label: "Teacher Assignments" },
     ],
   },
@@ -117,6 +125,7 @@ const menus = [
       { to: "/users_account", icon: FaUsersCog, label: "User Accounts & Roles" },
       { to: "/school_settings", icon: FaBuilding, label: "School Information", permission: "manage_school_settings" },
       { to: "/school_year", icon: FaCalendarAlt, label: "School Year" },
+      { to: "/grade_level", icon: FaSchool, label: "Grade Level" },
       { to: "/all_logs", icon: FaHistory, label: "System Logs", permission: "view_logs" },
       { to: "/backup", icon: FaDatabase, label: "Database Backup", permission: "export_data" },
     ],
@@ -325,9 +334,19 @@ const menus = [
             {permissions.approve_transfers && <Route path="/view_request" element={<ViewRequest />} />}
 
             {/* Curriculum */}
-            <Route path="/subjects" element={<SubjectList />} />
+           
+            <Route path="/curriculum" element={<Curriculum />} />
+            <Route path="/curriculum/create" element={<CurriculumUpsert />} />
+            <Route path="/curriculum/edit/:id" element={<CurriculumUpsert />} /> 
+             <Route path="/curriculum/assign-subject/:id" element={<CurriculumAssign />} />
+             <Route path="/subjects" element={<SubjectList />} />
             <Route path="/subjects/create" element={<SubjectUpsert />} />
-            <Route path="/subjects/edit/:id" element={<SubjectUpsert />} />
+            <Route path="/subjects/edit/:id" element={<SubjectUpsert />} /> assign-subject-per-year-level
+            <Route path="/assign-subject-per-year-level" element={<AssignSubjectPerYearLevel />} />
+            <Route path="/assign-subject-per-year-level/assign" element={<AssignSubjectPerYearLevelForm />} />
+            <Route path="/grade_level" element={<GradeLevelList />} />
+            <Route path="/grade_level/create" element={<GradeLevelUpsert />} />
+            <Route path="/grade_level/edit/:id" element={<GradeLevelUpsert />} />
             <Route path="/school_year" element={<DisplaySchoolYear />} />
             <Route path="/school_year/create" element={<UpsertSchoolYear />} />
             <Route path="/school_year/edit/:id" element={<UpsertSchoolYear />} />

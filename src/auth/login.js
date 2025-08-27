@@ -12,7 +12,7 @@ const InputField = ({ icon: Icon, type, placeholder, value, onChange, autoFocus 
       className="form-control border-0 rounded-end"
       placeholder={placeholder}
       required
-      value={value}
+      value={value}a
       onChange={onChange}
       style={{ fontSize: "1.1rem" }}
       autoFocus={autoFocus}
