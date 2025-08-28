@@ -8,19 +8,15 @@ const UpsertSchoolYear = () => {
   const { id } = useParams();
   const isEdit = Boolean(id);
 
-  const [formData, setFormData] = useState({
-    start_year: "",
-    end_year: "",
-  });
-
-  const [isActive, setIsActive] = useState(false); // ✅ toggle switch state
+  const [formData, setFormData] = useState({ start_year: "", end_year: "" });
+  const [isActive, setIsActive] = useState(false);
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
   const [toggleLoading, setToggleLoading] = useState(false);
 
   const token = sessionStorage.getItem("token");
 
-  // 🔑 Check token + fetch data if editing
+  // Fetch data if editing
   useEffect(() => {
     checkToken();
 
@@ -29,15 +25,9 @@ const UpsertSchoolYear = () => {
         try {
           const res = await fetch(
             `http://localhost:3001/esf10/school-year/school-year/${id}`,
-            {
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-            }
+            { headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } }
           );
           const data = await res.json();
-
           if (data.success && data.schoolYear) {
             setFormData({
               start_year: data.schoolYear.start_year || "",
@@ -51,70 +41,57 @@ const UpsertSchoolYear = () => {
           setResponse({ success: false, message: "⚠️ Something went wrong!" });
         }
       };
-
       fetchSchoolYear();
     }
   }, [id, isEdit, token]);
 
-  // 📌 Input change handler
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
 
     if (name === "start_year" && value) {
-      setFormData((prev) => ({
-        ...prev,
-        start_year: value,
-        end_year: parseInt(value) + 1,
-      }));
+      setFormData((prev) => ({ ...prev, start_year: value, end_year: parseInt(value) + 1 }));
     }
   };
 
-// 📌 Submit handler (Create / Update)
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
+  // Submit handler
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
 
-  try {
-    const url = isEdit
-      ? `http://localhost:3001/esf10/school-year/update-school-year/${id}`
-      : "http://localhost:3001/esf10/school-year/create-school-year";
+    try {
+      const url = isEdit
+        ? `http://localhost:3001/esf10/school-year/update-school-year/${id}`
+        : "http://localhost:3001/esf10/school-year/create-school-year";
+      const method = isEdit ? "PUT" : "POST";
 
-    const method = isEdit ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          start_year: parseInt(formData.start_year),
+          end_year: parseInt(formData.end_year),
+        }),
+      });
 
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        start_year: parseInt(formData.start_year),
-        end_year: parseInt(formData.end_year),
-      }),
-    });
+      const data = await res.json();
+      setResponse(data);
 
-    const data = await res.json();
-    setResponse(data);
-
-    if (data.success) {
-      if (isEdit) {
-        // ✅ Go back automatically if edit is successful
-        setTimeout(() => navigate(-1), 1200); 
-      } else {
-        // ✅ Reset form if creating
-        setFormData({ start_year: "", end_year: "" });
+      if (data.success) {
+        if (isEdit) {
+          setTimeout(() => navigate(-1), 1200);
+        } else {
+          setFormData({ start_year: "", end_year: "" });
+        }
       }
+    } catch (err) {
+      setResponse({ success: false, message: "⚠️ Something went wrong!" });
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    setResponse({ success: false, message: "⚠️ Something went wrong!" });
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
-
-  // 📌 Toggle Active Status (PATCH)
+  // Toggle Active Status
   const handleToggleActive = async () => {
     setToggleLoading(true);
     try {
@@ -122,20 +99,13 @@ const handleSubmit = async (e) => {
         `http://localhost:3001/esf10/school-year/school-year/${id}/set-active`,
         {
           method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ is_active: !isActive ? 1 : 0 }),
         }
       );
-
       const data = await res.json();
       setResponse(data);
-
-      if (data.success) {
-        setIsActive((prev) => !prev);
-      }
+      if (data.success) setIsActive((prev) => !prev);
     } catch (err) {
       setResponse({ success: false, message: "⚠️ Toggle failed!" });
     } finally {
@@ -143,7 +113,7 @@ const handleSubmit = async (e) => {
     }
   };
 
-  // 🕒 Auto-dismiss alert
+  // Auto-dismiss alert
   useEffect(() => {
     if (response) {
       const timer = setTimeout(() => setResponse(null), 5000);
@@ -161,9 +131,20 @@ const handleSubmit = async (e) => {
                 {isEdit ? "Edit School Year" : "Create School Year"}
               </h3>
 
+              {/* Response Alert */}
+              {response && (
+                <div
+                  className={`alert ${
+                    response.success ? "alert-success" : "alert-danger"
+                  } text-center`}
+                  role="alert"
+                >
+                  {response.message}
+                </div>
+              )}
+
               {/* FORM */}
               <form onSubmit={handleSubmit} className="needs-validation" noValidate>
-                {/* Start Year */}
                 <div className="form-floating mb-3">
                   <input
                     type="number"
@@ -178,7 +159,6 @@ const handleSubmit = async (e) => {
                   <label htmlFor="start_year">Start Year</label>
                 </div>
 
-                {/* End Year */}
                 <div className="form-floating mb-3">
                   <input
                     type="number"
@@ -193,31 +173,25 @@ const handleSubmit = async (e) => {
                   <label htmlFor="end_year">End Year</label>
                 </div>
 
-             {/* ✅ Toggle Switch only in Edit Mode */}
-              {isEdit && (
-                <div className="border rounded-3 p-3 bg-light d-flex justify-content-between align-items-center m-3">
-                  <span className="fw-semibold">School Year Status</span>
-                  <div className="form-check form-switch">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="toggleActive"
-                      checked={isActive}
-                      onChange={handleToggleActive}
-                      disabled={toggleLoading}
-                    />
-                    <label className="form-check-label ms-2" htmlFor="toggleActive">
-                      {toggleLoading
-                        ? "Updating..."
-                        : isActive
-                        ? "Active"
-                        : "Inactive"}
-                    </label>
+                {isEdit && (
+                  <div className="border rounded-3 p-3 bg-light d-flex justify-content-between align-items-center m-3">
+                    <span className="fw-semibold">School Year Status</span>
+                    <div className="form-check form-switch">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="toggleActive"
+                        checked={isActive}
+                        onChange={handleToggleActive}
+                        disabled={toggleLoading}
+                      />
+                      <label className="form-check-label ms-2" htmlFor="toggleActive">
+                        {toggleLoading ? "Updating..." : isActive ? "Active" : "Inactive"}
+                      </label>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-                {/* Buttons */}
                 <div className="d-flex gap-2 mb-4">
                   <button
                     type="button"
@@ -232,18 +206,10 @@ const handleSubmit = async (e) => {
                     className="btn btn-primary w-50 py-2 fw-semibold rounded-3"
                     disabled={loading}
                   >
-                    {loading
-                      ? isEdit
-                        ? "Updating..."
-                        : "Creating..."
-                      : isEdit
-                      ? "Update School Year"
-                      : "Create School Year"}
+                    {loading ? (isEdit ? "Updating..." : "Creating...") : isEdit ? "Update School Year" : "Create School Year"}
                   </button>
                 </div>
               </form>
-
-      
             </div>
           </div>
         </div>

@@ -12,13 +12,15 @@ export default function StudentRecord() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
   const [schoolYears, setSchoolYears] = useState([]);
+  const [gradeLevels, setGradeLevels] = useState([]);
   const [form, setForm] = useState({
     sf10: null,
     school_year_id: "",
     start_year: "",
     end_year: "",
     section: "",
-    grade_level: "",
+    grade_level_id: "",
+    grade_level_name: "",
   });
   const [modal, setModal] = useState({
     show: false,
@@ -29,6 +31,7 @@ export default function StudentRecord() {
 
   useEffect(() => { checkToken(); }, []);
 
+  // Auto hide message
   useEffect(() => {
     if (message.text) {
       const timer = setTimeout(() => setMessage({ type: "", text: "" }), 5000);
@@ -36,7 +39,7 @@ export default function StudentRecord() {
     }
   }, [message]);
 
-  // Fetch school years for dropdown
+  // Fetch school years
   useEffect(() => {
     const fetchSchoolYears = async () => {
       const token = sessionStorage.getItem("token");
@@ -55,6 +58,26 @@ export default function StudentRecord() {
     fetchSchoolYears();
   }, []);
 
+  // Fetch grade levels
+  useEffect(() => {
+    const fetchGradeLevels = async () => {
+      const token = sessionStorage.getItem("token");
+      if (!token) return;
+      try {
+        const res = await fetch("http://localhost:3001/esf10/grade-levels", {
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to fetch grade levels");
+        const data = await res.json();
+        if (data.success) setGradeLevels(data.data);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchGradeLevels();
+  }, []);
+
+  // Fetch students for AsyncSelect
   const fetchStudentOptions = async (inputValue) => {
     const token = sessionStorage.getItem("token");
     if (!token || !inputValue) return [];
@@ -79,6 +102,7 @@ export default function StudentRecord() {
     }
   };
 
+  // Fetch student details
   const fetchDetails = async (selectedLrn) => {
     const token = sessionStorage.getItem("token");
     if (!token) return setMessage({ type: "error", text: "Missing authorization token." });
@@ -103,6 +127,7 @@ export default function StudentRecord() {
     }
   };
 
+  // Handle form changes
   const handleUploadChange = (e) => {
     const { name, value, files } = e.target;
     if (name === "school_year_id") {
@@ -112,11 +137,19 @@ export default function StudentRecord() {
       } else {
         setForm({ ...form, school_year_id: "", start_year: "", end_year: "" });
       }
+    } else if (name === "grade_level_id") {
+      const selected = gradeLevels.find((gl) => gl.grade_level_id === parseInt(value));
+      if (selected) {
+        setForm({ ...form, grade_level_id: value, grade_level_name: selected.grade_name });
+      } else {
+        setForm({ ...form, grade_level_id: "", grade_level_name: "" });
+      }
     } else {
       setForm({ ...form, [name]: files ? files[0] : value });
     }
   };
 
+  // Handle file upload
   const handleUpload = async (e) => {
     e.preventDefault();
     const token = sessionStorage.getItem("token");
@@ -140,7 +173,7 @@ export default function StudentRecord() {
       const data = await res.json();
       setModal({ show: true, title: "✅ Upload Successful", message: data.message, variant: "success" });
       setECards((prev) => [...prev, data.document]);
-      setForm({ sf10: null, school_year_id: "", start_year: "", end_year: "", section: "", grade_level: "" });
+      setForm({ sf10: null, school_year_id: "", start_year: "", end_year: "", section: "", grade_level_id: "", grade_level_name: "" });
     } catch (err) {
       setModal({ show: true, title: "❌ Error", message: err.message, variant: "danger" });
     }
@@ -148,10 +181,8 @@ export default function StudentRecord() {
 
   return (
     <div className="container py-5">
-      {/* Status Modal */}
       <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
 
-      {/* Message Alert */}
       {message.text && (
         <div className={`alert alert-${message.type === "success" ? "success" : "danger"} shadow-sm`}>
           {message.text}
@@ -186,7 +217,7 @@ export default function StudentRecord() {
                 <label className="form-label small text-uppercase fw-semibold">School Year</label>
                 <select
                   name="school_year_id"
-                  className="form-select shadow-sm border border-secondary rounded-pill"
+                  className="form-select shadow-sm rounded-pill"
                   value={form.school_year_id}
                   onChange={handleUploadChange}
                   required
@@ -200,27 +231,45 @@ export default function StudentRecord() {
                 </select>
               </div>
 
-              {/* Section & Grade Level */}
-              {["section", "grade_level"].map((field, i) => (
-                <div className="col-md-3" key={i}>
-                  <label className="form-label small text-uppercase fw-semibold">{field.replace("_", " ")}</label>
-                  <input
-                    type="text"
-                    name={field}
-                    className="form-control border-1 shadow-sm"
-                    value={form[field]}
-                    onChange={handleUploadChange}
-                    required
-                  />
-                </div>
-              ))}
+              {/* Section */}
+              <div className="col-md-3">
+                <label className="form-label small text-uppercase fw-semibold">Section</label>
+                <input
+                  type="text"
+                  name="section"
+                  className="form-control shadow-sm"
+                  value={form.section}
+                  onChange={handleUploadChange}
+                  required
+                />
+              </div>
 
+              {/* Grade Level Dropdown */}
+              <div className="col-md-3">
+                <label className="form-label small text-uppercase fw-semibold">Grade Level</label>
+                <select
+                  name="grade_level_id"
+                  className="form-select shadow-sm rounded-pill"
+                  value={form.grade_level_id}
+                  onChange={handleUploadChange}
+                  required
+                >
+                  <option value="">Select Grade Level</option>
+                  {gradeLevels.map((gl) => (
+                    <option key={gl.grade_level_id} value={gl.grade_level_id}>
+                      {gl.grade_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* File input */}
               <div className="col-12">
                 <label className="form-label small text-uppercase fw-semibold">Select File</label>
                 <input
                   type="file"
                   name="sf10"
-                  className="form-control border-1 shadow-sm"
+                  className="form-control shadow-sm"
                   onChange={handleUploadChange}
                   accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                   required
@@ -255,28 +304,22 @@ export default function StudentRecord() {
                   <i className="bi bi-exclamation-circle"></i> No eCards uploaded yet.
                 </div>
               ) : (
-                <>
-                  <div className="row g-3 mb-3">
-                    {eCards.map((ecard, idx) => (
-                      <div className="col-12 col-md-6 col-lg-4" key={idx}>
-                        <div className="card border-start border-4 border-success-subtle shadow-sm h-100">
-                          <div className="card-body">
-                            <h6 className="card-title text-success mb-2">
-                              <i className="bi bi-check-circle-fill me-2"></i> Successfully Uploaded
-                            </h6>
-                            <p className="card-text small text-muted mb-0">
-                              {new Date(ecard.uploaded_at).toLocaleString()}
-                            </p>
-                          </div>
+                <div className="row g-3 mb-3">
+                  {eCards.map((ecard, idx) => (
+                    <div className="col-12 col-md-6 col-lg-4" key={idx}>
+                      <div className="card border-start border-4 border-success-subtle shadow-sm h-100">
+                        <div className="card-body">
+                          <h6 className="card-title text-success mb-2">
+                            <i className="bi bi-check-circle-fill me-2"></i> Successfully Uploaded
+                          </h6>
+                          <p className="card-text small text-muted mb-0">
+                            {new Date(ecard.uploaded_at).toLocaleString()}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                  <div className="alert alert-success border-success-subtle d-flex align-items-center gap-2" role="alert">
-                    <i className="bi bi-info-circle"></i>
-                    To <strong>view or download</strong> the uploaded SF10 documents, go to the <strong>"Student Records"</strong> section.
-                  </div>
-                </>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>

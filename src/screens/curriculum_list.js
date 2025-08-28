@@ -117,7 +117,7 @@ const CurriculumList = () => {
             value={schoolYearId}
             onChange={(e) => setSchoolYearId(e.target.value)}
           >
-            <option value="">-- All School Years --</option>
+            <option value=""> All School Years </option>
             {schoolYears.map((sy) => (
               <option key={sy.school_year_id} value={sy.school_year_id}>
                 {sy.start_year} - {sy.end_year}
@@ -131,7 +131,7 @@ const CurriculumList = () => {
             value={isActive}
             onChange={(e) => setIsActive(e.target.value)}
           >
-            <option value="">-- All Statuses --</option>
+            <option value=""> All Status </option>
             <option value="true">Active</option>
             <option value="false">Inactive</option>
           </select>

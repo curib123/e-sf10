@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Route, Routes, NavLink } from "react-router-dom";
+import { Modal, Button } from "react-bootstrap"; 
 import {
   FaHome, FaUserGraduate, FaUsersCog, FaChevronDown,FaSchool, FaBuilding, FaBars,
   FaPlus, FaSignOutAlt, FaDatabase, FaListAlt, FaUpload, FaExchangeAlt,
@@ -44,6 +45,8 @@ import { getUserPermissions } from "../components/get_permission";
 // Styles
 import "./dashboard.css";
 
+
+
 const SidebarLink = ({ to, icon: Icon, label, collapsed }) => (
   <NavLink to={to} className={({ isActive }) => `link ${isActive ? "active" : ""}`}>
     <Icon /> {!collapsed && <span className="ms-2">{label}</span>}
@@ -75,6 +78,11 @@ const Dashboard = ({ onLogout }) => {
   const [schoolData, setSchoolData] = useState({});
   const [logoUrl, setLogoUrl] = useState(null);
   const [permissions, setPermissions] = useState({});
+
+   const [showModal, setShowModal] = useState(false);
+
+  const handleOpen = () => setShowModal(true);
+  const handleClose = () => setShowModal(false);
 
   const schoolId = "1234567890";
   const token = sessionStorage.getItem("token");
@@ -109,10 +117,10 @@ const menus = [
     key: "academic_settings",
     roles: ["admin"],
     children: [
-      { to: "/curriculum", icon: FaClipboardList, label: "Curriculum" },
-      { to: "/subjects", icon: FaBook, label: "Subjects" },
-      { to: "/assign-subject-per-year-level", icon: FaClipboardCheck, label: "Subject Per Year Level" },
-      { to: "/assign-teachers", icon: FaChalkboardTeacher, label: "Teacher Assignments" },
+      { to: "/curriculum", icon: FaClipboardList, label: "Curriculum Management" },
+      { to: "/subjects", icon: FaBook, label: "Subjects Management" },
+      { to: "/assign-subject-per-year-level", icon: FaClipboardCheck, label: "Subjects by Grade" },
+      { to: "/grade_level", icon: FaSchool, label: "Grade Level" },
     ],
   },
   {
@@ -123,9 +131,8 @@ const menus = [
     roles: ["admin"],
     children: [
       { to: "/users_account", icon: FaUsersCog, label: "User Accounts & Roles" },
+       { to: "/school_year", icon: FaCalendarAlt, label: "School Year" },
       { to: "/school_settings", icon: FaBuilding, label: "School Information", permission: "manage_school_settings" },
-      { to: "/school_year", icon: FaCalendarAlt, label: "School Year" },
-      { to: "/grade_level", icon: FaSchool, label: "Grade Level" },
       { to: "/all_logs", icon: FaHistory, label: "System Logs", permission: "view_logs" },
       { to: "/backup", icon: FaDatabase, label: "Database Backup", permission: "export_data" },
     ],
@@ -231,17 +238,54 @@ const menus = [
           {menus.map(renderMenu)}
         </ul>
 
-        {!collapsed && (
-          <div className="school-info p-3 text-white small" style={{ fontSize: "0.75rem" }}>
-            <hr className="bg-light" />
-            <p className="text-center mb-0" style={{ fontSize: "0.7rem", opacity: 0.7 }}>
-              &copy; {new Date().getFullYear()} All rights reserved.
-            </p>
-            <p className="text-center mb-0" style={{ fontSize: "0.7rem", opacity: 0.7, fontStyle: "italic" }}>
-              Extension Project by TMC Coding Club
-            </p>
-          </div>
-        )}
+        <>
+  <>
+  {/* Credits Footer */}
+  {!collapsed && (
+    <div
+      className="school-info p-3 text-center text-light small bg-dark rounded-top"
+      style={{ fontSize: "0.75rem", cursor: "pointer" }}
+      onClick={handleOpen} // Clickable
+    >
+      <hr className="bg-light my-2" />
+      <p className="mb-1 text-light" style={{ fontSize: "0.75rem" }}>
+        &copy; {new Date().getFullYear()} All rights reserved.
+      </p>
+      <p className="mb-0 text-light fst-italic" style={{ fontSize: "0.75rem" }}>
+        Credits – TMC Coding Club
+      </p>
+    </div>
+  )}
+
+  {/* Credits Modal */}
+  <Modal show={showModal} onHide={handleClose} centered>
+    <Modal.Header closeButton>
+      <Modal.Title>Credits</Modal.Title>
+    </Modal.Header>
+    <Modal.Body>
+      <p>This is an extension project created by the TMC Coding Club.</p>
+      <p>We aim to provide learning opportunities and showcase coding skills through practical projects.</p>
+      <hr />
+      <p className="mb-1"><strong>Software Engineers:</strong></p>
+      <ul>
+        <li>John Paul Curib</li>
+        <li>Quiver Cutanda</li>
+      </ul>
+      <p className="mb-1"><strong>Project Manager & Adviser:</strong></p>
+      <ul>
+        <li>Clark Kevin Villamor</li>
+      </ul>
+    </Modal.Body>
+    <Modal.Footer>
+      <Button variant="secondary" onClick={handleClose}>
+        Close
+      </Button>
+    </Modal.Footer>
+  </Modal>
+</>
+
+
+    </>
       </div>
 
      {/* Main */}
@@ -338,8 +382,8 @@ const menus = [
             <Route path="/curriculum" element={<Curriculum />} />
             <Route path="/curriculum/create" element={<CurriculumUpsert />} />
             <Route path="/curriculum/edit/:id" element={<CurriculumUpsert />} /> 
-             <Route path="/curriculum/assign-subject/:id" element={<CurriculumAssign />} />
-             <Route path="/subjects" element={<SubjectList />} />
+            <Route path="/curriculum/assign-subject/:id" element={<CurriculumAssign />} />
+            <Route path="/subjects" element={<SubjectList />} />
             <Route path="/subjects/create" element={<SubjectUpsert />} />
             <Route path="/subjects/edit/:id" element={<SubjectUpsert />} /> assign-subject-per-year-level
             <Route path="/assign-subject-per-year-level" element={<AssignSubjectPerYearLevel />} />
