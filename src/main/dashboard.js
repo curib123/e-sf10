@@ -5,7 +5,7 @@ import { Modal, Button } from "react-bootstrap";
 import {
   FaHome, FaUserGraduate, FaUsersCog, FaChevronDown,FaSchool, FaBuilding, FaBars,
   FaPlus, FaSignOutAlt, FaDatabase, FaListAlt, FaUpload, FaExchangeAlt,
-  FaClipboardList, FaHistory, FaBook, FaChalkboardTeacher, FaCalendarAlt,FaClipboardCheck
+  FaClipboardList, FaHistory, FaBook, FaChalkboardTeacher, FaCalendarAlt,FaClipboardCheck,FaCog
 } from "react-icons/fa";
 
 // Screens
@@ -126,7 +126,7 @@ const menus = [
   {
     type: "dropdown",
     label: "System Administration",
-    icon: FaUsersCog,
+    icon: FaCog,
     key: "sysadmin",
     roles: ["admin"],
     children: [
