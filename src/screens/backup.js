@@ -1,81 +1,59 @@
-import React, { useEffect, useState } from "react";
-import axios from "axios";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import StatusModal from "../components/status_modal";
 import { checkToken } from "../components/token_checker";
 
-const API_URL = "http://localhost:3001/esf10/backups";
+const BASE_URL = "http://localhost:3001/esf10"; 
 
 export default function BackupManager() {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [message, setMessage] = useState(null);
-  const [error, setError] = useState(null);
+  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
+
   const navigate = useNavigate();
 
   useEffect(() => {
     checkToken();
+    loadBackups();
   }, []);
 
-  const loadBackups = async () => {
+  const getToken = () => {
     const token = sessionStorage.getItem("token");
     if (!token) {
-      setError("Access denied. Please log in.");
+      setModal({ show: true, title: "Access Denied", message: "Please log in.", variant: "danger" });
       navigate("/login");
-      return;
+      return null;
     }
+    return token;
+  };
+
+  const loadBackups = async () => {
+    const token = getToken();
+    if (!token) return;
 
     setLoading(true);
-    setError(null);
-
     try {
-      const res = await axios.get(API_URL, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await axios.get(`${BASE_URL}/backups`, { headers: { Authorization: `Bearer ${token}` } });
       setBackups(res.data);
     } catch (err) {
-      if (err.response?.status === 401) {
-        setError("Access denied. Please log in.");
-        sessionStorage.removeItem("token");
-        navigate("/login");
-      } else {
-        setError(err.response?.data?.message || "Error loading backups.");
-      }
+      handleAxiosError(err, "Error loading backups.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleCreate = async () => {
-    const token = sessionStorage.getItem("token");
-    if (!token) {
-      setError("Access denied. No token provided.");
-      navigate("/login");
-      return;
-    }
+    const token = getToken();
+    if (!token) return;
 
     setCreating(true);
-    setError(null);
-    setMessage(null);
-
     try {
-      const res = await axios.post(
-        `${API_URL}/create`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          responseType: "blob",
-        }
-      );
+      const res = await axios.post(`${BASE_URL}/backups/create`, {}, { headers: { Authorization: `Bearer ${token}` }, responseType: "blob" });
 
-      const contentDisposition = res.headers["content-disposition"];
-      let filename = "backup.zip";
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename="?(.+)"?/);
-        if (match?.[1]) {
-          filename = match[1];
-        }
-      }
+      const disposition = res.headers["content-disposition"];
+      const filename = disposition?.match(/filename="?(.+)"?/)?.[1] || "backup.zip";
 
       const blob = new Blob([res.data], { type: "application/zip" });
       const link = document.createElement("a");
@@ -86,51 +64,35 @@ export default function BackupManager() {
       document.body.removeChild(link);
 
       await loadBackups();
-      setMessage(`✅ Backup created and downloaded: ${filename}`);
+      setModal({ show: true, title: "Success", message: `Backup created and downloaded: ${filename}`, variant: "success" });
     } catch (err) {
-      setError(err.response?.data?.message || "Backup creation failed.");
+      handleAxiosError(err, "Backup creation failed.");
     } finally {
       setCreating(false);
     }
   };
 
-  useEffect(() => {
-    const checkAndLoad = async () => {
-      const token = sessionStorage.getItem("token");
-      if (!token) {
-        setError("Access denied. Please log in.");
-        navigate("/login");
-        return;
-      }
-      await loadBackups();
-    };
-    checkAndLoad();
-  }, [navigate]);
+  const handleAxiosError = (err, fallbackMessage) => {
+    if (err.response?.status === 401) {
+      sessionStorage.removeItem("token");
+      setModal({ show: true, title: "Access Denied", message: "Please log in.", variant: "danger" });
+      navigate("/login");
+    } else {
+      setModal({ show: true, title: "Error", message: err.response?.data?.message || fallbackMessage, variant: "danger" });
+    }
+  };
 
   return (
     <div className="container my-4">
       <div className="card shadow-sm">
         <div className="card-header d-flex justify-content-between align-items-center">
           <h4 className="mb-0">Database Backup Management</h4>
-          <button
-            className="btn btn-primary"
-            onClick={handleCreate}
-            disabled={creating}
-          >
-            {creating ? (
-              <span className="spinner-border spinner-border-sm"></span>
-            ) : (
-              <>
-                <i className="bi bi-cloud-arrow-up me-2"></i>Create Backup
-              </>
-            )}
+          <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
+            {creating ? <span className="spinner-border spinner-border-sm"></span> : <><i className="bi bi-cloud-arrow-up me-2"></i>Create Backup</>}
           </button>
         </div>
 
         <div className="card-body">
-          {message && <div className="alert alert-success">{message}</div>}
-          {error && <div className="alert alert-danger">{error}</div>}
-
           {loading ? (
             <div className="text-center my-4">
               <div className="spinner-border text-primary" role="status"></div>
@@ -142,14 +104,7 @@ export default function BackupManager() {
               <p>No backups available.</p>
             </div>
           ) : (
-            <div
-              className="table-responsive"
-              style={
-                backups.length > 10
-                  ? { maxHeight: "400px", overflowY: "auto", display: "block" }
-                  : {}
-              }
-            >
+            <div className="table-responsive" style={backups.length > 10 ? { maxHeight: "400px", overflowY: "auto", display: "block" } : {}}>
               <table className="table table-bordered table-hover">
                 <thead className="table-light">
                   <tr>
@@ -174,6 +129,8 @@ export default function BackupManager() {
           )}
         </div>
       </div>
+
+      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { checkToken } from '../components/token_checker';
+import StatusModal from '../components/status_modal';
 import {
   Container,
   Row,
@@ -20,30 +21,38 @@ import {
   FaClock
 } from 'react-icons/fa';
 
-const Home = () => {
+// Base API URL
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
+
+const HomeDashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState({ show: false, title: '', message: '', variant: 'danger' });
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const token = sessionStorage.getItem('token');
+  const authHeaders = () => ({ Authorization: `Bearer ${token}` });
 
   useEffect(() => { checkToken(); }, []);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchDashboard = async () => {
+      setLoading(true);
       try {
-        const { data } = await axios.get('http://localhost:3001/esf10/dashboard', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const { data } = await axios.get(`${BASE_URL}/dashboard`, { headers: authHeaders() });
         setDashboardData(data);
-      } catch {
-        setFetchError('⚠️ Failed to fetch dashboard data. Please try again later.');
+      } catch (err) {
+        setModal({
+          show: true,
+          title: '⚠️ Error',
+          message: 'Failed to fetch dashboard data.',
+          variant: 'danger'
+        });
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
-    fetchData();
+    fetchDashboard();
   }, [token]);
 
   useEffect(() => {
@@ -51,7 +60,7 @@ const Home = () => {
     return () => clearInterval(timer);
   }, []);
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="d-flex vh-100 justify-content-center align-items-center bg-light">
         <Spinner animation="border" variant="primary" />
@@ -59,50 +68,49 @@ const Home = () => {
     );
   }
 
-  if (fetchError) {
-    return (
-      <Container className="mt-5">
-        <Card className="shadow-sm border-0 rounded-4">
-          <Card.Body className="text-center text-danger fw-semibold">{fetchError}</Card.Body>
-        </Card>
-      </Container>
-    );
-  }
+  if (!dashboardData) return null;
 
   const { user, studentStats, schoolInfo, recentLogs } = dashboardData;
-  const calculatePercent = (count) => studentStats.total_students > 0 ? (count / studentStats.total_students) * 100 : 0;
+  const calculatePercent = (count) => studentStats.total_students ? (count / studentStats.total_students) * 100 : 0;
+
+  const stats = [
+    { icon: <FaUsers size={28} className="text-white" />, label: 'Total Students', value: studentStats.total_students, percent: 100, color: '#3b82f6' },
+    { icon: <FaUserPlus size={28} className="text-white" />, label: 'Recent Students', value: studentStats.recent_students, percent: calculatePercent(studentStats.recent_students), color: '#10b981' },
+    { icon: <FaExchangeAlt size={28} className="text-white" />, label: 'Pending Transfers', value: studentStats.pending_transfers, percent: calculatePercent(studentStats.pending_transfers), color: '#ef4444' }
+  ];
 
   return (
-    <Container fluid className="p-4" style={{ backgroundColor: '#f0f2f7', minHeight: '100vh' }}>
-      
-      {/* Welcome + Time */}
+    <Container fluid className="p-4" style={{ backgroundColor: '#f8f9fa', minHeight: '100vh', overflow: 'hidden' }}>
+      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
+
+      {/* Welcome & Clock */}
       <Row className="mb-4 g-3">
         <Col lg={8} md={12}>
-          <Card className="border-0 shadow rounded-4 text-white" style={{ background: 'linear-gradient(135deg, #4f46e5, #3b82f6)' }}>
+          <Card className="border-0 shadow-sm rounded-4 overflow-hidden" style={{ background: 'linear-gradient(135deg, #6366f1, #3b82f6)' }}>
             <Card.Body className="d-flex align-items-center gap-4 p-4">
               <div
                 className="rounded-circle d-flex justify-content-center align-items-center flex-shrink-0"
-                style={{ width: 80, height: 80, fontSize: '1.7rem', fontWeight: 600, background: 'rgba(255,255,255,0.2)' }}
+                style={{ width: 80, height: 80, fontSize: '1.7rem', fontWeight: 600, background: 'rgba(255,255,255,0.25)' }}
               >
                 {user.first_name[0]}{user.last_name[0]}
               </div>
               <div>
-                <h4 className="mb-1 fw-bold">Welcome back, {user.first_name}! 👋</h4>
+                <h4 className="mb-1 fw-bold text-white">Welcome back, {user.first_name}! 👋</h4>
                 <Badge bg="light" text="dark">{user.roles}</Badge>
               </div>
             </Card.Body>
           </Card>
         </Col>
-       <Col lg={4} md={12}>
-  <Card className="shadow border-0 rounded-4">
-    <Card.Body className="d-flex flex-column justify-content-center align-items-center py-4">
-      <FaClock size={28} className="text-primary mb-2" />
-      <h5 className="fw-bold mb-1">{currentTime.toLocaleTimeString()}</h5>
-      <small className="text-muted">{currentTime.toLocaleDateString()}</small>
-    </Card.Body>
-  </Card>
-</Col>
 
+        <Col lg={4} md={12}>
+          <Card className="shadow-sm border-0 rounded-4">
+            <Card.Body className="d-flex flex-column justify-content-center align-items-center py-4">
+              <FaClock size={28} className="text-primary mb-2" />
+              <h5 className="fw-bold mb-1">{currentTime.toLocaleTimeString()}</h5>
+              <small className="text-muted">{currentTime.toLocaleDateString()}</small>
+            </Card.Body>
+          </Card>
+        </Col>
       </Row>
 
       {/* School Info */}
@@ -126,17 +134,13 @@ const Home = () => {
         </Card.Body>
       </Card>
 
-      {/* Stats */}
+      {/* Stats Cards */}
       <Row className="mb-4 g-4">
-        {[
-          { icon: <FaUsers size={28} className="text-white" />, label: 'Total Students', value: studentStats.total_students, percent: 100, color: '#3b82f6' },
-          { icon: <FaUserPlus size={28} className="text-white" />, label: 'Recent Students', value: studentStats.recent_students, percent: calculatePercent(studentStats.recent_students), color: '#10b981' },
-          { icon: <FaExchangeAlt size={28} className="text-white" />, label: 'Pending Transfers', value: studentStats.pending_transfers, percent: calculatePercent(studentStats.pending_transfers), color: '#ef4444' }
-        ].map((stat, idx) => (
+        {stats.map((stat, idx) => (
           <Col md={4} key={idx}>
             <Card className="shadow-sm border-0 h-100 rounded-4">
               <Card.Body className="text-center p-4">
-                <div 
+                <div
                   className="d-inline-flex justify-content-center align-items-center rounded-circle mb-3"
                   style={{ width: 60, height: 60, backgroundColor: stat.color }}
                 >
@@ -144,14 +148,14 @@ const Home = () => {
                 </div>
                 <Card.Title className="fw-semibold text-muted">{stat.label}</Card.Title>
                 <h2 className="fw-bold mb-3" style={{ color: stat.color }}>{stat.value}</h2>
-                <ProgressBar now={stat.percent} style={{ height: 8, borderRadius: 4 }} animated />
+                <ProgressBar now={stat.percent} style={{ height: 8, borderRadius: 4 }} />
               </Card.Body>
             </Card>
           </Col>
         ))}
       </Row>
 
-      {/* Recent Logs */}
+      {/* Recent Activity */}
       <Card className="shadow-sm border-0 rounded-4">
         <Card.Header className="bg-white border-0 fw-bold text-primary">Recent Activity</Card.Header>
         <Card.Body className="p-0">
@@ -181,4 +185,4 @@ const Home = () => {
   );
 };
 
-export default Home;
+export default HomeDashboard;

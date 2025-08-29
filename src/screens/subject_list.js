@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { FaEdit, FaTrash, FaPlus } from "react-icons/fa";
+
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const SubjectList = () => {
   const [subjects, setSubjects] = useState([]);
@@ -8,25 +11,24 @@ const SubjectList = () => {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [limit] = useState(10);
+  const limit = 10;
 
   const token = sessionStorage.getItem("token");
   const navigate = useNavigate();
 
   const fetchSubjects = async (pageNumber = 1, searchQuery = "") => {
     setLoading(true);
+    if (!token) return;
+
     try {
-      const url = new URL("http://localhost:3001/esf10/subjects/view-all-subjects");
+      const url = new URL(`${BASE_URL}/subjects/view-all-subjects`);
       url.searchParams.append("page", pageNumber);
       url.searchParams.append("limit", limit);
       if (searchQuery) url.searchParams.append("query", searchQuery);
 
       const res = await fetch(url.toString(), {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       });
 
       const data = await res.json();
@@ -39,29 +41,26 @@ const SubjectList = () => {
       }
     } catch (err) {
       console.error("Error fetching subjects:", err);
+      setSubjects([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const searchSubjects = (searchQuery) => {
-    fetchSubjects(1, searchQuery);
-  };
-
   const editSubject = (subject) => navigate(`/subjects/edit/${subject.subject_id}`);
   const createSubject = () => navigate("/subjects/create");
+  const assignSubject = () => navigate("/assign-subject-per-year-level");
+
+  useEffect(() => {
+    const delay = setTimeout(() => fetchSubjects(1, query), 300);
+    return () => clearTimeout(delay);
+  }, [query]);
 
   useEffect(() => { fetchSubjects(); }, []);
 
   return (
-    <div className="container mt-5">
-      {/* Page Header */}
-      <div className="text-center mb-4">
-        <h3 className="fw-bold text-primary mb-2">Subjects Management</h3>
-        <p className="text-muted mb-0">View, search, and manage all subjects in the system.</p>
-      </div>
-
-      <div className="card border-0 shadow-sm rounded-4">
+    <div className="container my-4">
+      <div className="card border shadow-sm rounded-4">
         {/* Header: Search + Create */}
         <div className="card-header bg-white border-0 rounded-top-4 px-3 py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div className="input-group input-group-sm w-auto">
@@ -71,18 +70,23 @@ const SubjectList = () => {
               placeholder="🔍 Search subject..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && searchSubjects(query)}
             />
-            <button className="btn btn-primary border-start-0" onClick={() => searchSubjects(query)}>
-              Search
-            </button>
           </div>
-          <button
-            className="btn btn-primary btn-sm px-3 fw-semibold shadow-sm"
-            onClick={createSubject}
-          >
-            Create Subject
-          </button>
+         <div className="d-flex gap-2">
+  <button
+    className="btn btn-success btn-sm d-flex align-items-center gap-1 px-3 py-2"
+    onClick={assignSubject}
+  >
+    <FaPlus /> Assign Subject
+  </button>
+  <button
+    className="btn btn-primary btn-sm d-flex align-items-center gap-1 px-3 py-2"
+    onClick={createSubject}
+  >
+    <FaPlus /> Create Subject
+  </button>
+</div>
+
         </div>
 
         {/* Table */}
@@ -93,29 +97,38 @@ const SubjectList = () => {
             </div>
           ) : (
             <div className="table-responsive">
-              <table className="table table-hover align-middle mb-0">
+              <table className="table table-bordered table-hover align-middle mb-0">
                 <thead className="table-light">
                   <tr>
-                    <th className="fw-semibold">Code</th>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th className="text-center">Actions</th>
+                    <th className="fw-semibold text-dark py-3 px-2">Code</th>
+                    <th className="text-dark py-3 px-2">Name</th>
+                    <th className="text-dark py-3 px-2">Description</th>
+                    <th className="text-dark text-center py-3 px-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {subjects.length > 0 ? (
+                  {subjects.length ? (
                     subjects.map((subj) => (
                       <tr key={subj.subject_id}>
-                        <td className="fw-semibold">{subj.subject_code}</td>
-                        <td>{subj.subject_name}</td>
-                        <td>{subj.description || "-"}</td>
-                        <td className="text-center">
-                          <button
-                            className="btn btn-sm btn-outline-warning"
-                            onClick={() => editSubject(subj)}
-                          >
-                            Edit
-                          </button>
+                        <td className="fw-semibold py-2 px-2">{subj.subject_code}</td>
+                        <td className="py-2 px-2">{subj.subject_name}</td>
+                        <td className="py-2 px-2">{subj.description || "-"}</td>
+                        <td className="text-end py-2 px-2">
+                          <div className="d-inline-flex gap-2">
+                            <button
+                              className="btn btn-outline-primary btn-sm d-flex align-items-center gap-1 px-2 py-1"
+                              onClick={() => editSubject(subj)}
+                            >
+                              <FaEdit /> Edit
+                            </button>
+                            <button
+                              className="btn btn-outline-danger btn-sm d-flex align-items-center gap-1 px-2 py-1"
+                              // You can implement delete later
+                              onClick={() => console.log("Delete", subj.subject_id)}
+                            >
+                              <FaTrash /> Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -136,11 +149,9 @@ const SubjectList = () => {
                     <li className={`page-item ${page === 1 ? "disabled" : ""}`}>
                       <button className="page-link" onClick={() => fetchSubjects(page - 1, query)}>Previous</button>
                     </li>
-                    {[...Array(totalPages)].map((_, i) => (
+                    {Array.from({ length: totalPages }).map((_, i) => (
                       <li key={i} className={`page-item ${page === i + 1 ? "active" : ""}`}>
-                        <button className="page-link" onClick={() => fetchSubjects(i + 1, query)}>
-                          {i + 1}
-                        </button>
+                        <button className="page-link" onClick={() => fetchSubjects(i + 1, query)}>{i + 1}</button>
                       </li>
                     ))}
                     <li className={`page-item ${page === totalPages ? "disabled" : ""}`}>

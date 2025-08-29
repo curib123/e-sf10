@@ -1,31 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { FaEdit, FaTrash } from 'react-icons/fa';
-import { checkToken } from '../components/token_checker'; 
+import { checkToken } from '../components/token_checker';
+import StatusModal from '../components/status_modal';
 
-const TransferRequestsTable = () => {
+const RequestList = () => {
   const [allRequests, setAllRequests] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [statusChanges, setStatusChanges] = useState({});
-  const [message, setMessage] = useState(null);
+  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
 
   const token = sessionStorage.getItem("token");
-  const baseUrl = "http://localhost:3001/esf10/transfer-request";
+  const BASE_URL = process.env.REACT_APP_API_BASE_URL;
   const itemsPerPage = 10;
 
-  useEffect(() => { checkToken(); }, []);
-  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(null), 3000); return () => clearTimeout(t); } }, [message]);
+  useEffect(() => {
+    checkToken();
+    fetchAllRequests();
+  }, []);
 
+  // Fetch all transfer requests
   const fetchAllRequests = async () => {
     setLoading(true);
     try {
       let page = 1, allData = [], totalPages = 1;
       while (page <= totalPages) {
-        const res = await axios.get(`${baseUrl}/view-all-requests?page=${page}&limit=${itemsPerPage}`, {
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+        const res = await axios.get(`${BASE_URL}/transfer-request/view-all-requests?page=${page}&limit=${itemsPerPage}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.data.success) {
           allData = [...allData, ...res.data.data];
@@ -36,44 +40,57 @@ const TransferRequestsTable = () => {
       setAllRequests(allData);
     } catch (error) {
       console.error(error);
-      setMessage({ text: "❌ Failed to load requests.", type: "error" });
-    } finally { setLoading(false); }
+      setModal({ show: true, title: "❌ Error", message: "Failed to load requests", variant: "danger" });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchAllRequests(); }, []);
-
+  // Update request status
   const updateRequestStatus = async (id) => {
     const newStatus = statusChanges[id];
     if (!newStatus) return;
+
     setUpdating(true);
     try {
-      const res = await axios.put(`${baseUrl}/update-request/${id}`, { request_status: newStatus }, {
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      const res = await axios.put(`${BASE_URL}/transfer-request/update-request/${id}`, { request_status: newStatus }, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+
       if (res.data.success) {
-        setMessage({ text: `✅ ${res.data.message}`, type: "success" });
+        setModal({ show: true, title: "✅ Success", message: res.data.message, variant: "success" });
         fetchAllRequests();
+      } else {
+        setModal({ show: true, title: "❌ Error", message: res.data.message || "Failed to update request", variant: "danger" });
       }
     } catch (error) {
       console.error(error);
-      setMessage({ text: "❌ Failed to update request.", type: "error" });
-    } finally { setUpdating(false); }
+      setModal({ show: true, title: "❌ Error", message: "Failed to update request", variant: "danger" });
+    } finally {
+      setUpdating(false);
+    }
   };
 
+  // Delete request
   const deleteRequest = async (id) => {
     setDeleting(true);
     try {
-      const res = await axios.delete(`${baseUrl}/delete/${id}`, {
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      const res = await axios.delete(`${BASE_URL}/transfer-request/delete/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+
       if (res.data.success) {
-        setMessage({ text: `✅ ${res.data.message}`, type: "success" });
+        setModal({ show: true, title: "✅ Success", message: res.data.message, variant: "success" });
         setAllRequests(prev => prev.filter(r => r.transfer_id !== id));
+      } else {
+        setModal({ show: true, title: "❌ Error", message: res.data.message || "Failed to delete request", variant: "danger" });
       }
     } catch (error) {
       console.error(error);
-      setMessage({ text: "❌ Failed to delete request.", type: "error" });
-    } finally { setDeleting(false); }
+      setModal({ show: true, title: "❌ Error", message: "Failed to delete request", variant: "danger" });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -83,28 +100,22 @@ const TransferRequestsTable = () => {
 
   return (
     <div className="container my-5">
-      <div className="card  border-0 rounded-4">
+      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
+
+      <div className="card border-0 rounded-4 shadow-sm">
         <div className="card-header bg-gradient-primary text-white d-flex justify-content-between align-items-center py-3 px-4 rounded-top">
-          <h3 className="mb-0 fs-5 text-dark"> Student Transfer Requests</h3>
+          <h3 className="mb-0 fs-5 text-dark">Student Transfer Requests</h3>
           <span className="text-dark">Total: {allRequests.length}</span>
         </div>
 
         <div className="card-body px-3">
-          {/* Inline message */}
-          {message && (
-            <div className={`alert ${message.type === "success" ? "alert-success" : "alert-danger"} py-2 d-flex justify-content-between align-items-center rounded-3`}>
-              <span>{message.text}</span>
-              <button className="btn-close" onClick={() => setMessage(null)}></button>
-            </div>
-          )}
-
           {loading ? (
             <div className="text-center text-muted py-5">Loading requests...</div>
           ) : (
             <>
               <div className="table-responsive">
-                <table className="table table-borderless table-hover align-middle mb-0">
-                  <thead>
+                <table className="table table-bordered table-hover align-middle mb-0">
+                  <thead className="table-light">
                     <tr className="text-secondary small text-uppercase">
                       <th>ID</th>
                       <th>LRN</th>
@@ -127,9 +138,7 @@ const TransferRequestsTable = () => {
                             req.request_status === "Approved" ? "bg-success bg-opacity-10 text-success" :
                             req.request_status === "Rejected" ? "bg-danger bg-opacity-10 text-danger" :
                             "bg-warning bg-opacity-10 text-warning"
-                          }`}>
-                            {req.request_status || "Pending"}
-                          </span>
+                          }`}>{req.request_status || "Pending"}</span>
                         </td>
                         <td className="text-nowrap">{new Date(req.requested_at).toLocaleString()}</td>
                         <td className="text-end">
@@ -187,4 +196,4 @@ const TransferRequestsTable = () => {
   );
 };
 
-export default TransferRequestsTable;
+export default RequestList;

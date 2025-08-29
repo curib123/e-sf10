@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import StatusModal from "../components/status_modal";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { FaCheckCircle, FaTimesCircle, FaExclamationTriangle, FaInfoCircle } from "react-icons/fa";
 
-const BASE_URL = "http://localhost:3001/esf10";
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const UpsertSubject = () => {
   const navigate = useNavigate();
@@ -16,7 +18,7 @@ const UpsertSubject = () => {
     description: "",
   });
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger", icon: null });
 
   const authHeaders = () => ({
     "Content-Type": "application/json",
@@ -45,25 +47,36 @@ const UpsertSubject = () => {
         });
       } catch (err) {
         console.error("Edit fetch error:", err);
+        setModal({
+          show: true,
+          title: "Error",
+          message: "Failed to load subject data.",
+          variant: "danger",
+          icon: <FaTimesCircle size={24} />,
+        });
       }
     };
 
     fetchSubject();
   }, [isEdit, id]);
 
-  // Handle form changes
   const handleChange = ({ target }) => {
     const { name, value } = target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Submit form
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage(null);
+    setModal({ show: false });
 
     if (!formData.subject_code.trim() || !formData.subject_name.trim()) {
-      return setMessage({ type: "error", text: "Subject code and name are required." });
+      return setModal({
+        show: true,
+        title: "Warning",
+        message: "Subject code and name are required.",
+        variant: "warning",
+        icon: <FaExclamationTriangle size={24} />,
+      });
     }
 
     setLoading(true);
@@ -82,11 +95,24 @@ const UpsertSubject = () => {
       const result = await res.json();
       if (!result.success) throw new Error(result.message);
 
-      setMessage({ type: "success", text: "Subject saved successfully." });
+      setModal({
+        show: true,
+        title: "Success",
+        message: "Subject saved successfully.",
+        variant: "success",
+        icon: <FaCheckCircle size={24} />,
+      });
+
       setTimeout(() => navigate("/subjects"), 1500);
     } catch (err) {
       console.error("Error saving subject:", err);
-      setMessage({ type: "error", text: err.message || "Failed to save subject." });
+      setModal({
+        show: true,
+        title: "Error",
+        message: err.message || "Failed to save subject.",
+        variant: "danger",
+        icon: <FaTimesCircle size={24} />,
+      });
     } finally {
       setLoading(false);
     }
@@ -100,20 +126,7 @@ const UpsertSubject = () => {
             {isEdit ? "Update Subject" : "Create Subject"}
           </h3>
 
-          {message && (
-            <div
-              className={`alert alert-dismissible fade show ${
-                message.type === "success" ? "alert-success" : "alert-danger"
-              }`}
-              role="alert"
-            >
-              {message.text}
-              <button type="button" className="btn-close" onClick={() => setMessage(null)}></button>
-            </div>
-          )}
-
           <form onSubmit={handleSubmit} className="needs-validation">
-            {/* Subject Code */}
             <div className="mb-3">
               <label className="form-label fw-semibold">Subject Code</label>
               <input
@@ -127,7 +140,6 @@ const UpsertSubject = () => {
               />
             </div>
 
-            {/* Subject Name */}
             <div className="mb-3">
               <label className="form-label fw-semibold">Subject Name</label>
               <input
@@ -141,7 +153,6 @@ const UpsertSubject = () => {
               />
             </div>
 
-            {/* Description */}
             <div className="mb-3">
               <label className="form-label fw-semibold">Description</label>
               <textarea
@@ -154,7 +165,6 @@ const UpsertSubject = () => {
               />
             </div>
 
-            {/* Buttons */}
             <div className="d-flex justify-content-between">
               <button
                 type="button"
@@ -162,7 +172,7 @@ const UpsertSubject = () => {
                 onClick={() => navigate(-1)}
                 disabled={loading}
               >
-                ⬅ Back
+                Back
               </button>
               <button type="submit" className="btn btn-primary rounded-3 px-4" disabled={loading}>
                 {loading ? "Saving..." : isEdit ? "Update" : "Create"}
@@ -171,6 +181,8 @@ const UpsertSubject = () => {
           </form>
         </div>
       </div>
+
+      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
     </div>
   );
 };

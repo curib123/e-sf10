@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import StatusModal from "../components/status_modal";
 import { checkToken } from "../components/token_checker";
+
+// Base API URL
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const RequestTransferForm = () => {
   const { studentId } = useParams();
@@ -11,10 +15,23 @@ const RequestTransferForm = () => {
   const [schoolSuggestions, setSchoolSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "success" });
 
   useEffect(() => { checkToken(); }, []);
+
+  // Helper for authorized requests
+  const request = async (method, url, data = null) => {
+    const token = sessionStorage.getItem("token");
+    if (!token) throw new Error("Missing authorization token. Please log in again.");
+    const config = {
+      method,
+      url: `${BASE_URL}${url}`,
+      headers: { Authorization: `Bearer ${token}` },
+      data,
+    };
+    const res = await axios(config);
+    return res.data;
+  };
 
   const handleSchoolInputChange = async (e) => {
     const query = e.target.value;
@@ -27,12 +44,7 @@ const RequestTransferForm = () => {
     }
 
     try {
-      const token = sessionStorage.getItem("token");
-      const { data } = await axios.get(
-        `http://localhost:3001/esf10/transfer-request/search-schools?query=${query}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
+      const data = await request("get", `/transfer-request/search-schools?query=${query}`);
       if (data.success && data.data.length > 0) {
         setSchoolSuggestions(data.data);
         setShowSuggestions(true);
@@ -53,28 +65,23 @@ const RequestTransferForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const token = sessionStorage.getItem("token");
-    if (!token) return setError("Missing token. Please log in again.");
-
     setLoading(true);
-    setMessage("");
-    setError("");
+    setModal({ show: false, title: "", message: "", variant: "success" });
 
     try {
-      const { data } = await axios.post(
-        "http://localhost:3001/esf10/transfer-request/create-request",
-        { student_id: parseInt(studentId), requesting_school: schoolName },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const data = await request("post", "/transfer-request/create-request", {
+        student_id: parseInt(studentId),
+        requesting_school: schoolName,
+      });
 
       if (data.success) {
-        setMessage("✅ Transfer request created successfully.");
+        setModal({ show: true, title: "Success", message: "✅ Transfer request created successfully.", variant: "success" });
         setTimeout(() => navigate("/student_information"), 2000);
       } else {
-        setError("❌ Failed to create transfer request.");
+        setModal({ show: true, title: "Error", message: "❌ Failed to create transfer request.", variant: "danger" });
       }
-    } catch {
-      setError("❌ An error occurred while sending the request.");
+    } catch (err) {
+      setModal({ show: true, title: "Error", message: err.message || "❌ An error occurred while sending the request.", variant: "danger" });
     } finally {
       setLoading(false);
     }
@@ -102,26 +109,15 @@ const RequestTransferForm = () => {
                 required
               />
               {showSuggestions && (
-                <ul
-                  className="list-group position-absolute w-100 z-100 shadow-sm"
-                  style={{ top: '100%', maxHeight: '200px', overflowY: 'auto', borderRadius: '0.5rem' }}
-                >
+                <ul className="list-group position-absolute w-100 z-100 shadow-sm" style={{ top: '100%', maxHeight: '200px', overflowY: 'auto', borderRadius: '0.5rem' }}>
                   {schoolSuggestions.map((school, index) => (
-                    <li
-                      key={index}
-                      className="list-group-item list-group-item-action"
-                      onClick={() => handleSuggestionClick(school)}
-                      style={{ cursor: "pointer" }}
-                    >
+                    <li key={index} className="list-group-item list-group-item-action" onClick={() => handleSuggestionClick(school)} style={{ cursor: "pointer" }}>
                       {school}
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-
-            {message && <div className="alert alert-success rounded-pill text-center py-2">{message}</div>}
-            {error && <div className="alert alert-danger rounded-pill text-center py-2">{error}</div>}
 
             <div className="d-flex justify-content-between mt-4">
               <button type="button" className="btn btn-outline-secondary rounded-pill px-4" onClick={() => navigate(-1)}>
@@ -134,6 +130,8 @@ const RequestTransferForm = () => {
           </form>
         </div>
       </div>
+
+      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
     </div>
   );
 };

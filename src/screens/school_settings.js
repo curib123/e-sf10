@@ -1,33 +1,40 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { checkToken } from '../components/token_checker';
+import StatusModal from '../components/status_modal';
 
 const SchoolDefaultUpdateForm = () => {
   const [schoolData, setSchoolData] = useState({});
   const [logoPreview, setLogoPreview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
+  const [modal, setModal] = useState({ show: false, title: '', message: '', variant: 'danger' });
 
+  const BASE_URL = 'http://localhost:3001/esf10';
+  const LOGO_URL = process.env.REACT_APP_API_LOGO_URL;
   const schoolId = '1234567890';
   const token = sessionStorage.getItem('token');
 
   useEffect(() => {
     checkToken();
     axios
-      .get(`http://localhost:3001/esf10/school-defaults/${schoolId}`, {
+      .get(`${BASE_URL}/school-defaults/${schoolId}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then(res => {
         setSchoolData(res.data || {});
-        setLogoPreview(res.data?.school_logo 
-          ? res.data.school_logo.startsWith('http')
-            ? res.data.school_logo
-            : `http://localhost:3001${res.data.school_logo}`
-          : null
+        // Keep logo fetch logic unchanged
+        setLogoPreview(
+          res.data?.school_logo
+            ? res.data.school_logo.startsWith('http')
+              ? res.data.school_logo
+              : `http://localhost:3001${res.data.school_logo}`
+            : null
         );
       })
-      .catch(() => setMessage({ type: 'error', text: 'Failed to fetch school data.' }))
+      .catch(() =>
+        setModal({ show: true, title: '❌ Error', message: 'Failed to fetch school data.', variant: 'danger' })
+      )
       .finally(() => setLoading(false));
   }, [schoolId, token]);
 
@@ -48,7 +55,6 @@ const SchoolDefaultUpdateForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-    setMessage({ type: '', text: '' });
 
     try {
       const formData = new FormData();
@@ -57,62 +63,63 @@ const SchoolDefaultUpdateForm = () => {
         else if (value !== undefined && value !== null && key !== 'school_logo') formData.append(key, value);
       });
 
-      await axios.put(
-        `http://localhost:3001/esf10/school-defaults/${schoolId}`,
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
+      await axios.put(`${BASE_URL}/school-defaults/${schoolId}`, formData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+      });
 
-      const res = await axios.get(`http://localhost:3001/esf10/school-defaults/${schoolId}`, {
+      const res = await axios.get(`${BASE_URL}/school-defaults/${schoolId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       setSchoolData(res.data || {});
-      setLogoPreview(res.data?.school_logo 
-        ? res.data.school_logo.startsWith('http') 
-          ? res.data.school_logo 
-          : `http://localhost:3001${res.data.school_logo}` 
-        : null
+      // Keep logo fetch logic unchanged
+      setLogoPreview(
+        res.data?.school_logo
+          ? res.data.school_logo.startsWith('http')
+            ? res.data.school_logo
+            : `${LOGO_URL}${res.data.school_logo}`
+          : null
       );
-      setMessage({ type: 'success', text: 'School default data updated successfully.' });
+
+      setModal({ show: true, title: '✅ Success', message: 'School default data updated successfully.', variant: 'success' });
+      window.location.reload();
     } catch {
-      setMessage({ type: 'error', text: 'Failed to update school default data.' });
+      setModal({ show: true, title: '❌ Error', message: 'Failed to update school default data.', variant: 'danger' });
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading) return (
-    <div className="d-flex justify-content-center align-items-center vh-100 bg-light">
-      <div className="spinner-border text-primary" role="status" />
-      <span className="ms-3 fs-5 text-muted">Loading school data...</span>
-    </div>
-  );
+  if (loading)
+    return (
+      <div className="d-flex justify-content-center align-items-center vh-100 bg-light">
+        <div className="spinner-border text-primary" role="status" />
+        <span className="ms-3 fs-5 text-muted">Loading school data...</span>
+      </div>
+    );
 
-  const readOnlyFields = ['school_id', 'created_at', 'updated_at', 'user'];
+  const READ_ONLY_FIELDS = ['school_id', 'created_at', 'updated_at', 'user'];
 
   return (
     <div className="container my-5">
-      <div className="card shadow-sm rounded-4 p-4 bg-white">
-        
-        <h3 className="text-center text-primary mb-4" style={{ fontWeight: 600 }}>
-          Update School Information
-        </h3>
+      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
 
-        {message.text && (
-          <div className={`alert alert-${message.type === 'error' ? 'danger' : 'success'} alert-dismissible fade show`} role="alert">
-            {message.text}
-            <button type="button" className="btn-close" onClick={() => setMessage({ type: '', text: '' })} />
-          </div>
-        )}
+      <div className="card shadow-sm rounded-4 p-4 bg-white">
+        <h3 className="text-center text-primary mb-4 fw-semibold">Update School Information</h3>
 
         <section className="mb-4 d-flex flex-wrap align-items-center gap-3">
-          <div className="rounded-circle overflow-hidden shadow-sm" style={{ width: 100, height: 100, border: '2px solid #0d6efd', backgroundColor: '#e9ecef', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <div
+            className="rounded-circle overflow-hidden shadow-sm"
+            style={{
+              width: 100,
+              height: 100,
+              border: '2px solid #0d6efd',
+              backgroundColor: '#e9ecef',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
             {logoPreview ? (
               <img src={logoPreview} alt="School Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
@@ -120,7 +127,9 @@ const SchoolDefaultUpdateForm = () => {
             )}
           </div>
           <div className="flex-grow-1">
-            <label htmlFor="school_logo" className="form-label fw-semibold mb-1">Upload New Logo</label>
+            <label htmlFor="school_logo" className="form-label fw-semibold mb-1">
+              Upload New Logo
+            </label>
             <input type="file" className="form-control" id="school_logo" accept="image/*" onChange={handleLogoChange} />
           </div>
         </section>
@@ -128,7 +137,7 @@ const SchoolDefaultUpdateForm = () => {
         <form onSubmit={handleSubmit}>
           <div className="row g-3">
             {Object.entries(schoolData).map(([key, value]) => {
-              if (readOnlyFields.includes(key) || key === 'logo' || key === 'school_logo') return null;
+              if (READ_ONLY_FIELDS.includes(key) || key === 'logo' || key === 'school_logo') return null;
               return (
                 <div className="col-12 col-md-6" key={key}>
                   <div className="form-floating">

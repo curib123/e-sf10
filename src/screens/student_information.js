@@ -4,6 +4,10 @@ import { FaPlus, FaSearch } from "react-icons/fa";
 import axios from "axios";
 import { checkToken } from "../components/token_checker";
 import { getUserPermissions } from "../components/get_permission";
+import StatusModal from "../components/status_modal";
+
+// Base API URL
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const StudentInformation = () => {
   const [students, setStudents] = useState([]);
@@ -16,18 +20,12 @@ const StudentInformation = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [permissions, setPermissions] = useState([]);
 
-  // === Bulk Upload State ===
+  // Bulk Upload State
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [uploadStatus, setUploadStatus] = useState(null);
-  const [uploadResult, setUploadResult] = useState(null);
+  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "success" });
 
-  const buildQueryParams = () => {
-    const params = new URLSearchParams();
-    params.append("page", currentPage);
-    params.append("limit", limit);
-    return params.toString();
-  };
+  const token = sessionStorage.getItem("token");
 
   useEffect(() => {
     checkToken();
@@ -42,46 +40,42 @@ const StudentInformation = () => {
     }
   }, [currentPage, searchQuery]);
 
+  const buildQueryParams = () => new URLSearchParams({ page: currentPage, limit }).toString();
+
   const fetchStudents = async () => {
     setIsSearching(false);
-    const token = sessionStorage.getItem("token");
     if (!token) return;
 
     try {
-      const response = await axios.get(
-        `http://localhost:3001/esf10/students/all?${buildQueryParams()}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = response.data;
+      const { data } = await axios.get(`${BASE_URL}/students/all?${buildQueryParams()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       setStudents(data.students || []);
       setTotalPages(data.totalPages || 1);
       setLimit(data.limit || 10);
       setTotal(data.total || 0);
-    } catch (error) {
-      console.error("Error fetching students:", error);
+    } catch {
       setStudents([]);
+      setModal({ show: true, title: "Error", message: "Failed to fetch students.", variant: "danger" });
     }
   };
 
   const searchStudents = async (query) => {
     setIsSearching(true);
     setSearchLoading(true);
-    const token = sessionStorage.getItem("token");
     if (!token) return;
 
     try {
-      const response = await axios.get(
-        `http://localhost:3001/esf10/students/search?query=${encodeURIComponent(query)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = response.data;
+      const { data } = await axios.get(`${BASE_URL}/students/search?query=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       setStudents(Array.isArray(data) ? data.slice(0, 5) : []);
       setTotal(data.length || 0);
       setCurrentPage(1);
-    } catch (error) {
-      console.error("Error searching students:", error);
+    } catch {
       setStudents([]);
       setTotal(0);
+      setModal({ show: true, title: "Error", message: "Search failed.", variant: "danger" });
     } finally {
       setSearchLoading(false);
     }
@@ -91,51 +85,43 @@ const StudentInformation = () => {
     const value = e.target.value;
     setSearchQuery(value);
     setCurrentPage(1);
-    if (value.trim() === "") {
-      setIsSearching(false);
-      fetchStudents();
-    }
+    if (!value.trim()) fetchStudents();
   };
 
-  // === Bulk Upload Handlers ===
+  // Bulk Upload Handlers
   const handleFileChange = (e) => setSelectedFile(e.target.files[0]);
   const handleUpload = async () => {
-    if (!selectedFile) return;
-    const token = sessionStorage.getItem("token");
+    if (!selectedFile || !token) return;
     const formData = new FormData();
     formData.append("file", selectedFile);
 
     try {
-      const response = await axios.post(
-        "http://localhost:3001/esf10/students/bulk-register",
-        formData,
-        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" } }
-      );
-      setUploadStatus("success");
-      setUploadResult(response.data);
+      await axios.post(`${BASE_URL}/students/bulk-register`, formData, {
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+      });
+      setModal({ show: true, title: "Success", message: "Bulk upload successful.", variant: "success" });
       fetchStudents();
     } catch (error) {
-      setUploadStatus("error");
-      setUploadResult(error.response?.data || { message: "Upload failed." });
+      setModal({
+        show: true,
+        title: "Error",
+        message: error.response?.data?.message || "Bulk upload failed.",
+        variant: "danger",
+      });
+    } finally {
+      setShowUploadModal(false);
+      setSelectedFile(null);
     }
   };
 
   return (
     <div className="container-fluid my-3">
-      
       {/* Search & Actions */}
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
-        {/* Search */}
         <div className="position-relative flex-grow-1" style={{ maxWidth: "600px" }}>
           <FaSearch
             className="position-absolute"
-            style={{
-              top: "50%",
-              left: "16px",
-              transform: "translateY(-50%)",
-              color: "#6c757d",
-              fontSize: "18px",
-            }}
+            style={{ top: "50%", left: "16px", transform: "translateY(-50%)", color: "#6c757d", fontSize: "18px" }}
           />
           <input
             type="text"
@@ -144,21 +130,12 @@ const StudentInformation = () => {
             placeholder=" Search by LRN or Name..."
             value={searchQuery}
             onChange={handleSearchChange}
-            style={{
-              backgroundColor: "#fff",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-              transition: "all 0.25s ease",
-            }}
-            onFocus={(e) =>
-              (e.target.style.boxShadow = "0 0 0 4px rgba(37,99,235,0.2)")
-            }
-            onBlur={(e) =>
-              (e.target.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)")
-            }
+            style={{ backgroundColor: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.08)", transition: "all 0.25s ease" }}
+            onFocus={(e) => (e.target.style.boxShadow = "0 0 0 4px rgba(37,99,235,0.2)")}
+            onBlur={(e) => (e.target.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)")}
           />
         </div>
 
-        {/* Buttons */}
         <div className="d-flex gap-2">
           {permissions.register_student && (
             <>
@@ -183,7 +160,7 @@ const StudentInformation = () => {
       <div className="card shadow-sm border-0 rounded-4">
         <div className="card-body p-0">
           <div className="table-responsive">
-            <table className="table table-hover align-middle mb-0">
+            <table className="table table-bordered table-hover align-middle mb-0">
               <thead className="table-light text-center">
                 <tr>
                   <th>LRN</th>
@@ -216,19 +193,13 @@ const StudentInformation = () => {
                       <td>{student.first_name}</td>
                       <td>{student.middle_name}</td>
                       <td>{student.gender}</td>
-                      <td>
-                        {student.date_of_birth
-                          ? new Date(student.date_of_birth).toLocaleDateString("en-CA")
-                          : ""}
-                      </td>
+                      <td>{student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString("en-CA") : ""}</td>
                       <td>
                         <div className="d-flex flex-wrap gap-1 justify-content-center">
                           <Link
                             to={`/edit_student/${student.lrn}`}
                             className={`btn btn-sm rounded-pill px-3 fw-semibold ${
-                              permissions.edit_student_info
-                                ? "btn-outline-success"
-                                : "btn-outline-secondary disabled"
+                              permissions.edit_student_info ? "btn-outline-success" : "btn-outline-secondary disabled"
                             }`}
                           >
                             Edit
@@ -236,9 +207,7 @@ const StudentInformation = () => {
                           <Link
                             to={`/record_student/${student.lrn}`}
                             className={`btn btn-sm rounded-pill px-3 fw-semibold ${
-                              permissions.view_student_info
-                                ? "btn-outline-primary"
-                                : "btn-outline-secondary disabled"
+                              permissions.view_student_info ? "btn-outline-primary" : "btn-outline-secondary disabled"
                             }`}
                           >
                             Records
@@ -246,9 +215,7 @@ const StudentInformation = () => {
                           <Link
                             to={`/upload_ecards/${student.lrn}`}
                             className={`btn btn-sm rounded-pill px-3 fw-semibold ${
-                              permissions.upload_documents
-                                ? "btn-outline-secondary"
-                                : "btn-outline-secondary disabled"
+                              permissions.upload_documents ? "btn-outline-secondary" : "btn-outline-secondary disabled"
                             }`}
                           >
                             Upload E-SF10
@@ -256,9 +223,7 @@ const StudentInformation = () => {
                           <Link
                             to={`/request_transfer/${student.student_id}`}
                             className={`btn btn-sm rounded-pill px-3 fw-semibold ${
-                              permissions.request_transfers
-                                ? "btn-outline-warning"
-                                : "btn-outline-secondary disabled"
+                              permissions.request_transfers ? "btn-outline-warning" : "btn-outline-secondary disabled"
                             }`}
                           >
                             Transfer
@@ -283,31 +248,19 @@ const StudentInformation = () => {
           <nav>
             <ul className="pagination pagination-sm mb-0">
               <li className={`page-item ${currentPage === 1 ? "disabled" : ""}`}>
-                <button
-                  className="page-link rounded-pill"
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                >
+                <button className="page-link rounded-pill" onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}>
                   &laquo;
                 </button>
               </li>
               {Array.from({ length: totalPages }, (_, i) => (
-                <li
-                  key={i}
-                  className={`page-item ${currentPage === i + 1 ? "active" : ""}`}
-                >
-                  <button
-                    className="page-link rounded-pill"
-                    onClick={() => setCurrentPage(i + 1)}
-                  >
+                <li key={i} className={`page-item ${currentPage === i + 1 ? "active" : ""}`}>
+                  <button className="page-link rounded-pill" onClick={() => setCurrentPage(i + 1)}>
                     {i + 1}
                   </button>
                 </li>
               ))}
               <li className={`page-item ${currentPage === totalPages ? "disabled" : ""}`}>
-                <button
-                  className="page-link rounded-pill"
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                >
+                <button className="page-link rounded-pill" onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}>
                   &raquo;
                 </button>
               </li>
@@ -325,28 +278,13 @@ const StudentInformation = () => {
                 <h5 className="modal-title fw-semibold text-primary">
                   <i className="bi bi-upload me-2"></i> Bulk Student Upload
                 </h5>
-                <button
-                  type="button"
-                  className="btn-close"
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    setSelectedFile(null);
-                    setUploadStatus(null);
-                    setUploadResult(null);
-                  }}
-                ></button>
+                <button type="button" className="btn-close" onClick={() => setShowUploadModal(false)}></button>
               </div>
               <div className="modal-body px-4 py-3" style={{ maxHeight: "65vh", overflowY: "auto" }}>
                 <p className="mb-2">📥 Download the official template:</p>
-                <a
-                  href="http://localhost:3001/esf10/generate-excel"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-outline-primary btn-sm"
-                >
+                <a href={`${BASE_URL}/generate-excel`} target="_blank" rel="noopener noreferrer" className="btn btn-outline-primary btn-sm">
                   <i className="bi bi-file-earmark-excel me-1"></i> Download Template
                 </a>
-
                 <div className="alert alert-info mt-3 small">
                   <strong>📝 Upload Guidelines:</strong>
                   <ul className="mb-0 mt-1">
@@ -356,41 +294,16 @@ const StudentInformation = () => {
                     <li>Only <code>Male</code> or <code>Female</code> for gender.</li>
                   </ul>
                 </div>
-
                 <div className="mb-3">
                   <label className="form-label fw-medium">Choose Excel File</label>
-                  <input
-                    type="file"
-                    accept=".xlsx"
-                    className="form-control"
-                    onChange={handleFileChange}
-                  />
+                  <input type="file" accept=".xlsx" className="form-control" onChange={handleFileChange} />
                 </div>
-
-                {/* Upload Results */}
-                {uploadStatus === "success" && (
-                  <div className="alert alert-success small">
-                    ✅ Upload successful!
-                  </div>
-                )}
-                {uploadStatus === "error" && (
-                  <div className="alert alert-danger small">
-                    ❌ {uploadResult?.message || "Upload failed."}
-                  </div>
-                )}
               </div>
               <div className="modal-footer bg-light rounded-bottom-4 border-0 px-4 py-3">
-                <button
-                  className="btn btn-outline-secondary rounded-pill"
-                  onClick={() => setShowUploadModal(false)}
-                >
+                <button className="btn btn-outline-secondary rounded-pill" onClick={() => setShowUploadModal(false)}>
                   Cancel
                 </button>
-                <button
-                  className="btn btn-success rounded-pill"
-                  disabled={!selectedFile}
-                  onClick={handleUpload}
-                >
+                <button className="btn btn-success rounded-pill" disabled={!selectedFile} onClick={handleUpload}>
                   <i className="bi bi-upload me-1"></i> Upload
                 </button>
               </div>
@@ -398,6 +311,9 @@ const StudentInformation = () => {
           </div>
         </div>
       )}
+
+      {/* Status Modal */}
+      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
     </div>
   );
 };

@@ -2,6 +2,10 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Spinner, Button, Modal, Card } from "react-bootstrap";
 import { FaArrowLeft, FaBookOpen, FaClipboardList } from "react-icons/fa";
+import StatusModal from "../components/status_modal";
+
+// Base API URL
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const CurriculumAssign = () => {
   const { id } = useParams();
@@ -12,110 +16,112 @@ const CurriculumAssign = () => {
   const [assignedSubjects, setAssignedSubjects] = useState([]);
   const [selectedToAssign, setSelectedToAssign] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
+
+  const [statusModal, setStatusModal] = useState({ show: false, title: "", message: "", variant: "info" });
   const [showConfirm, setShowConfirm] = useState(false);
   const [subjectToRemove, setSubjectToRemove] = useState(null);
 
+  // Handle unauthorized access
+  const handleUnauthorized = () => {
+    setStatusModal({ show: true, title: "Unauthorized", message: "Access denied. Please log in.", variant: "danger" });
+    sessionStorage.removeItem("token");
+    setTimeout(() => navigate("/login"), 1500);
+  };
+
   useEffect(() => {
-    if (!token) navigate("/login");
+    if (!token) return handleUnauthorized();
     fetchSubjects();
     fetchAssignedSubjects();
   }, [token, navigate]);
 
   const fetchSubjects = async () => {
     try {
-      const res = await fetch("http://localhost:3001/esf10/subjects/view-all-subjects", {
+      const res = await fetch(`${BASE_URL}/subjects/view-all-subjects`, {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (data.success) setSubjects(data.data || []);
     } catch (err) {
-      console.error(err);
+      setStatusModal({ show: true, title: "Error", message: err.message, variant: "danger" });
     }
   };
 
   const fetchAssignedSubjects = async () => {
     try {
-      const res = await fetch(
-        `http://localhost:3001/esf10/curriculum/curriculum-subjects/${id}`,
-        { headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } }
-      );
+      const res = await fetch(`${BASE_URL}/curriculum/curriculum-subjects/${id}`, {
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       if (data.success) setAssignedSubjects(data.data || []);
     } catch (err) {
-      console.error(err);
+      setStatusModal({ show: true, title: "Error", message: err.message, variant: "danger" });
     }
   };
 
   const toggleSelect = (subject_id) => {
     setSelectedToAssign((prev) =>
-      prev.includes(subject_id)
-        ? prev.filter((id) => id !== subject_id)
-        : [...prev, subject_id]
+      prev.includes(subject_id) ? prev.filter((id) => id !== subject_id) : [...prev, subject_id]
     );
   };
 
   const assignSubjects = async () => {
-    if (!selectedToAssign.length) return setMessage("⚠️ Select at least one subject.");
+    if (!selectedToAssign.length)
+      return setStatusModal({ show: true, title: "Warning", message: "⚠️ Select at least one subject.", variant: "warning" });
+
     setLoading(true);
     try {
-      const res = await fetch(
-        `http://localhost:3001/esf10/curriculum/add-subjects/${id}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ subject_ids: selectedToAssign }),
-        }
-      );
+      const res = await fetch(`${BASE_URL}/curriculum/add-subjects/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subject_ids: selectedToAssign }),
+      });
       const data = await res.json();
       if (data.success) {
-        setMessage(`✅ ${data.message}`);
+        setStatusModal({ show: true, title: "Success", message: `✅ ${data.message}`, variant: "success" });
         setSelectedToAssign([]);
         fetchAssignedSubjects();
-      } else setMessage("❌ Failed to assign subjects.");
+      } else {
+        setStatusModal({ show: true, title: "Error", message: "❌ Failed to assign subjects.", variant: "danger" });
+      }
     } catch (err) {
-      console.error(err);
-      setMessage("❌ Error occurred while assigning subjects.");
+      setStatusModal({ show: true, title: "Error", message: "❌ " + err.message, variant: "danger" });
     } finally {
       setLoading(false);
     }
   };
 
-  const confirmRemoveSubject = (id) => {
-    setSubjectToRemove(id);
+  const confirmRemoveSubject = (subject_id) => {
+    setSubjectToRemove(subject_id);
     setShowConfirm(true);
   };
 
   const removeSubject = async () => {
     setShowConfirm(false);
     if (!subjectToRemove) return;
+
     try {
-      const res = await fetch(
-        `http://localhost:3001/esf10/curriculum/remove-subject/${id}/${subjectToRemove}`,
-        { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } }
-      );
+      const res = await fetch(`${BASE_URL}/curriculum/remove-subject/${id}/${subjectToRemove}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       if (data.success) {
-        setMessage("✅ Subject removed successfully!");
+        setStatusModal({ show: true, title: "Success", message: "✅ Subject removed successfully!", variant: "success" });
         fetchAssignedSubjects();
-      } else setMessage("❌ Failed to remove subject.");
+      } else {
+        setStatusModal({ show: true, title: "Error", message: "❌ Failed to remove subject.", variant: "danger" });
+      }
     } catch (err) {
-      console.error(err);
-      setMessage("❌ Error occurred while removing subject.");
+      setStatusModal({ show: true, title: "Error", message: "❌ " + err.message, variant: "danger" });
     } finally {
       setSubjectToRemove(null);
     }
   };
 
-  // Filter subjects that are not assigned yet
-  const availableSubjects = subjects.filter(
-    (s) => !assignedSubjects.some((a) => a.subject_id === s.subject_id)
-  );
+  const availableSubjects = subjects.filter((s) => !assignedSubjects.some((a) => a.subject_id === s.subject_id));
 
   return (
     <div className="container mt-4">
-      
-
       {/* Page Header */}
       <div className="text-center mb-5">
         <h2 className="fw-bold text-primary">
@@ -137,11 +143,7 @@ const CurriculumAssign = () => {
                 className="d-flex justify-content-between align-items-center p-2 mb-1 border rounded bg-light"
               >
                 <span>{subj.subject_name} ({subj.subject_code})</span>
-                <Button
-                  size="sm"
-                  variant="outline-danger"
-                  onClick={() => confirmRemoveSubject(subj.subject_id)}
-                >
+                <Button size="sm" variant="outline-danger" onClick={() => confirmRemoveSubject(subj.subject_id)}>
                   Remove
                 </Button>
               </div>
@@ -174,22 +176,18 @@ const CurriculumAssign = () => {
             <p className="text-muted text-center">No subjects available</p>
           )}
         </Card.Body>
-        <Card.Footer className="text-end">
+        <Card.Footer className="text-end d-flex justify-content-between">
           <Button variant="success" onClick={assignSubjects} disabled={loading}>
             {loading ? <Spinner animation="border" size="sm" /> : "Assign Selected"}
           </Button>
-           <Button
-          type="button"
-          className="btn btn-light border rounded-3"
-          onClick={() => navigate(-1)}
-        >
-          <FaArrowLeft className="me-1" /> Back
-        </Button>
+          <Button variant="light" onClick={() => navigate(-1)}>
+            <FaArrowLeft className="me-1" /> Back
+          </Button>
         </Card.Footer>
       </Card>
 
-      {/* Feedback Message */}
-      {message && <div className="alert alert-info mt-3" style={{ whiteSpace: "pre-line" }}>{message}</div>}
+      {/* Status Modal */}
+      <StatusModal {...statusModal} onHide={() => setStatusModal({ ...statusModal, show: false })} />
 
       {/* Remove Confirmation Modal */}
       <Modal show={showConfirm} onHide={() => setShowConfirm(false)} centered>

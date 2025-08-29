@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
+import StatusModal from "../components/status_modal";
 
-const BASE_URL = "http://localhost:3001/esf10";
+// Base API URL
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const UpsertCurriculum = () => {
   const navigate = useNavigate();
-  const { id } = useParams(); // curriculum_id for edit
+  const { id } = useParams();
   const isEdit = Boolean(id);
   const token = sessionStorage.getItem("token");
 
@@ -15,33 +17,41 @@ const UpsertCurriculum = () => {
     school_year_id: "",
     is_active: true,
   });
-
   const [schoolYears, setSchoolYears] = useState([]);
   const [usedSchoolYears, setUsedSchoolYears] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [statusModal, setStatusModal] = useState({ show: false, title: "", message: "", variant: "info" });
 
   const authHeaders = () => ({
     "Content-Type": "application/json",
     Authorization: token ? `Bearer ${token}` : undefined,
   });
 
-  // Fetch all school years
+  const handleUnauthorized = () => {
+    setStatusModal({ show: true, title: "Unauthorized", message: "Please log in.", variant: "danger" });
+    sessionStorage.removeItem("token");
+    setTimeout(() => navigate("/login"), 1500);
+  };
+
+  const checkToken = () => {
+    if (!token) {
+      handleUnauthorized();
+      return false;
+    }
+    return true;
+  };
+
+  // Fetch school years
   useEffect(() => {
+    if (!checkToken()) return;
     const fetchSchoolYears = async () => {
       try {
-        const res = await fetch(`${BASE_URL}/school-year/all-school-years`, {
-          method: "GET",
-          headers: authHeaders(),
-        });
-        if (!res.ok) throw new Error(await res.text());
+        const res = await fetch(`${BASE_URL}/school-year/all-school-years`, { headers: authHeaders() });
         const data = await res.json();
-        if (data.success && Array.isArray(data.schoolYears)) {
-          setSchoolYears(data.schoolYears);
-        }
+        if (data.success) setSchoolYears(data.schoolYears || []);
       } catch (err) {
-        console.error("School years fetch error:", err);
-        setMessage({ type: "error", text: "Failed to load school years." });
+        console.error(err);
+        setStatusModal({ show: true, title: "Error", message: "Failed to load school years.", variant: "danger" });
       }
     };
     fetchSchoolYears();
@@ -49,13 +59,10 @@ const UpsertCurriculum = () => {
 
   // Fetch all curriculums to mark used school years
   useEffect(() => {
+    if (!checkToken()) return;
     const fetchCurriculums = async () => {
       try {
-        const res = await fetch(`${BASE_URL}/curriculum/view-all-curriculums`, {
-          method: "GET",
-          headers: authHeaders(),
-        });
-        if (!res.ok) throw new Error(await res.text());
+        const res = await fetch(`${BASE_URL}/curriculum/view-all-curriculums`, { headers: authHeaders() });
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {
           const used = data.data
@@ -64,55 +71,44 @@ const UpsertCurriculum = () => {
           setUsedSchoolYears(used);
         }
       } catch (err) {
-        console.error("Fetch curriculums error:", err);
+        console.error(err);
       }
     };
     fetchCurriculums();
   }, [isEdit, id]);
 
-  // Fetch curriculum data if editing
+  // Fetch curriculum if editing
   useEffect(() => {
-    if (!isEdit) return;
-
+    if (!isEdit || !checkToken()) return;
     const fetchCurriculum = async () => {
       try {
-        const res = await fetch(`${BASE_URL}/curriculum/view-curriculum/${id}`, {
-          method: "GET",
-          headers: authHeaders(),
-        });
-        if (!res.ok) throw new Error(await res.text());
+        const res = await fetch(`${BASE_URL}/curriculum/view-curriculum/${id}`, { headers: authHeaders() });
         const data = await res.json();
         if (!data.success || !data.data) throw new Error("Failed to fetch curriculum");
-
         setFormData({
           curriculum_name: data.data.curriculum_name || "",
           school_year_id: data.data.school_year_id || "",
           is_active: Boolean(data.data.is_active),
         });
       } catch (err) {
-        console.error("Fetch curriculum error:", err);
-        setMessage({ type: "error", text: "Failed to load curriculum." });
+        console.error(err);
+        setStatusModal({ show: true, title: "Error", message: "Failed to load curriculum.", variant: "danger" });
       }
     };
-
     fetchCurriculum();
   }, [isEdit, id]);
 
   const handleChange = ({ target }) => {
     const { name, value, type, checked } = target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+    setFormData(prev => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage(null);
-
     if (!formData.curriculum_name.trim() || !formData.school_year_id) {
-      return setMessage({ type: "error", text: "Curriculum name and school year are required." });
+      return setStatusModal({ show: true, title: "Error", message: "Curriculum name and school year are required.", variant: "danger" });
     }
+    if (!checkToken()) return;
 
     setLoading(true);
     try {
@@ -125,17 +121,14 @@ const UpsertCurriculum = () => {
         headers: authHeaders(),
         body: JSON.stringify(formData),
       });
-
-      if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
-
       if (!result.success) throw new Error(result.message);
 
-      setMessage({ type: "success", text: result.message || "Curriculum saved successfully." });
+      setStatusModal({ show: true, title: "Success", message: result.message || "Curriculum saved successfully.", variant: "success" });
       setTimeout(() => navigate("/curriculum"), 1500);
     } catch (err) {
-      console.error("Save curriculum error:", err);
-      setMessage({ type: "error", text: err.message || "Failed to save curriculum." });
+      console.error(err);
+      setStatusModal({ show: true, title: "Error", message: err.message || "Failed to save curriculum.", variant: "danger" });
     } finally {
       setLoading(false);
     }
@@ -143,38 +136,15 @@ const UpsertCurriculum = () => {
 
   return (
     <div className="container mt-5">
-      {/* Title & Subtitle outside and above form */}
       <div className="text-center mb-4">
-        <h2 className="fw-bold text-primary">
-          {isEdit ? "Update Curriculum" : "Create Curriculum"}
-        </h2>
-        <p className="text-muted mb-0">
-          {isEdit
-            ? "Edit the curriculum details and update the school year."
-            : "Fill in the curriculum details and select the school year."}
-        </p>
+        <h2 className="fw-bold text-primary">{isEdit ? "Update Curriculum" : "Create Curriculum"}</h2>
+        <p className="text-muted mb-0">{isEdit ? "Edit the curriculum details." : "Fill in the curriculum details."}</p>
       </div>
 
-      {/* Form Container */}
       <div className="d-flex justify-content-center">
         <div className="card shadow-lg border-0 w-100" style={{ maxWidth: 1000 }}>
           <div className="card-body p-5">
-            {/* Message */}
-            {message && (
-              <div
-                className={`alert alert-dismissible fade show ${
-                  message.type === "success" ? "alert-success" : "alert-danger"
-                }`}
-                role="alert"
-              >
-                {message.text}
-                <button type="button" className="btn-close" onClick={() => setMessage(null)}></button>
-              </div>
-            )}
-
-            {/* Form */}
             <form onSubmit={handleSubmit}>
-              {/* Curriculum Name */}
               <div className="mb-3">
                 <label className="form-label fw-semibold">Curriculum Name</label>
                 <input
@@ -188,7 +158,6 @@ const UpsertCurriculum = () => {
                 />
               </div>
 
-              {/* School Year */}
               <div className="mb-3">
                 <label className="form-label fw-semibold">School Year</label>
                 <select
@@ -199,48 +168,24 @@ const UpsertCurriculum = () => {
                   required
                 >
                   <option value="">-- Select School Year --</option>
-                  {schoolYears.map((sy) => {
-                    const isUsed =
-                      usedSchoolYears.includes(sy.school_year_id) &&
-                      (!isEdit || sy.school_year_id !== Number(formData.school_year_id));
+                  {schoolYears.map(sy => {
+                    const isUsed = usedSchoolYears.includes(sy.school_year_id) && (!isEdit || sy.school_year_id !== Number(formData.school_year_id));
                     return (
-                      <option
-                        key={sy.school_year_id}
-                        value={sy.school_year_id}
-                        disabled={isUsed}
-                      >
-                        {sy.start_year && sy.end_year
-                          ? `${sy.start_year} - ${sy.end_year}${isUsed ? " (Already used)" : ""}`
-                          : "Unknown Year"}
+                      <option key={sy.school_year_id} value={sy.school_year_id} disabled={isUsed}>
+                        {sy.start_year && sy.end_year ? `${sy.start_year} - ${sy.end_year}${isUsed ? " (Used)" : ""}` : "Unknown Year"}
                       </option>
                     );
                   })}
                 </select>
               </div>
 
-              {/* Is Active */}
               <div className="form-check mb-3">
-                <input
-                  type="checkbox"
-                  name="is_active"
-                  checked={formData.is_active}
-                  onChange={handleChange}
-                  className="form-check-input"
-                  id="is_active"
-                />
-                <label className="form-check-label fw-semibold" htmlFor="is_active">
-                  Active
-                </label>
+                <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="form-check-input" id="is_active" />
+                <label className="form-check-label fw-semibold" htmlFor="is_active">Active</label>
               </div>
 
-              {/* Buttons */}
               <div className="d-flex justify-content-between">
-                <button
-                  type="button"
-                  className="btn btn-light border rounded-3"
-                  onClick={() => navigate(-1)}
-                  disabled={loading}
-                >
+                <button type="button" className="btn btn-light border rounded-3" onClick={() => navigate(-1)} disabled={loading}>
                   ⬅ Back
                 </button>
                 <button type="submit" className="btn btn-primary rounded-3 px-4" disabled={loading}>
@@ -251,6 +196,8 @@ const UpsertCurriculum = () => {
           </div>
         </div>
       </div>
+
+      <StatusModal {...statusModal} onHide={() => setStatusModal({ ...statusModal, show: false })} />
     </div>
   );
 };

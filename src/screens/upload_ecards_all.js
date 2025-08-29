@@ -4,13 +4,15 @@ import AsyncSelect from "react-select/async";
 import StatusModal from "../components/status_modal";
 import { checkToken } from "../components/token_checker";
 
+// Base API URL
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
+
 export default function StudentRecord() {
   const [lrn, setLrn] = useState(null);
   const [studentId, setStudentId] = useState(null);
   const [studentName, setStudentName] = useState("");
   const [eCards, setECards] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState({ type: "", text: "" });
   const [schoolYears, setSchoolYears] = useState([]);
   const [gradeLevels, setGradeLevels] = useState([]);
   const [form, setForm] = useState({
@@ -29,66 +31,38 @@ export default function StudentRecord() {
     variant: "danger",
   });
 
+  const token = sessionStorage.getItem("token");
+  const authHeaders = () => ({
+    Authorization: token ? `Bearer ${token}` : undefined,
+  });
+
   useEffect(() => { checkToken(); }, []);
 
-  // Auto hide message
-  useEffect(() => {
-    if (message.text) {
-      const timer = setTimeout(() => setMessage({ type: "", text: "" }), 5000);
-      return () => clearTimeout(timer);
+  // Fetch helper
+  const fetchData = async (endpoint, setter, key = "data") => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${BASE_URL}/${endpoint}`, { headers: { "Content-Type": "application/json", ...authHeaders() } });
+      if (!res.ok) throw new Error(`Failed to fetch ${endpoint}`);
+      const data = await res.json();
+      if (data.success) setter(data[key]);
+    } catch (err) {
+      console.error(err);
+      setModal({ show: true, title: "Error", message: `Failed to load ${endpoint}`, variant: "danger" });
     }
-  }, [message]);
+  };
 
-  // Fetch school years
-  useEffect(() => {
-    const fetchSchoolYears = async () => {
-      const token = sessionStorage.getItem("token");
-      if (!token) return;
-      try {
-        const res = await fetch("http://localhost:3001/esf10/school-year/all-school-years", {
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Failed to fetch school years");
-        const data = await res.json();
-        if (data.success) setSchoolYears(data.schoolYears);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchSchoolYears();
-  }, []);
-
-  // Fetch grade levels
-  useEffect(() => {
-    const fetchGradeLevels = async () => {
-      const token = sessionStorage.getItem("token");
-      if (!token) return;
-      try {
-        const res = await fetch("http://localhost:3001/esf10/grade-levels", {
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Failed to fetch grade levels");
-        const data = await res.json();
-        if (data.success) setGradeLevels(data.data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchGradeLevels();
-  }, []);
+  useEffect(() => { fetchData("school-year/all-school-years", setSchoolYears, "schoolYears"); }, []);
+  useEffect(() => { fetchData("grade-levels", setGradeLevels, "data"); }, []);
 
   // Fetch students for AsyncSelect
   const fetchStudentOptions = async (inputValue) => {
-    const token = sessionStorage.getItem("token");
     if (!token || !inputValue) return [];
     try {
-      const res = await fetch(`http://localhost:3001/esf10/students/all?page=1&limit=50`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${BASE_URL}/students/all?page=1&limit=50`, { headers: authHeaders() });
       if (!res.ok) throw new Error("Failed to fetch students");
       const data = await res.json();
       if (!data.students) return [];
-
       return data.students
         .filter(
           (s) =>
@@ -98,30 +72,26 @@ export default function StudentRecord() {
         .map((s) => ({ value: s.lrn, label: `${s.lrn} - ${s.last_name}, ${s.first_name}` }));
     } catch (err) {
       console.error(err);
+      setModal({ show: true, title: "Error", message: err.message, variant: "danger" });
       return [];
     }
   };
 
   // Fetch student details
   const fetchDetails = async (selectedLrn) => {
-    const token = sessionStorage.getItem("token");
-    if (!token) return setMessage({ type: "error", text: "Missing authorization token." });
-
+    if (!token) return setModal({ show: true, title: "Error", message: "Missing authorization token.", variant: "danger" });
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:3001/esf10/students/${selectedLrn}/details`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${BASE_URL}/students/${selectedLrn}/details`, { headers: authHeaders() });
       if (!res.ok) throw new Error("Failed to fetch student details");
       const data = await res.json();
-
       setLrn(selectedLrn);
       setStudentId(data.student?.student_id || null);
       setStudentName(`${data.student?.last_name}, ${data.student?.first_name} ${data.student?.middle_name || ""}`);
       setECards(data.eCards || []);
-      setMessage({ type: "success", text: "Student loaded successfully." });
+      setModal({ show: true, title: "Success", message: "Student loaded successfully.", variant: "success" });
     } catch (err) {
-      setMessage({ type: "error", text: err.message });
+      setModal({ show: true, title: "Error", message: err.message, variant: "danger" });
     } finally {
       setLoading(false);
     }
@@ -132,39 +102,39 @@ export default function StudentRecord() {
     const { name, value, files } = e.target;
     if (name === "school_year_id") {
       const selected = schoolYears.find((sy) => sy.school_year_id === parseInt(value));
-      if (selected) {
-        setForm({ ...form, school_year_id: value, start_year: selected.start_year, end_year: selected.end_year });
-      } else {
-        setForm({ ...form, school_year_id: "", start_year: "", end_year: "" });
-      }
+      setForm((prev) => ({
+        ...prev,
+        school_year_id: value || "",
+        start_year: selected?.start_year || "",
+        end_year: selected?.end_year || "",
+      }));
     } else if (name === "grade_level_id") {
       const selected = gradeLevels.find((gl) => gl.grade_level_id === parseInt(value));
-      if (selected) {
-        setForm({ ...form, grade_level_id: value, grade_level_name: selected.grade_name });
-      } else {
-        setForm({ ...form, grade_level_id: "", grade_level_name: "" });
-      }
+      setForm((prev) => ({
+        ...prev,
+        grade_level_id: value || "",
+        grade_level_name: selected?.grade_name || "",
+      }));
     } else {
-      setForm({ ...form, [name]: files ? files[0] : value });
+      setForm((prev) => ({ ...prev, [name]: files ? files[0] : value }));
     }
   };
 
   // Handle file upload
   const handleUpload = async (e) => {
     e.preventDefault();
-    const token = sessionStorage.getItem("token");
-    if (!token) return setMessage({ type: "error", text: "Missing authorization token." });
-    if (!form.sf10) return setMessage({ type: "error", text: "Please select a file." });
-    if (!studentId) return setMessage({ type: "error", text: "Student not loaded." });
+    if (!token) return setModal({ show: true, title: "Error", message: "Missing authorization token.", variant: "danger" });
+    if (!form.sf10) return setModal({ show: true, title: "Error", message: "Please select a file.", variant: "danger" });
+    if (!studentId) return setModal({ show: true, title: "Error", message: "Student not loaded.", variant: "danger" });
 
-    const formData = new FormData();
-    Object.entries(form).forEach(([key, val]) => formData.append(key, val));
+    const fd = new FormData();
+    Object.entries(form).forEach(([key, val]) => fd.append(key, val));
 
     try {
-      const res = await fetch(`http://localhost:3001/esf10/students/upload-sf10/${studentId}`, {
+      const res = await fetch(`${BASE_URL}/students/upload-sf10/${studentId}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        body: fd,
       });
       if (!res.ok) {
         const errorData = await res.json();
@@ -182,12 +152,6 @@ export default function StudentRecord() {
   return (
     <div className="container py-5">
       <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
-
-      {message.text && (
-        <div className={`alert alert-${message.type === "success" ? "success" : "danger"} shadow-sm`}>
-          {message.text}
-        </div>
-      )}
 
       {/* Student Search */}
       <div className="mb-4">
@@ -212,7 +176,7 @@ export default function StudentRecord() {
               <i className="bi bi-upload me-2"></i> Upload New SF10 eCard
             </div>
             <form className="card-body row g-3" onSubmit={handleUpload} encType="multipart/form-data">
-              {/* School Year Dropdown */}
+              {/* School Year */}
               <div className="col-md-3">
                 <label className="form-label small text-uppercase fw-semibold">School Year</label>
                 <select
@@ -234,46 +198,22 @@ export default function StudentRecord() {
               {/* Section */}
               <div className="col-md-3">
                 <label className="form-label small text-uppercase fw-semibold">Section</label>
-                <input
-                  type="text"
-                  name="section"
-                  className="form-control shadow-sm"
-                  value={form.section}
-                  onChange={handleUploadChange}
-                  required
-                />
+                <input type="text" name="section" className="form-control shadow-sm" value={form.section} onChange={handleUploadChange} required />
               </div>
 
-              {/* Grade Level Dropdown */}
+              {/* Grade Level */}
               <div className="col-md-3">
                 <label className="form-label small text-uppercase fw-semibold">Grade Level</label>
-                <select
-                  name="grade_level_id"
-                  className="form-select shadow-sm rounded-pill"
-                  value={form.grade_level_id}
-                  onChange={handleUploadChange}
-                  required
-                >
+                <select name="grade_level_id" className="form-select shadow-sm rounded-pill" value={form.grade_level_id} onChange={handleUploadChange} required>
                   <option value="">Select Grade Level</option>
-                  {gradeLevels.map((gl) => (
-                    <option key={gl.grade_level_id} value={gl.grade_level_id}>
-                      {gl.grade_name}
-                    </option>
-                  ))}
+                  {gradeLevels.map((gl) => <option key={gl.grade_level_id} value={gl.grade_level_id}>{gl.grade_name}</option>)}
                 </select>
               </div>
 
-              {/* File input */}
+              {/* File */}
               <div className="col-12">
                 <label className="form-label small text-uppercase fw-semibold">Select File</label>
-                <input
-                  type="file"
-                  name="sf10"
-                  className="form-control shadow-sm"
-                  onChange={handleUploadChange}
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                  required
-                />
+                <input type="file" name="sf10" className="form-control shadow-sm" onChange={handleUploadChange} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" required />
               </div>
 
               <div className="col-12 d-grid">
@@ -290,10 +230,7 @@ export default function StudentRecord() {
               <div>
                 <i className="bi bi-cloud-check-fill me-2"></i> Uploaded SF10 eCards
               </div>
-              <Link
-                to={`/record_student/${lrn}`}
-                className="btn btn-light btn-sm rounded-pill px-3 fw-semibold d-flex align-items-center gap-2 shadow-sm"
-              >
+              <Link to={`/record_student/${lrn}`} className="btn btn-light btn-sm rounded-pill px-3 fw-semibold d-flex align-items-center gap-2 shadow-sm">
                 <i className="bi bi-folder2-open text-success"></i>
                 <span className="text-success">View Student Record</span>
               </Link>
@@ -312,9 +249,7 @@ export default function StudentRecord() {
                           <h6 className="card-title text-success mb-2">
                             <i className="bi bi-check-circle-fill me-2"></i> Successfully Uploaded
                           </h6>
-                          <p className="card-text small text-muted mb-0">
-                            {new Date(ecard.uploaded_at).toLocaleString()}
-                          </p>
+                          <p className="card-text small text-muted mb-0">{new Date(ecard.uploaded_at).toLocaleString()}</p>
                         </div>
                       </div>
                     </div>

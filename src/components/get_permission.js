@@ -1,5 +1,4 @@
 
-
 export const getUserPermissions = () => {
   const stored = sessionStorage.getItem("loginResponse");
   if (!stored) return [];
