@@ -20,6 +20,8 @@ import UploadEcardAll from "../screens/upload_ecards_all";
 import User from "../screens/user_list";
 import GradeLevelList from "../screens/grade_level_list";
 import GradeLevelUpsert from "../screens/grade_level_upsert";
+import SectionList from "../screens/section_list";
+import SectionUpsert from "../screens/section_upsert";
 import SubjectUpsert from "../screens/subject_upsert";
 import SubjectList from "../screens/subject_list";
 import Curriculum from "../screens/curriculum_list";
@@ -129,6 +131,7 @@ const menus = [
     children: [
       { to: "/school_year", icon: FaCalendarAlt, label: "Academic Year" },
       { to: "/grade_level", icon: FaSchool, label: "Grade Levels" },
+      { to: "/sections", icon: FaSchool, label: "Section Management" },
       { to: "/subjects", icon: FaBook, label: "Subject Management" },
       { to: "/assign-subject-per-year-level", icon: FaClipboardCheck, label: "Assign Subjects" },
       { to: "/curriculum", icon: FaClipboardList, label: "Curriculum Management" },
@@ -340,6 +343,9 @@ const menus = [
             <Route path="/grade_level" element={<GradeLevelList />} />
             <Route path="/grade_level/create" element={<GradeLevelUpsert />} />
             <Route path="/grade_level/edit/:id" element={<GradeLevelUpsert />} />
+            <Route path="/sections" element={<SectionList />} />
+            <Route path="/sections/create" element={<SectionUpsert />} />
+            <Route path="/sections/edit/:id" element={<SectionUpsert />} />
             <Route path="/school_year" element={<DisplaySchoolYear />} />
             <Route path="/school_year/create" element={<UpsertSchoolYear />} />
             <Route path="/school_year/edit/:id" element={<UpsertSchoolYear />} />
