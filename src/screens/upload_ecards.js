@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import StatusModal from "../components/status_modal";
 import { checkToken } from "../components/token_checker";
@@ -8,12 +8,16 @@ const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 export default function StudentRecord() {
   const { lrn } = useParams();
+
+  const token = useMemo(() => sessionStorage.getItem("token"), []);
   const [studentId, setStudentId] = useState(null);
   const [studentName, setStudentName] = useState("");
   const [eCards, setECards] = useState([]);
   const [loading, setLoading] = useState(true);
+
   const [schoolYears, setSchoolYears] = useState([]);
   const [gradeLevels, setGradeLevels] = useState([]);
+
   const [form, setForm] = useState({
     sf10: null,
     school_year_id: "",
@@ -21,43 +25,70 @@ export default function StudentRecord() {
     end_year: "",
     section: "",
     grade_level_id: "",
-    grade_level_name: ""
+    grade_level_name: "",
   });
-  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
 
-  const token = sessionStorage.getItem("token");
-  const authHeaders = () => ({ Authorization: token ? `Bearer ${token}` : undefined });
+  const [modal, setModal] = useState({
+    show: false,
+    title: "",
+    message: "",
+    variant: "danger",
+  });
 
-  useEffect(() => { checkToken(); }, []);
+  const authHeaders = () =>
+    token ? { Authorization: `Bearer ${token}` } : {};
+
+  // Token check
+  useEffect(() => {
+    checkToken();
+  }, []);
 
   // Generic fetch helper
   const fetchData = async (endpoint, setter, key = "data") => {
     if (!token) return;
     try {
-      const res = await fetch(`${BASE_URL}/${endpoint}`, { headers: { "Content-Type": "application/json", ...authHeaders() } });
+      const res = await fetch(`${BASE_URL}/${endpoint}`, {
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+      });
       if (!res.ok) throw new Error(`Failed to fetch ${endpoint}`);
       const data = await res.json();
-      if (data.success) setter(data[key]);
+      if (data.success) setter(data[key] ?? []);
     } catch (err) {
-      console.error(err);
-      setModal({ show: true, title: "❌ Error", message: `Failed to fetch ${endpoint}`, variant: "danger" });
+      setModal({
+        show: true,
+        title: "Error",
+        message: `Failed to fetch ${endpoint}`,
+        variant: "danger",
+      });
     }
   };
 
-  // Fetch student details
+  // Fetch student details (+ their eCards)
   useEffect(() => {
     const fetchStudentDetails = async () => {
       if (!token || !lrn) return;
       setLoading(true);
       try {
-        const res = await fetch(`${BASE_URL}/students/${lrn}/details`, { headers: authHeaders() });
+        const res = await fetch(`${BASE_URL}/students/${lrn}/details`, {
+          headers: authHeaders(),
+        });
         if (!res.ok) throw new Error("Failed to fetch student details");
         const data = await res.json();
-        setStudentId(data.student?.student_id || null);
-        setStudentName(`${data.student?.last_name}, ${data.student?.first_name} ${data.student?.middle_name || ""}`);
-        setECards(data.eCards || []);
+        const st = data?.student;
+        setStudentId(st?.student_id || null);
+        setStudentName(
+          [st?.last_name, ", ", st?.first_name, " ", st?.middle_name || ""]
+            .join("")
+            .trim()
+        );
+        setECards(data?.eCards || []);
       } catch (err) {
-        setModal({ show: true, title: "❌ Error", message: err.message, variant: "danger" });
+        setModal({
+          show: true,
+          title: "Error",
+          message: err.message,
+          variant: "danger",
+        });
       } finally {
         setLoading(false);
       }
@@ -66,127 +97,271 @@ export default function StudentRecord() {
   }, [lrn, token]);
 
   // Fetch school years & grade levels
-  useEffect(() => { fetchData("school-year/all-school-years", setSchoolYears, "schoolYears"); }, [token]);
-  useEffect(() => { fetchData("grade-levels", setGradeLevels, "data"); }, [token]);
+  useEffect(() => {
+    fetchData("school-year/all-school-years", setSchoolYears, "schoolYears");
+  }, [token]);
+  useEffect(() => {
+    fetchData("grade-levels", setGradeLevels, "data");
+  }, [token]);
 
-  // Handle form changes
+  // Form handlers
   const handleUploadChange = (e) => {
     const { name, value, files } = e.target;
+
     if (name === "school_year_id") {
-      const selected = schoolYears.find(sy => sy.school_year_id === parseInt(value));
-      setForm(prev => ({
+      const selected = schoolYears.find(
+        (sy) => sy.school_year_id === parseInt(value, 10)
+      );
+      setForm((prev) => ({
         ...prev,
         school_year_id: value || "",
         start_year: selected?.start_year || "",
-        end_year: selected?.end_year || ""
+        end_year: selected?.end_year || "",
       }));
-    } else if (name === "grade_level_id") {
-      const selected = gradeLevels.find(gl => gl.grade_level_id === parseInt(value));
-      setForm(prev => ({
+      return;
+    }
+
+    if (name === "grade_level_id") {
+      const selected = gradeLevels.find(
+        (gl) => gl.grade_level_id === parseInt(value, 10)
+      );
+      setForm((prev) => ({
         ...prev,
         grade_level_id: value || "",
-        grade_level_name: selected?.grade_name || ""
+        grade_level_name: selected?.grade_name || "",
       }));
-    } else {
-      setForm(prev => ({ ...prev, [name]: files ? files[0] : value }));
+      return;
     }
+
+    setForm((prev) => ({ ...prev, [name]: files ? files[0] : value }));
   };
 
-  // Handle upload
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!token) return setModal({ show: true, title: "❌ Error", message: "Missing authorization token.", variant: "danger" });
-    if (!form.sf10) return setModal({ show: true, title: "❌ Error", message: "Please select a file.", variant: "danger" });
-    if (!studentId) return setModal({ show: true, title: "❌ Error", message: "Student ID not available.", variant: "danger" });
+    if (!token)
+      return setModal({
+        show: true,
+        title: "Error",
+        message: "Missing authorization token.",
+        variant: "danger",
+      });
+    if (!form.sf10)
+      return setModal({
+        show: true,
+        title: "Error",
+        message: "Please select a file.",
+        variant: "danger",
+      });
+    if (!studentId)
+      return setModal({
+        show: true,
+        title: "Error",
+        message: "Student ID not available.",
+        variant: "danger",
+      });
 
     const fd = new FormData();
-    Object.entries(form).forEach(([key, val]) => fd.append(key, val));
+    Object.entries(form).forEach(([k, v]) => fd.append(k, v));
 
     try {
-      const res = await fetch(`${BASE_URL}/students/upload-sf10/${studentId}`, { method: "POST", headers: authHeaders(), body: fd });
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Upload failed.");
-      }
+      const res = await fetch(`${BASE_URL}/students/upload-sf10/${studentId}`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: fd,
+      });
       const data = await res.json();
-      setModal({ show: true, title: "✅ Upload Successful", message: data.message, variant: "success" });
-      setECards(prev => [...prev, data.document]);
-      setForm({ sf10: null, school_year_id: "", start_year: "", end_year: "", section: "", grade_level_id: "", grade_level_name: "" });
+      if (!res.ok) throw new Error(data?.error || "Upload failed.");
+      setModal({
+        show: true,
+        title: "Upload Successful",
+        message: data?.message || "Document uploaded.",
+        variant: "success",
+      });
+      if (data?.document) setECards((prev) => [...prev, data.document]);
+      setForm({
+        sf10: null,
+        school_year_id: "",
+        start_year: "",
+        end_year: "",
+        section: "",
+        grade_level_id: "",
+        grade_level_name: "",
+      });
     } catch (err) {
-      setModal({ show: true, title: "❌ Error", message: err.message, variant: "danger" });
+      setModal({
+        show: true,
+        title: "Error",
+        message: err.message,
+        variant: "danger",
+      });
     }
   };
 
-  if (loading) return <div className="py-5 text-center fw-semibold fs-5">Loading student records...</div>;
+  if (loading)
+    return (
+      <div className="d-flex justify-content-center align-items-center vh-100">
+        <div className="spinner-border text-primary" role="status" />
+      </div>
+    );
 
   return (
-    <div className="container py-4">
-      <div className="mb-4">
-        <button className="btn btn-outline-primary rounded-pill px-4 shadow-sm" onClick={() => window.history.back()}>
-          ← Back
+    <div className="container-xxl py-3">
+      <StatusModal
+        {...modal}
+        onHide={() => setModal((m) => ({ ...m, show: false }))}
+      />
+
+      {/* Top bar */}
+      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <button
+          type="button"
+          className="btn btn-light border text-nowrap"
+          onClick={() => window.history.back()}
+        >
+          &laquo; Back
         </button>
+
+        <div className="text-end small text-muted">
+          LRN: <span className="fw-semibold">{lrn}</span>
+        </div>
       </div>
 
-      <StatusModal {...modal} onHide={() => setModal({ ...modal, show: false })} />
-
-      <div className="p-4 rounded shadow-sm mb-4 bg-white">
-        <h6 className="text-muted mb-1"><strong>LRN:</strong> <span className="text-dark">{lrn}</span></h6>
-        <h6 className="text-muted mb-0"><strong>Student Name:</strong> <span className="text-dark">{studentName}</span></h6>
+      {/* Student summary */}
+      <div className="card border-0 shadow-sm rounded-4 mb-3">
+        <div className="card-body p-4">
+          <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-2">
+            <div>
+              <div className="text-muted small">Student</div>
+              <h2 className="fw-bold fs-4 mb-0 text-truncate">{studentName}</h2>
+            </div>
+            <Link
+              to={`/record_student/${lrn}`}
+              className="btn btn-outline-primary text-nowrap"
+            >
+              View Student Record
+            </Link>
+          </div>
+        </div>
       </div>
 
-      {/* Upload Form */}
-      <div className="card shadow-sm border-0 mb-5">
-        <div className="card-header bg-primary text-white fw-bold fs-5">Upload SF10 eCard</div>
-        <form onSubmit={handleUpload} className="card-body row g-3" encType="multipart/form-data" noValidate>
-          <div className="col-md-4">
-            <label className="form-label small fw-bold text-uppercase">School Year</label>
-            <select name="school_year_id" className="form-select rounded-pill shadow-sm" value={form.school_year_id} onChange={handleUploadChange} required>
+      {/* Upload form */}
+      <div className="card border-0 shadow-sm rounded-4 mb-4">
+      
+        <form
+          onSubmit={handleUpload}
+          className="card-body p-4 row g-3"
+          encType="multipart/form-data"
+          noValidate
+        >
+          <div className="col-12 col-md-4">
+            <label className="form-label">School Year</label>
+            <select
+              name="school_year_id"
+              className="form-select"
+              value={form.school_year_id}
+              onChange={handleUploadChange}
+              required
+            >
               <option value="">Select School Year</option>
-              {schoolYears.map(sy => <option key={sy.school_year_id} value={sy.school_year_id}>{sy.start_year} - {sy.end_year}</option>)}
+              {schoolYears.map((sy) => (
+                <option key={sy.school_year_id} value={sy.school_year_id}>
+                  {sy.start_year} - {sy.end_year}
+                </option>
+              ))}
             </select>
+            {form.start_year && form.end_year && (
+              <div className="form-text">
+                Selected SY: {form.start_year}-{form.end_year}
+              </div>
+            )}
           </div>
 
-          <div className="col-md-4">
-            <label className="form-label small fw-bold text-uppercase">Section</label>
-            <input type="text" name="section" className="form-control rounded-pill shadow-sm" value={form.section} onChange={handleUploadChange} />
+          <div className="col-12 col-md-4">
+            <label className="form-label">Section</label>
+            <input
+              type="text"
+              name="section"
+              className="form-control"
+              value={form.section}
+              onChange={handleUploadChange}
+              placeholder="e.g., A or Emerald"
+            />
           </div>
 
-          <div className="col-md-4">
-            <label className="form-label small fw-bold text-uppercase">Grade Level</label>
-            <select name="grade_level_id" className="form-select rounded-pill shadow-sm" value={form.grade_level_id} onChange={handleUploadChange} required>
+          <div className="col-12 col-md-4">
+            <label className="form-label">Grade Level</label>
+            <select
+              name="grade_level_id"
+              className="form-select"
+              value={form.grade_level_id}
+              onChange={handleUploadChange}
+              required
+            >
               <option value="">Select Grade Level</option>
-              {gradeLevels.map(gl => <option key={gl.grade_level_id} value={gl.grade_level_id}>{gl.grade_name}</option>)}
+              {gradeLevels.map((gl) => (
+                <option key={gl.grade_level_id} value={gl.grade_level_id}>
+                  {gl.grade_name}
+                </option>
+              ))}
             </select>
+            {form.grade_level_name && (
+              <div className="form-text">Selected: {form.grade_level_name}</div>
+            )}
           </div>
 
-          <div className="col-md-12">
-            <label htmlFor="sf10" className="form-label fw-bold small">Select SF10 File</label>
-            <input type="file" className="form-control rounded-pill shadow-sm" id="sf10" name="sf10" onChange={handleUploadChange} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" required />
+          <div className="col-12">
+            <label htmlFor="sf10" className="form-label">
+              Select SF10 File
+            </label>
+            <input
+              id="sf10"
+              name="sf10"
+              type="file"
+              className="form-control"
+              onChange={handleUploadChange}
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              required
+            />
+            <div className="form-text">
+              Accepted: PDF, JPG, JPEG, PNG, DOC, DOCX
+            </div>
           </div>
 
-          <div className="col-md-12 d-grid">
-            <button type="submit" className="btn btn-success py-3 fw-bold rounded-pill shadow-sm">Upload Document</button>
+          <div className="col-12 d-flex justify-content-end">
+            <button type="submit" className="btn btn-success text-nowrap px-4">
+              Upload Document
+            </button>
           </div>
         </form>
       </div>
 
-      {/* eCards Display */}
-      <div className="card shadow-sm border-0">
-        <div className="card-header bg-success text-white d-flex justify-content-between align-items-center">
-          Uploaded SF10 eCards
-          <Link to={`/record_student/${lrn}`} className="btn btn-light btn-sm rounded-pill fw-bold shadow-sm">View Student Record</Link>
+      {/* Uploaded eCards */}
+      <div className="card border-0 shadow-sm rounded-4">
+        <div className="card-header bg-white border-0 rounded-top-4 d-flex justify-content-between align-items-center">
+          <h6 className="mb-0 fw-semibold">Uploaded SF10 eCards</h6>
+          <span className="text-muted small">
+            {eCards.length} item{eCards.length === 1 ? "" : "s"}
+          </span>
         </div>
-        <div className="card-body">
+        <div className="card-body p-3">
           {eCards.length === 0 ? (
-            <div className="alert alert-warning mb-0 d-flex align-items-center gap-2">No eCards uploaded yet.</div>
+            <div className="text-center text-muted py-4">
+              No eCards uploaded yet.
+            </div>
           ) : (
-            <div className="row g-3 mb-3">
+            <div className="row g-3">
               {eCards.map((ecard, idx) => (
                 <div className="col-12 col-md-6 col-lg-4" key={idx}>
-                  <div className="card h-100 shadow-sm border-0 rounded-3">
+                  <div className="card h-100 border-0 shadow-sm rounded-4">
                     <div className="card-body">
-                      <h6 className="text-success mb-2">Successfully Uploaded</h6>
-                      <p className="small text-muted mb-0">{new Date(ecard.uploaded_at).toLocaleString()}</p>
+                      <div className="fw-semibold text-success mb-1">
+                        Successfully Uploaded
+                      </div>
+                      <div className="small text-muted">
+                        {ecard.uploaded_at
+                          ? new Date(ecard.uploaded_at).toLocaleString()
+                          : ""}
+                      </div>
                     </div>
                   </div>
                 </div>

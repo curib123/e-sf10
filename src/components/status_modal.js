@@ -17,13 +17,15 @@ const StatusModal = ({ show, onHide, title, message, variant = "primary" }) => {
       onHide={onHide}
       centered
       backdrop="static"
-      dialogClassName="rounded-4 shadow-lg"
+      className="rounded-3 shadow"
     >
-      <Modal.Header closeButton className={style.header}>
-        <Modal.Title className="fw-bold fs-5 text-center w-100">{title}</Modal.Title>
+      <Modal.Header closeButton className={`${style.header} rounded-top-3`}>
+        <Modal.Title className="fw-semibold fs-5 w-100 text-center">
+          {title}
+        </Modal.Title>
       </Modal.Header>
 
-      <Modal.Body className="text-center fs-6" style={{ minHeight: "60px" }}>
+      <Modal.Body className="text-center fs-6 text-secondary">
         {message}
       </Modal.Body>
 
@@ -31,7 +33,7 @@ const StatusModal = ({ show, onHide, title, message, variant = "primary" }) => {
         <Button
           variant={style.button}
           onClick={onHide}
-          className="px-4 py-2 fw-semibold rounded-3"
+          className="px-4 fw-semibold"
         >
           Close
         </Button>

@@ -88,7 +88,7 @@ body {
 }
 
 .link:hover {
-  background-color: #1e2db8ff;
+  background-color: rgba(30, 45, 184, 0.504);
   color: #fff;
   transform: translateX(3px);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);

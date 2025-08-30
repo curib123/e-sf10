@@ -1,17 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
 import StatusModal from "../components/status_modal";
 
-// Base API URL
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const UpsertCurriculum = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
-  const token = sessionStorage.getItem("token");
 
+  const token = useMemo(() => sessionStorage.getItem("token"), []);
   const [formData, setFormData] = useState({
     curriculum_name: "",
     school_year_id: "",
@@ -20,17 +19,19 @@ const UpsertCurriculum = () => {
   const [schoolYears, setSchoolYears] = useState([]);
   const [usedSchoolYears, setUsedSchoolYears] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [statusModal, setStatusModal] = useState({ show: false, title: "", message: "", variant: "info" });
+  const [statusModal, setStatusModal] = useState({
+    show: false, title: "", message: "", variant: "info",
+  });
 
   const authHeaders = () => ({
     "Content-Type": "application/json",
-    Authorization: token ? `Bearer ${token}` : undefined,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   });
 
   const handleUnauthorized = () => {
     setStatusModal({ show: true, title: "Unauthorized", message: "Please log in.", variant: "danger" });
     sessionStorage.removeItem("token");
-    setTimeout(() => navigate("/login"), 1500);
+    setTimeout(() => navigate("/login"), 900);
   };
 
   const checkToken = () => {
@@ -41,72 +42,72 @@ const UpsertCurriculum = () => {
     return true;
   };
 
-  // Fetch school years
   useEffect(() => {
     if (!checkToken()) return;
-    const fetchSchoolYears = async () => {
+    (async () => {
       try {
         const res = await fetch(`${BASE_URL}/school-year/all-school-years`, { headers: authHeaders() });
+        if (res.status === 401) return handleUnauthorized();
         const data = await res.json();
-        if (data.success) setSchoolYears(data.schoolYears || []);
-      } catch (err) {
-        console.error(err);
+        if (data?.success) setSchoolYears(data.schoolYears || []);
+      } catch {
         setStatusModal({ show: true, title: "Error", message: "Failed to load school years.", variant: "danger" });
       }
-    };
-    fetchSchoolYears();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch all curriculums to mark used school years
+  // Mark used school years (so each SY can have at most one curriculum)
   useEffect(() => {
     if (!checkToken()) return;
-    const fetchCurriculums = async () => {
+    (async () => {
       try {
         const res = await fetch(`${BASE_URL}/curriculum/view-all-curriculums`, { headers: authHeaders() });
+        if (res.status === 401) return handleUnauthorized();
         const data = await res.json();
-        if (data.success && Array.isArray(data.data)) {
+        if (data?.success && Array.isArray(data.data)) {
           const used = data.data
             .filter(c => !isEdit || c.curriculum_id !== Number(id))
             .map(c => c.school_year_id);
           setUsedSchoolYears(used);
         }
-      } catch (err) {
-        console.error(err);
+      } catch {
+        /* no-op */
       }
-    };
-    fetchCurriculums();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, id]);
 
-  // Fetch curriculum if editing
+  // Load existing (edit)
   useEffect(() => {
     if (!isEdit || !checkToken()) return;
-    const fetchCurriculum = async () => {
+    (async () => {
       try {
         const res = await fetch(`${BASE_URL}/curriculum/view-curriculum/${id}`, { headers: authHeaders() });
+        if (res.status === 401) return handleUnauthorized();
         const data = await res.json();
-        if (!data.success || !data.data) throw new Error("Failed to fetch curriculum");
+        if (!data?.success || !data?.data) throw new Error("Failed to fetch curriculum.");
         setFormData({
           curriculum_name: data.data.curriculum_name || "",
           school_year_id: data.data.school_year_id || "",
           is_active: Boolean(data.data.is_active),
         });
-      } catch (err) {
-        console.error(err);
+      } catch {
         setStatusModal({ show: true, title: "Error", message: "Failed to load curriculum.", variant: "danger" });
       }
-    };
-    fetchCurriculum();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, id]);
 
-  const handleChange = ({ target }) => {
-    const { name, value, type, checked } = target;
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
     setFormData(prev => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.curriculum_name.trim() || !formData.school_year_id) {
-      return setStatusModal({ show: true, title: "Error", message: "Curriculum name and school year are required.", variant: "danger" });
+      return setStatusModal({ show: true, title: "Check fields", message: "Curriculum name and school year are required.", variant: "warning" });
     }
     if (!checkToken()) return;
 
@@ -121,13 +122,13 @@ const UpsertCurriculum = () => {
         headers: authHeaders(),
         body: JSON.stringify(formData),
       });
+      if (res.status === 401) return handleUnauthorized();
       const result = await res.json();
-      if (!result.success) throw new Error(result.message);
+      if (!result?.success) throw new Error(result?.message || "Save failed.");
 
-      setStatusModal({ show: true, title: "Success", message: result.message || "Curriculum saved successfully.", variant: "success" });
-      setTimeout(() => navigate("/curriculum"), 1500);
+      setStatusModal({ show: true, title: "Success", message: result?.message || "Saved.", variant: "success" });
+      setTimeout(() => navigate("/curriculum"), 900);
     } catch (err) {
-      console.error(err);
       setStatusModal({ show: true, title: "Error", message: err.message || "Failed to save curriculum.", variant: "danger" });
     } finally {
       setLoading(false);
@@ -135,69 +136,115 @@ const UpsertCurriculum = () => {
   };
 
   return (
-    <div className="container mt-5">
-      <div className="text-center mb-4">
-        <h2 className="fw-bold text-primary">{isEdit ? "Update Curriculum" : "Create Curriculum"}</h2>
-        <p className="text-muted mb-0">{isEdit ? "Edit the curriculum details." : "Fill in the curriculum details."}</p>
-      </div>
+    <div className="container-xxl py-4">
+      <StatusModal {...statusModal} onHide={() => setStatusModal(s => ({ ...s, show: false }))} />
 
-      <div className="d-flex justify-content-center">
-        <div className="card shadow-lg border-0 w-100" style={{ maxWidth: 1000 }}>
-          <div className="card-body p-5">
-            <form onSubmit={handleSubmit}>
-              <div className="mb-3">
-                <label className="form-label fw-semibold">Curriculum Name</label>
+      <div className="mx-auto" style={{ maxWidth: 980 }}>
+        <div className="card border-0 shadow-sm rounded-4">
+          <div className="card-body p-4 p-lg-5">
+            <h4 className="fw-bold mb-4">{isEdit ? "Edit Curriculum" : "New Curriculum"}</h4>
+
+            <form onSubmit={handleSubmit} noValidate className="d-flex flex-column gap-3">
+              {/* Curriculum Name */}
+              <div className="form-floating">
                 <input
                   type="text"
+                  id="curriculum_name"
                   name="curriculum_name"
+                  className="form-control form-control-lg"
+                  placeholder="K–12 Core 2026"
                   value={formData.curriculum_name}
                   onChange={handleChange}
-                  className="form-control rounded-3 shadow-sm"
-                  placeholder="Enter curriculum name"
+                  autoComplete="off"
                   required
                 />
+                <label htmlFor="curriculum_name">Curriculum Name</label>
               </div>
 
-              <div className="mb-3">
-                <label className="form-label fw-semibold">School Year</label>
+              {/* School Year */}
+              <div className="form-floating">
                 <select
+                  id="school_year_id"
                   name="school_year_id"
+                  className="form-select form-select-lg"
                   value={formData.school_year_id}
                   onChange={handleChange}
-                  className="form-select rounded-3 shadow-sm"
                   required
                 >
-                  <option value="">-- Select School Year --</option>
-                  {schoolYears.map(sy => {
-                    const isUsed = usedSchoolYears.includes(sy.school_year_id) && (!isEdit || sy.school_year_id !== Number(formData.school_year_id));
+                  <option value="">— Select School Year —</option>
+                  {schoolYears.map((sy) => {
+                    const isUsed = usedSchoolYears.includes(sy.school_year_id)
+                      && (!isEdit || sy.school_year_id !== Number(formData.school_year_id));
+                    const label = (sy.start_year && sy.end_year)
+                      ? `${sy.start_year} - ${sy.end_year}${isUsed ? " (Used)" : ""}`
+                      : "Unknown Year";
                     return (
                       <option key={sy.school_year_id} value={sy.school_year_id} disabled={isUsed}>
-                        {sy.start_year && sy.end_year ? `${sy.start_year} - ${sy.end_year}${isUsed ? " (Used)" : ""}` : "Unknown Year"}
+                        {label}
                       </option>
                     );
                   })}
                 </select>
+                <label htmlFor="school_year_id">School Year</label>
               </div>
 
-              <div className="form-check mb-3">
-                <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="form-check-input" id="is_active" />
-                <label className="form-check-label fw-semibold" htmlFor="is_active">Active</label>
+              {/* Active switch */}
+              <div className="d-flex align-items-center justify-content-between border rounded-3 p-3 bg-body-tertiary">
+                <div>
+                  <div className="fw-semibold">Curriculum Status</div>
+                  <div className="text-muted small">Toggle to activate or keep as draft.</div>
+                </div>
+                <div className="form-check form-switch m-0">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="is_active"
+                    name="is_active"
+                    checked={formData.is_active}
+                    onChange={handleChange}
+                  />
+                  <label className="form-check-label ms-2" htmlFor="is_active">
+                    {formData.is_active ? "Active" : "Inactive"}
+                  </label>
+                </div>
               </div>
 
-              <div className="d-flex justify-content-between">
-                <button type="button" className="btn btn-light border rounded-3" onClick={() => navigate(-1)} disabled={loading}>
-                  ⬅ Back
+              {/* Actions */}
+              <div className="d-flex justify-content-end gap-2 mt-2">
+                <button
+                  type="button"
+                  className="btn btn-light border rounded-3"
+                  onClick={() => navigate(-1)}
+                  disabled={loading}
+                >
+                  Back
                 </button>
-                <button type="submit" className="btn btn-primary rounded-3 px-4" disabled={loading}>
-                  {loading ? "Saving..." : isEdit ? "Update" : "Create"}
+                <button
+                  type="submit"
+                  className="btn btn-primary rounded-3 px-4"
+                  disabled={loading}
+                >
+                  {loading && <span className="spinner-border spinner-border-sm me-2" role="status" />}
+                  {isEdit ? "Save" : "Create"}
                 </button>
+              </div>
+
+              {/* hint */}
+              <div className="text-muted small">
+                School years marked “(Used)” already have a curriculum and are disabled.
               </div>
             </form>
           </div>
         </div>
       </div>
 
-      <StatusModal {...statusModal} onHide={() => setStatusModal({ ...statusModal, show: false })} />
+      {/* non-blocking processing pill */}
+      {loading && (
+        <div className="position-fixed bottom-0 start-50 translate-middle-x mb-3 px-3 py-2 d-inline-flex align-items-center gap-2 bg-body border rounded-pill shadow-sm">
+          <span className="spinner-border spinner-border-sm" role="status" />
+          <span>Processing…</span>
+        </div>
+      )}
     </div>
   );
 };
