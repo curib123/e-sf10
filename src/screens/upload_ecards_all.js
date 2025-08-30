@@ -14,7 +14,6 @@ const ALLOWED_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
-// Bearer-auth fetch helper
 async function apiFetch(path, { method = "GET", headers = {}, body } = {}) {
   const token = sessionStorage.getItem("token");
   if (!token) throw new Error("Missing authorization token. Please log in.");
@@ -28,6 +27,14 @@ async function apiFetch(path, { method = "GET", headers = {}, body } = {}) {
   if (!res.ok) throw new Error(data?.error || data?.message || `Request failed (${res.status})`);
   return data ?? {};
 }
+
+// "Grade 12" -> "12"; prefer grade_order when numeric
+const toNumericGrade = (g) => {
+  if (!g) return "";
+  if (!Number.isNaN(Number(g.grade_order))) return String(Number(g.grade_order));
+  const m = String(g.grade_name || "").match(/\d+/);
+  return m ? m[0] : "";
+};
 
 export default function StudentRecord() {
   const [lrn, setLrn] = useState(null);
@@ -48,12 +55,11 @@ export default function StudentRecord() {
     school_year_id: "",
     start_year: "",
     end_year: "",
-    // backend expects names (per your earlier flow)
-    grade_level: "",
-    section: "",
+    grade_level: "",          // numeric text for API (e.g. "12")
+    grade_level_label: "",    // pretty label for UI
+    section: "",              // section NAME for API (e.g. "emerald")
   });
 
-  // IDs that drive dropdowns; we still post names
   const [selectedGradeId, setSelectedGradeId] = useState("");
   const [selectedSectionId, setSelectedSectionId] = useState("");
 
@@ -67,7 +73,7 @@ export default function StudentRecord() {
     return () => clearTimeout(t);
   }, [message]);
 
-  // Load dropdown data (auth: bearer)
+  // Load dropdown data
   useEffect(() => {
     (async () => {
       try {
@@ -148,19 +154,24 @@ export default function StudentRecord() {
     setSelectedGradeId(id);
     setSelectedSectionId("");
     const gl = gradeLevels.find((g) => String(g.grade_level_id) === String(id));
-    setForm((p) => ({ ...p, grade_level: gl?.grade_name || "", section: "" }));
+    setForm((p) => ({
+      ...p,
+      grade_level: toNumericGrade(gl),          // numeric for API
+      grade_level_label: gl?.grade_name || "",  // pretty for UI
+      section: "",
+    }));
   };
 
   const handleSection = (e) => {
     const sid = e.target.value;
     setSelectedSectionId(sid);
     const sec = sections.find((s) => String(s.section_id) === String(sid));
+    const gl = gradeLevels.find((g) => String(g.grade_level_id) === String(sec?.grade_level_id));
     setForm((p) => ({
       ...p,
       section: sec?.section_name || "",
-      // keep grade in sync if user picks section first after search
-      grade_level:
-        gradeLevels.find((g) => String(g.grade_level_id) === String(sec?.grade_level_id))?.grade_name || p.grade_level,
+      grade_level: toNumericGrade(gl) || p.grade_level,
+      grade_level_label: gl?.grade_name || p.grade_level_label,
     }));
     if (sec?.grade_level_id && String(sec.grade_level_id) !== String(selectedGradeId)) {
       setSelectedGradeId(String(sec.grade_level_id));
@@ -183,10 +194,23 @@ export default function StudentRecord() {
     setForm((p) => ({ ...p, sf10: file }));
   };
 
-  const isFormValid = !!form.sf10 && !!form.school_year_id && !!form.grade_level && !!form.section;
+  const isFormValid =
+    !!form.sf10 &&
+    !!form.start_year &&
+    !!form.end_year &&
+    !!form.section &&
+    /^\d+$/.test(form.grade_level); // grade must be numeric text
 
   const clearForm = () => {
-    setForm({ sf10: null, school_year_id: "", start_year: "", end_year: "", grade_level: "", section: "" });
+    setForm({
+      sf10: null,
+      school_year_id: "",
+      start_year: "",
+      end_year: "",
+      grade_level: "",
+      grade_level_label: "",
+      section: "",
+    });
     setSelectedGradeId("");
     setSelectedSectionId("");
     if (fileRef.current) fileRef.current.value = "";
@@ -195,24 +219,22 @@ export default function StudentRecord() {
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!studentId) return setMessage({ type: "error", text: "Student not loaded." });
-    if (!isFormValid) return setMessage({ type: "error", text: "Fill all fields and attach a file." });
+    if (!isFormValid) return setMessage({ type: "error", text: "Fill all fields (grade must be numeric) and attach a file." });
 
     const fd = new FormData();
     fd.append("sf10", form.sf10);
-    fd.append("school_year_id", form.school_year_id);
     fd.append("start_year", form.start_year);
     fd.append("end_year", form.end_year);
-    // names, as per your original backend fields
-    fd.append("grade_level", form.grade_level);
     fd.append("section", form.section);
+    fd.append("grade_level", form.grade_level);
 
     try {
       const data = await apiFetch(`/students/upload-sf10/${studentId}`, { method: "POST", body: fd });
-      setModal({ show: true, title: "✅ Uploaded", message: data.message || "Document uploaded.", variant: "success" });
+      setModal({ show: true, title: "Uploaded", message: data.message || "Document uploaded.", variant: "success" });
       if (data.document) setECards((prev) => [data.document, ...prev]);
       clearForm();
     } catch (err) {
-      setModal({ show: true, title: "❌ Upload failed", message: err.message, variant: "danger" });
+      setModal({ show: true, title: "Upload failed", message: err.message, variant: "danger" });
     }
   };
 
@@ -271,6 +293,9 @@ export default function StudentRecord() {
                     </option>
                   ))}
                 </select>
+                {!!form.start_year && !!form.end_year && (
+                  <div className="form-text">Auto-filled: {form.start_year}–{form.end_year}</div>
+                )}
               </div>
 
               <div className="col-md-4">
@@ -286,6 +311,9 @@ export default function StudentRecord() {
                     <option key={g.grade_level_id} value={g.grade_level_id}>{g.grade_name}</option>
                   ))}
                 </select>
+                {form.grade_level_label && (
+                  <div className="form-text">Sending grade as: {form.grade_level}</div>
+                )}
               </div>
 
               <div className="col-md-4">
@@ -302,6 +330,30 @@ export default function StudentRecord() {
                     <option key={s.section_id} value={s.section_id}>{s.section_name}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="col-md-6">
+                <label className="form-label">Start Year</label>
+                <input
+                  className="form-control"
+                  value={form.start_year}
+                  onChange={(e) => setForm((p) => ({ ...p, start_year: e.target.value }))}
+                  required
+                  inputMode="numeric"
+                  placeholder="e.g. 2024"
+                />
+              </div>
+
+              <div className="col-md-6">
+                <label className="form-label">End Year</label>
+                <input
+                  className="form-control"
+                  value={form.end_year}
+                  onChange={(e) => setForm((p) => ({ ...p, end_year: e.target.value }))}
+                  required
+                  inputMode="numeric"
+                  placeholder="e.g. 2025"
+                />
               </div>
 
               <div className="col-12">

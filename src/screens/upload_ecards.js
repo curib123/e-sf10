@@ -28,6 +28,14 @@ const ALLOWED_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
+// turn a grade object into a numeric string (e.g., "Grade 12" -> "12")
+const toNumericGrade = (gradeObj) => {
+  if (!gradeObj) return "";
+  if (!Number.isNaN(Number(gradeObj.grade_order))) return String(Number(gradeObj.grade_order));
+  const m = String(gradeObj.grade_name || "").match(/\d+/);
+  return m ? m[0] : "";
+};
+
 export default function StudentRecord() {
   const { lrn } = useParams();
 
@@ -44,15 +52,17 @@ export default function StudentRecord() {
   const [submitting, setSubmitting] = useState(false);
   const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
 
-  // form
+  // form (keep label fields for display, send only what's required)
   const [form, setForm] = useState({
     sf10: null,
-    school_year_id: "",
+    school_year_id: "",    // used to derive years only
     start_year: "",
     end_year: "",
-    grade_level: "",
-    section: "",
+    grade_level: "",       // numeric text for API, e.g. "12"
+    grade_level_label: "", // for UI badges only
+    section: "",           // text for API, e.g. "emerald"
   });
+
   const [selectedGradeId, setSelectedGradeId] = useState("");
   const [selectedSectionId, setSelectedSectionId] = useState("");
   const fileRef = useRef(null);
@@ -93,7 +103,7 @@ export default function StudentRecord() {
           setGradeLevels(sorted);
         }
         if (secs.success) setSections(secs.data || []);
-      } catch (err) {
+      } catch {
         setModal({ show: true, title: "Error", message: "Failed to load dropdown data.", variant: "danger" });
       }
     })();
@@ -123,20 +133,30 @@ export default function StudentRecord() {
     const id = e.target.value;
     setSelectedGradeId(id);
     setSelectedSectionId("");
+
     const gl = gradeLevels.find((g) => String(g.grade_level_id) === String(id));
-    setForm((p) => ({ ...p, grade_level: gl?.grade_name || "", section: "" }));
+    setForm((p) => ({
+      ...p,
+      grade_level: toNumericGrade(gl),          // numeric for API (e.g., "12")
+      grade_level_label: gl?.grade_name || "",  // pretty for UI
+      section: "",
+    }));
   };
 
   const handleSection = (e) => {
     const sid = e.target.value;
     setSelectedSectionId(sid);
+
     const sec = sections.find((s) => String(s.section_id) === String(sid));
+    const gl = gradeLevels.find((g) => String(g.grade_level_id) === String(sec?.grade_level_id));
+
     setForm((p) => ({
       ...p,
       section: sec?.section_name || "",
-      grade_level:
-        gradeLevels.find((g) => String(g.grade_level_id) === String(sec?.grade_level_id))?.grade_name || p.grade_level,
+      grade_level: toNumericGrade(gl) || p.grade_level,
+      grade_level_label: gl?.grade_name || p.grade_level_label,
     }));
+
     if (sec?.grade_level_id && String(sec.grade_level_id) !== String(selectedGradeId)) {
       setSelectedGradeId(String(sec.grade_level_id));
     }
@@ -158,10 +178,23 @@ export default function StudentRecord() {
     setForm((p) => ({ ...p, sf10: file }));
   };
 
-  const isFormValid = !!form.sf10 && !!form.school_year_id && !!form.grade_level && !!form.section;
+  const isFormValid =
+    !!form.sf10 &&
+    !!form.start_year &&
+    !!form.end_year &&
+    !!form.section &&
+    /^\d+$/.test(form.grade_level); // must be numeric text
 
   const clearForm = () => {
-    setForm({ sf10: null, school_year_id: "", start_year: "", end_year: "", grade_level: "", section: "" });
+    setForm({
+      sf10: null,
+      school_year_id: "",
+      start_year: "",
+      end_year: "",
+      grade_level: "",
+      grade_level_label: "",
+      section: "",
+    });
     setSelectedGradeId("");
     setSelectedSectionId("");
     if (fileRef.current) fileRef.current.value = "";
@@ -169,16 +202,21 @@ export default function StudentRecord() {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!studentId) return setModal({ show: true, title: "Error", message: "Student ID not available.", variant: "danger" });
-    if (!isFormValid) return setModal({ show: true, title: "Incomplete", message: "Fill all fields and attach a file.", variant: "warning" });
+    if (!studentId) {
+      setModal({ show: true, title: "Error", message: "Student ID not available.", variant: "danger" });
+      return;
+    }
+    if (!isFormValid) {
+      setModal({ show: true, title: "Incomplete", message: "Fill all fields and attach a file.", variant: "warning" });
+      return;
+    }
 
     const fd = new FormData();
     fd.append("sf10", form.sf10);
-    fd.append("school_year_id", form.school_year_id);
-    fd.append("start_year", form.start_year);
-    fd.append("end_year", form.end_year);
-    fd.append("grade_level", form.grade_level);
-    fd.append("section", form.section);
+    fd.append("start_year", form.start_year);     // required by API
+    fd.append("end_year", form.end_year);         // required by API
+    fd.append("section", form.section);           // required by API (text)
+    fd.append("grade_level", form.grade_level);   // required by API (numeric text, e.g. "12")
 
     try {
       setSubmitting(true);
@@ -238,6 +276,9 @@ export default function StudentRecord() {
                 </option>
               ))}
             </select>
+            {!!form.start_year && !!form.end_year && (
+              <div className="form-text">This will auto-fill Start/End Year below.</div>
+            )}
           </div>
 
           <div className="col-md-4">
@@ -253,6 +294,9 @@ export default function StudentRecord() {
                 <option key={g.grade_level_id} value={g.grade_level_id}>{g.grade_name}</option>
               ))}
             </select>
+            {form.grade_level_label && (
+              <div className="form-text">Sending grade level as: {form.grade_level}</div>
+            )}
           </div>
 
           <div className="col-md-4">
@@ -269,6 +313,30 @@ export default function StudentRecord() {
                 <option key={s.section_id} value={s.section_id}>{s.section_name}</option>
               ))}
             </select>
+          </div>
+
+          <div className="col-md-6">
+            <label className="form-label">Start Year</label>
+            <input
+              className="form-control"
+              value={form.start_year}
+              onChange={(e) => setForm((p) => ({ ...p, start_year: e.target.value }))}
+              required
+              inputMode="numeric"
+              placeholder="e.g. 2024"
+            />
+          </div>
+
+          <div className="col-md-6">
+            <label className="form-label">End Year</label>
+            <input
+              className="form-control"
+              value={form.end_year}
+              onChange={(e) => setForm((p) => ({ ...p, end_year: e.target.value }))}
+              required
+              inputMode="numeric"
+              placeholder="e.g. 2025"
+            />
           </div>
 
           <div className="col-12">

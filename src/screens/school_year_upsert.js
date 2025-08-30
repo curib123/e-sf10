@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { checkToken } from "../components/token_checker";
 import { useNavigate, useParams } from "react-router-dom";
+import { FaArrowLeft, FaSave } from "react-icons/fa";
 import StatusModal from "../components/status_modal";
 
 // Single Base API URL
@@ -18,7 +19,10 @@ const SchoolYearUpsert = () => {
   const [loading, setLoading] = useState(false);
   const [toggleLoading, setToggleLoading] = useState(false);
   const [modal, setModal] = useState({
-    show: false, title: "", message: "", variant: "danger",
+    show: false,
+    title: "",
+    message: "",
+    variant: "danger",
   });
 
   const inFlight = useRef(false);
@@ -103,7 +107,8 @@ const SchoolYearUpsert = () => {
 
     if (!s || !e) return [false, "Complete all fields."];
     if (s.length !== 4 || e.length !== 4) return [false, "Use 4-digit years."];
-    if (!Number.isInteger(sNum) || !Number.isInteger(eNum)) return [false, "Years must be numbers."];
+    if (!Number.isInteger(sNum) || !Number.isInteger(eNum))
+      return [false, "Years must be numbers."];
     if (eNum !== sNum + 1) return [false, "End year must be start year + 1."];
     if (sNum < 1990 || sNum > 2100) return [false, "Enter a valid range (1990–2100)."];
     return [true, { start_year: sNum, end_year: eNum }];
@@ -167,93 +172,135 @@ const SchoolYearUpsert = () => {
     }
   };
 
+  const previewSY =
+    String(formData.start_year).trim().length === 4 &&
+    String(formData.end_year).trim().length === 4
+      ? `${formData.start_year}–${formData.end_year}`
+      : "—";
+
   return (
-    <div className="container-xxl py-5">
+    <div className="container-xxl my-4">
       <StatusModal {...modal} onHide={() => setModal((m) => ({ ...m, show: false }))} />
 
-      {/* Wider centered column using Bootstrap grid only */}
-      <div className="row justify-content-center">
-        <div className="col-12 col-lg-10 col-xl-9 col-xxl-8">
-          <div className="card border-0 shadow-sm rounded-4">
-            <div className="card-body p-4 p-lg-5">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <h4 className="fw-bold mb-0">{isEdit ? "Edit School Year" : "New School Year"}</h4>
-                {isEdit && (
-                  <div className="d-flex align-items-center gap-2">
-                    <span className={`badge ${isActive ? "text-bg-success" : "text-bg-secondary"}`}>
-                      {isActive ? "Active" : "Inactive"}
-                    </span>
-                    <div className="form-check form-switch m-0">
-                      <input
-                        id="toggleActive"
-                        className="form-check-input"
-                        type="checkbox"
-                        checked={isActive}
-                        onChange={handleToggleActive}
-                        disabled={toggleLoading}
-                      />
-                    </div>
+      <div className="card border-0 shadow-sm rounded-4">
+        <div className="card-body p-4 p-lg-5">
+          {/* Header — matches Section layout */}
+          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+            <h4 className="fw-bold mb-0">{isEdit ? "Edit School Year" : "Create School Year"}</h4>
+
+            <div className="d-flex align-items-center gap-3">
+              {isEdit && (
+                <div className="d-flex align-items-center gap-2">
+                  <span className={`badge ${isActive ? "text-bg-success" : "text-bg-secondary"}`}>
+                    {isActive ? "Active" : "Inactive"}
+                  </span>
+                  <div className="form-check form-switch m-0">
+                    <input
+                      id="toggleActive"
+                      className="form-check-input"
+                      type="checkbox"
+                      checked={isActive}
+                      onChange={handleToggleActive}
+                      disabled={toggleLoading}
+                    />
                   </div>
-                )}
-              </div>
-
-              {/* Vertical inputs */}
-              <form onSubmit={handleSubmit} noValidate className="d-flex flex-column gap-3">
-                <div className="form-floating">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className="form-control form-control-lg"
-                    id="start_year"
-                    name="start_year"
-                    placeholder="2027"
-                    value={formData.start_year}
-                    onChange={handleChange}
-                    required
-                  />
-                  <label htmlFor="start_year">Start Year</label>
                 </div>
-
-                <div className="form-floating">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className="form-control form-control-lg"
-                    id="end_year"
-                    name="end_year"
-                    placeholder="2028"
-                    value={formData.end_year}
-                    onChange={handleChange}
-                    required
-                  />
-                  <label htmlFor="end_year">End Year</label>
-                </div>
-
-                <div className="d-flex justify-content-end gap-2 mt-2">
-                  <button
-                    type="button"
-                    className="btn btn-light btn-lg rounded-3"
-                    onClick={() => navigate(-1)}
-                    disabled={loading}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary btn-lg rounded-3 px-4"
-                    disabled={loading}
-                  >
-                    {loading && <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />}
-                    {isEdit ? "Save" : "Create"}
-                  </button>
-                </div>
-              </form>
+              )}
+              <button
+                type="button"
+                className="btn btn-light border d-flex align-items-center gap-2 px-3"
+                onClick={() => navigate(-1)}
+              >
+                <FaArrowLeft /> Back
+              </button>
             </div>
           </div>
+
+          {/* Form — Row1: 1 field, Row2: 2 columns */}
+          <form onSubmit={handleSubmit} noValidate className="row g-3 g-lg-4">
+            {/* Row 1: Start Year (full width) */}
+            <div className="col-12">
+              <label htmlFor="start_year" className="form-label fw-semibold">
+                Start Year
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                className="form-control"
+                id="start_year"
+                name="start_year"
+                placeholder="e.g., 2027"
+                value={formData.start_year}
+                onChange={handleChange}
+                required
+                aria-describedby="startHelp"
+                maxLength={4}
+              />
+              <div id="startHelp" className="form-text">
+                Enter a 4-digit year. The End Year will auto-fill to Start + 1.
+              </div>
+            </div>
+
+            {/* Row 2: End Year (left) + School Year preview (right) */}
+            <div className="col-md-6">
+              <label htmlFor="end_year" className="form-label fw-semibold">
+                End Year
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                className="form-control"
+                id="end_year"
+                name="end_year"
+                placeholder="e.g., 2028"
+                value={formData.end_year}
+                onChange={handleChange}
+                required
+                aria-describedby="endHelp"
+                maxLength={4}
+              />
+              <div id="endHelp" className="form-text">
+                Must be exactly Start Year + 1.
+              </div>
+            </div>
+
+            <div className="col-md-6">
+              <label className="form-label fw-semibold">Preview</label>
+              <input
+                className="form-control"
+                value={previewSY}
+                readOnly
+                aria-describedby="previewHelp"
+              />
+              <div id="previewHelp" className="form-text">
+                Read-only display of the School Year range.
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="col-12 d-flex justify-content-end gap-2">
+              <button
+                type="button"
+                className="btn btn-light border"
+                onClick={() => navigate(-1)}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-dark d-flex align-items-center gap-2"
+                disabled={loading}
+              >
+                {loading && <span className="spinner-border spinner-border-sm" role="status" />}
+                <FaSave /> {isEdit ? "Save Changes" : "Create School Year"}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
-      {/* Bootstrap-only non-blocking progress pill */}
+      {/* Non-blocking progress pill */}
       {loading && (
         <div className="position-fixed bottom-0 start-50 translate-middle-x mb-3 px-3 py-2 d-inline-flex align-items-center gap-2 bg-body border rounded-pill shadow-sm">
           <span className="spinner-border spinner-border-sm" role="status" />

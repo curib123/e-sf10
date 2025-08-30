@@ -2,35 +2,37 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import StatusModal from "../components/status_modal";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { FaCheckCircle, FaTimesCircle, FaExclamationTriangle, FaInfoCircle } from "react-icons/fa";
+import { FaArrowLeft, FaSave } from "react-icons/fa";
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
-const icons = {
-  success: <FaCheckCircle size={24} />,
-  danger: <FaTimesCircle size={24} />,
-  warning: <FaExclamationTriangle size={24} />,
-  info: <FaInfoCircle size={24} />,
-};
-
-const UpsertSubject = () => {
+export default function UpsertSubject() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
 
   const token = useMemo(() => sessionStorage.getItem("token"), []);
-  const [formData, setFormData] = useState({ subject_code: "", subject_name: "", description: "" });
+  const [formData, setFormData] = useState({
+    subject_code: "",
+    subject_name: "",
+    description: "",
+  });
   const [loading, setLoading] = useState(false);
-  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "info", icon: icons.info });
+  const [modal, setModal] = useState({
+    show: false,
+    title: "",
+    message: "",
+    variant: "info",
+  });
 
   const inFlight = useRef(false);
 
   const showModal = (variant, title, message) =>
-    setModal({ show: true, title, message, variant, icon: icons[variant] });
+    setModal({ show: true, title, message, variant });
 
   const handleUnauthorized = () => {
     sessionStorage.removeItem("token");
-    setModal({ show: true, title: "Unauthorized", message: "Please login to continue.", variant: "danger", icon: icons.danger });
+    showModal("danger", "Unauthorized", "Please login to continue.");
     setTimeout(() => navigate("/login"), 900);
   };
 
@@ -41,7 +43,10 @@ const UpsertSubject = () => {
   };
 
   const apiFetch = async (path, options = {}) => {
-    const res = await fetch(`${BASE_URL}${path}`, { ...options, headers: { ...authHeaders(), ...(options.headers || {}) } });
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      headers: { ...authHeaders(), ...(options.headers || {}) },
+    });
     if (res.status === 401) {
       handleUnauthorized();
       throw new Error("Unauthorized");
@@ -56,7 +61,9 @@ const UpsertSubject = () => {
 
     (async () => {
       try {
-        const res = await apiFetch(`/subjects/view-subject/${id}`, { signal: ctrl.signal });
+        const res = await apiFetch(`/subjects/view-subject/${id}`, {
+          signal: ctrl.signal,
+        });
         if (!res.ok) throw new Error("Failed to load subject.");
         const data = await res.json().catch(() => ({}));
         const s = data?.data;
@@ -104,9 +111,14 @@ const UpsertSubject = () => {
     setLoading(true);
     inFlight.current = true;
     try {
-      const endpoint = isEdit ? `/subjects/update-subject/${id}` : `/subjects/create-subject`;
+      const endpoint = isEdit
+        ? `/subjects/update-subject/${id}`
+        : `/subjects/create-subject`;
       const method = isEdit ? "PUT" : "POST";
-      const res = await apiFetch(endpoint, { method, body: JSON.stringify(payload) });
+      const res = await apiFetch(endpoint, {
+        method,
+        body: JSON.stringify(payload),
+      });
       const result = await res.json().catch(() => ({}));
       const success = result?.success ?? res.ok;
 
@@ -127,96 +139,131 @@ const UpsertSubject = () => {
   };
 
   return (
-    <div className="container-xxl py-5">
-      {/* Wider centered column with Bootstrap grid only */}
-      <div className="row justify-content-center">
-        <div className="col-12 col-lg-10 col-xl-9 col-xxl-8">
-          <div className="card border-0 shadow-sm rounded-4">
-            <div className="card-body p-4 p-lg-5">
-              <h4 className="fw-bold mb-4">{isEdit ? "Edit Subject" : "New Subject"}</h4>
+    <div className="container-xxl my-4">
+      <StatusModal
+        {...modal}
+        onHide={() => setModal((m) => ({ ...m, show: false }))}
+      />
 
-              {/* Vertical inputs */}
-              <form onSubmit={handleSubmit} noValidate className="d-flex flex-column gap-3">
-                <div className="form-floating">
-                  <input
-                    type="text"
-                    id="subject_code"
-                    name="subject_code"
-                    className="form-control form-control-lg"
-                    placeholder="SUBJ-101"
-                    value={formData.subject_code}
-                    onChange={handleChange}
-                    autoComplete="off"
-                    maxLength={32}
-                    required
-                  />
-                  <label htmlFor="subject_code">Subject Code</label>
-                </div>
-
-                <div className="form-floating">
-                  <input
-                    type="text"
-                    id="subject_name"
-                    name="subject_name"
-                    className="form-control form-control-lg"
-                    placeholder="Algebra I"
-                    value={formData.subject_name}
-                    onChange={handleChange}
-                    autoComplete="off"
-                    maxLength={128}
-                    required
-                  />
-                  <label htmlFor="subject_name">Subject Name</label>
-                </div>
-
-                <div className="form-floating">
-                  <textarea
-                    id="description"
-                    name="description"
-                    className="form-control form-control-lg"
-                    placeholder="Brief description"
-                    style={{ height: "140px" }}
-                    value={formData.description}
-                    onChange={handleChange}
-                  />
-                  <label htmlFor="description">Description (optional)</label>
-                </div>
-
-                <div className="d-flex justify-content-end gap-2 mt-2">
-                  <button
-                    type="button"
-                    className="btn btn-light btn-lg rounded-3"
-                    onClick={() => navigate(-1)}
-                    disabled={loading}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary btn-lg rounded-3 px-4"
-                    disabled={loading}
-                  >
-                    {loading && <span className="spinner-border spinner-border-sm me-2" role="status" />}
-                    {isEdit ? "Save" : "Create"}
-                  </button>
-                </div>
-              </form>
+      <div className="card border-0 shadow-sm rounded-4">
+        <div className="card-body p-4 p-lg-5">
+          {/* Header — consistent with other screens */}
+          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+            <h4 className="fw-bold mb-0">
+              {isEdit ? "Edit Subject" : "Create Subject"}
+            </h4>
+            <div className="d-flex gap-2 flex-nowrap">
+              <button
+                type="button"
+                className="btn btn-light border d-flex align-items-center gap-2 px-3"
+                onClick={() => navigate(-1)}
+              >
+                <FaArrowLeft /> Back
+              </button>
             </div>
           </div>
+
+          {/* Form — Row1: 1 field (full width), Row2: 2 fields (columns) */}
+          <form onSubmit={handleSubmit} noValidate className="row g-3 g-lg-4">
+            {/* Row 1: Subject Name */}
+            <div className="col-12">
+              <label htmlFor="subject_name" className="form-label fw-semibold">
+                Subject Name
+              </label>
+              <input
+                type="text"
+                id="subject_name"
+                name="subject_name"
+                className="form-control"
+                placeholder="e.g., Algebra I"
+                value={formData.subject_name}
+                onChange={handleChange}
+                autoComplete="off"
+                maxLength={128}
+                required
+                aria-describedby="nameHelp"
+              />
+              <div id="nameHelp" className="form-text">
+                Full display name shown to users. Example: <strong>Algebra I</strong>.
+              </div>
+            </div>
+
+            {/* Row 2: Subject Code (left) + Description (right) */}
+            <div className="col-md-6">
+              <label htmlFor="subject_code" className="form-label fw-semibold">
+                Subject Code
+              </label>
+              <input
+                type="text"
+                id="subject_code"
+                name="subject_code"
+                className="form-control"
+                placeholder="e.g., MATH-101"
+                value={formData.subject_code}
+                onChange={handleChange}
+                autoComplete="off"
+                maxLength={32}
+                required
+                aria-describedby="codeHelp"
+              />
+              <div id="codeHelp" className="form-text">
+                Short unique code (letters/numbers/dashes). Example: <strong>MATH-101</strong>.
+              </div>
+            </div>
+
+          <div className="col-md-6">
+  <label htmlFor="description" className="form-label fw-semibold">
+    Description <span className="text-muted">(optional)</span>
+  </label>
+  <textarea
+    id="description"
+    name="description"
+    className="form-control"
+    placeholder="Brief overview, topics, or notes…"
+    rows={1} // 👈 makes it same height as normal input
+    value={formData.description}
+    onChange={handleChange}
+    aria-describedby="descHelp"
+  />
+  <div id="descHelp" className="form-text">
+    Keep it concise (1–2 sentences). You can edit this later.
+  </div>
+</div>
+
+         
+
+            {/* Actions */}
+            <div className="col-12 d-flex justify-content-end gap-2">
+              <button
+                type="button"
+                className="btn btn-light border"
+                onClick={() => navigate("/subjects")}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-dark d-flex align-items-center gap-2"
+                disabled={loading}
+              >
+                {loading && (
+                  <span className="spinner-border spinner-border-sm" role="status" />
+                )}
+                <FaSave /> {isEdit ? "Save Changes" : "Create Subject"}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
-   
+      {/* Processing pill */}
       {loading && (
         <div className="position-fixed bottom-0 start-50 translate-middle-x mb-3 px-3 py-2 d-inline-flex align-items-center gap-2 bg-body border rounded-pill shadow-sm">
           <span className="spinner-border spinner-border-sm" role="status" />
           <span>Processing…</span>
         </div>
       )}
-
-      <StatusModal {...modal} onHide={() => setModal((m) => ({ ...m, show: false }))} />
     </div>
   );
-};
-
-export default UpsertSubject;
+}

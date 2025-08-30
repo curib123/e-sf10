@@ -1,27 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
-import {
-  FaCheckCircle,
-  FaExclamationTriangle,
-  FaTimesCircle,
-  FaInfoCircle,
-} from "react-icons/fa";
+import { FaSave, FaArrowLeft } from "react-icons/fa";
 import StatusModal from "../components/status_modal";
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
-const icons = {
-  success: <FaCheckCircle size={24} />,
-  danger: <FaTimesCircle size={24} />,
-  warning: <FaExclamationTriangle size={24} />,
-  info: <FaInfoCircle size={24} />,
-};
-
-const GradeLevelUpsert = () => {
+export default function GradeLevelUpsert() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const isEdit = Boolean(id);
+  const isEdit = !!id;
 
   const token = useMemo(() => sessionStorage.getItem("token"), []);
   const [formData, setFormData] = useState({
@@ -30,23 +18,18 @@ const GradeLevelUpsert = () => {
     grade_order: "",
   });
   const [initialData, setInitialData] = useState(null);
+
   const [loading, setLoading] = useState(false);
-  const [statusModal, setStatusModal] = useState({
-    show: false,
-    title: "",
-    message: "",
-    variant: "info",
-    icon: icons.info,
-  });
+  const [status, setStatus] = useState({ show: false, title: "", message: "", variant: "info" });
   const inFlight = useRef(false);
 
   const showStatus = (variant, title, message) =>
-    setStatusModal({ show: true, title, message, variant, icon: icons[variant] });
+    setStatus({ show: true, title, message, variant });
 
   const handleUnauthorized = () => {
     showStatus("danger", "Unauthorized", "Please login to continue.");
     sessionStorage.removeItem("token");
-    setTimeout(() => navigate("/login"), 1000);
+    setTimeout(() => navigate("/login"), 800);
   };
 
   const apiFetch = async (path, options = {}) => {
@@ -70,11 +53,11 @@ const GradeLevelUpsert = () => {
     const ctrl = new AbortController();
     (async () => {
       try {
+        setLoading(true);
         const res = await apiFetch(`/grade-levels/${id}`, { signal: ctrl.signal });
         if (!res.ok) throw new Error("Failed to fetch grade level");
         const data = await res.json();
         const grade = data.data ?? data;
-        if (!grade?.grade_code) throw new Error("Grade level data invalid");
 
         const initial = {
           grade_code: grade.grade_code || "",
@@ -90,16 +73,16 @@ const GradeLevelUpsert = () => {
         if (err.name !== "AbortError" && err.message !== "Unauthorized") {
           showStatus("danger", "Error", err.message || "Something went wrong.");
         }
+      } finally {
+        setLoading(false);
       }
     })();
     return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, id, token]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    const v =
-      name === "grade_order" ? value.replace(/[^\d]/g, "").slice(0, 3) : value;
+    const v = name === "grade_order" ? value.replace(/[^\d]/g, "").slice(0, 3) : value;
     setFormData((prev) => ({ ...prev, [name]: v }));
   };
 
@@ -109,7 +92,7 @@ const GradeLevelUpsert = () => {
     const orderStr = String(formData.grade_order).trim();
 
     if (!code || !name || orderStr === "")
-      return showStatus("warning", "Missing info", "Complete all fields."), null;
+      return showStatus("warning", "Missing info", "Please complete all fields."), null;
 
     const orderNum = Number(orderStr);
     if (!Number.isInteger(orderNum) || orderNum < 0)
@@ -132,26 +115,19 @@ const GradeLevelUpsert = () => {
 
     const payload = validate();
     if (!payload) return;
-    if (noChanges(payload))
-      return showStatus("info", "No changes", "Nothing to save.");
+    if (noChanges(payload)) return showStatus("info", "No changes", "Nothing to save.");
 
     setLoading(true);
     inFlight.current = true;
     try {
-      const path = isEdit
-        ? `/grade-levels/update/${id}`
-        : `/grade-levels/create`;
+      const path = isEdit ? `/grade-levels/update/${id}` : `/grade-levels/create`;
       const method = isEdit ? "PUT" : "POST";
       const res = await apiFetch(path, { method, body: JSON.stringify(payload) });
       const data = await res.json().catch(() => ({}));
       const success = data?.success ?? res.ok;
 
       if (success) {
-        showStatus(
-          "success",
-          "Saved",
-          data?.message || (isEdit ? "Updated." : "Created.")
-        );
+        showStatus("success", "Saved", data?.message || (isEdit ? "Updated." : "Created."));
         if (!isEdit) {
           setFormData({ grade_code: "", grade_name: "", grade_order: "" });
           setInitialData(null);
@@ -174,112 +150,115 @@ const GradeLevelUpsert = () => {
     }
   };
 
+  if (loading && !initialData && isEdit) {
+    return (
+      <div className="d-flex justify-content-center align-items-center vh-100">
+        <div className="spinner-border" role="status" />
+      </div>
+    );
+  }
+
   return (
-    <div className="container-xxl py-5">
-      <div className="row justify-content-center">
-        {/* Wider container: up to 9/12 columns on XL, 8/12 on LG */}
-        <div className="col-12 col-lg-8 col-xl-9">
-          <div className="card border-0 shadow-sm rounded-4">
-            <div className="card-body p-4 p-lg-5">
-              <h4 className="fw-bold mb-4">
-                {isEdit ? "Edit Grade Level" : "New Grade Level"}
-              </h4>
+    <div className="container-xxl my-4">
+      <StatusModal {...status} onHide={() => setStatus((s) => ({ ...s, show: false }))} />
 
-              <form
-                onSubmit={handleSubmit}
-                noValidate
-                className="d-flex flex-column gap-3"
+      <div className="card border-0 shadow-sm rounded-4">
+        <div className="card-body p-4 p-lg-5">
+          {/* Header */}
+          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+            <h4 className="fw-bold mb-0">
+              {isEdit ? "Edit Grade Level" : "Create Grade Level"}
+            </h4>
+            <div className="d-flex gap-2 flex-nowrap">
+              <button
+                type="button"
+                className="btn btn-light border d-flex align-items-center gap-2 px-3"
+                onClick={() => navigate(-1)}
               >
-                <div className="form-floating">
-                  <input
-                    type="text"
-                    className="form-control form-control-lg"
-                    id="grade_code"
-                    name="grade_code"
-                    placeholder="G1"
-                    value={formData.grade_code}
-                    onChange={handleChange}
-                    autoComplete="off"
-                    maxLength={16}
-                    required
-                  />
-                  <label htmlFor="grade_code">Code</label>
-                </div>
-
-                <div className="form-floating">
-                  <input
-                    type="text"
-                    className="form-control form-control-lg"
-                    id="grade_name"
-                    name="grade_name"
-                    placeholder="Grade 1"
-                    value={formData.grade_name}
-                    onChange={handleChange}
-                    autoComplete="off"
-                    maxLength={64}
-                    required
-                  />
-                  <label htmlFor="grade_name">Name</label>
-                </div>
-
-                <div className="form-floating">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className="form-control form-control-lg"
-                    id="grade_order"
-                    name="grade_order"
-                    placeholder="1"
-                    value={formData.grade_order}
-                    onChange={handleChange}
-                    required
-                  />
-                  <label htmlFor="grade_order">Order</label>
-                </div>
-
-                <div className="d-flex justify-content-end gap-2 mt-3">
-                  <button
-                    type="button"
-                    className="btn btn-light btn-lg rounded-3"
-                    onClick={() => navigate(-1)}
-                    disabled={loading}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary btn-lg rounded-3 px-4"
-                    disabled={loading}
-                  >
-                    {loading && (
-                      <span
-                        className="spinner-border spinner-border-sm me-2"
-                        role="status"
-                      />
-                    )}
-                    {isEdit ? "Save" : "Create"}
-                  </button>
-                </div>
-              </form>
+                <FaArrowLeft /> Back
+              </button>
             </div>
           </div>
+
+          {/* Form layout: 1 field above, 2 fields below */}
+          <form onSubmit={handleSubmit} className="row g-3 g-lg-4">
+            {/* Row 1: Name */}
+            <div className="col-12">
+              <label htmlFor="grade_name" className="form-label fw-semibold">
+                Name
+              </label>
+              <input
+                id="grade_name"
+                name="grade_name"
+                className="form-control"
+                placeholder="e.g., Grade 1"
+                value={formData.grade_name}
+                onChange={handleChange}
+                maxLength={64}
+                required
+              />
+              <div className="form-text">Full display name (e.g., <strong>Grade 1</strong>).</div>
+            </div>
+
+            {/* Row 2: Code + Order */}
+            <div className="col-md-6">
+              <label htmlFor="grade_code" className="form-label fw-semibold">
+                Code
+              </label>
+              <input
+                id="grade_code"
+                name="grade_code"
+                className="form-control"
+                placeholder="e.g., G1"
+                value={formData.grade_code}
+                onChange={handleChange}
+                maxLength={16}
+                required
+              />
+              <div className="form-text">Short identifier (letters/numbers).</div>
+            </div>
+
+            <div className="col-md-6">
+              <label htmlFor="grade_order" className="form-label fw-semibold">
+                Order
+              </label>
+              <input
+                id="grade_order"
+                name="grade_order"
+                inputMode="numeric"
+                className="form-control"
+                placeholder="e.g., 1"
+                value={formData.grade_order}
+                onChange={handleChange}
+                required
+              />
+              <div className="form-text">Sort order (whole number, 0+).</div>
+            </div>
+
+            {/* Actions */}
+            <div className="col-12 d-flex justify-content-end gap-2">
+              <button
+                type="button"
+                className="btn btn-light border"
+                onClick={() => navigate("/grade-levels")}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-dark d-flex align-items-center gap-2"
+                disabled={loading}
+              >
+                {loading && (
+                  <span className="spinner-border spinner-border-sm" role="status" />
+                )}
+                <FaSave /> {isEdit ? "Save Changes" : "Create Grade Level"}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
-
-      {/* Processing pill */}
-      {loading && (
-        <div className="position-fixed bottom-0 start-50 translate-middle-x mb-3 px-3 py-2 d-inline-flex align-items-center gap-2 bg-body border rounded-pill shadow-sm">
-          <span className="spinner-border spinner-border-sm" role="status" />
-          <span>Processing…</span>
-        </div>
-      )}
-
-      <StatusModal
-        {...statusModal}
-        onHide={() => setStatusModal((s) => ({ ...s, show: false }))}
-      />
     </div>
   );
-};
-
-export default GradeLevelUpsert;
+}

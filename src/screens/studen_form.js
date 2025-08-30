@@ -125,8 +125,8 @@ export default function StudentForm({ initialData = null, onSubmit }) {
   };
 
   return (
-    <div className="container-xxl my-4">
-      <div className="mx-auto" style={{ maxWidth: 1000 }}>
+    <div className="container-fluid my-4">
+      <div className="mx-auto" style={{ maxWidth: 1500 }}>
         <form onSubmit={handleSubmit} className="bg-white rounded-4 shadow-sm border p-4 p-md-5">
           {/* Header */}
           <div className="d-flex justify-content-between align-items-center mb-3">
