@@ -72,9 +72,9 @@ export default function StudentRecord() {
     (async () => {
       try {
         const [years, grades, secs] = await Promise.all([
-          apiFetch(`/esf10/school-year/all-school-years`, { headers: { "Content-Type": "application/json" } }),
-          apiFetch(`/esf10/grade-levels`, { headers: { "Content-Type": "application/json" } }),
-          apiFetch(`/esf10/sections`, { headers: { "Content-Type": "application/json" } }),
+          apiFetch(`/school-year/all-school-years`, { headers: { "Content-Type": "application/json" } }),
+          apiFetch(`/grade-levels`, { headers: { "Content-Type": "application/json" } }),
+          apiFetch(`/sections`, { headers: { "Content-Type": "application/json" } }),
         ]);
         if (years.success) setSchoolYears(years.schoolYears || []);
         if (grades.success) {
@@ -92,7 +92,7 @@ export default function StudentRecord() {
   const fetchStudentOptions = async (inputValue) => {
     if (!inputValue) return [];
     try {
-      const data = await apiFetch(`/esf10/students/all?page=1&limit=50`);
+      const data = await apiFetch(`/students/all?page=1&limit=50`);
       const list = data.students || [];
       return list
         .filter(
@@ -110,7 +110,7 @@ export default function StudentRecord() {
   const fetchDetails = async (selectedLrn) => {
     setLoading(true);
     try {
-      const data = await apiFetch(`/esf10/students/${selectedLrn}/details`);
+      const data = await apiFetch(`/students/${selectedLrn}/details`);
       setLrn(selectedLrn);
       setStudentId(data.student?.student_id || null);
       setStudentName(
@@ -207,7 +207,7 @@ export default function StudentRecord() {
     fd.append("section", form.section);
 
     try {
-      const data = await apiFetch(`/esf10/students/upload-sf10/${studentId}`, { method: "POST", body: fd });
+      const data = await apiFetch(`/students/upload-sf10/${studentId}`, { method: "POST", body: fd });
       setModal({ show: true, title: "✅ Uploaded", message: data.message || "Document uploaded.", variant: "success" });
       if (data.document) setECards((prev) => [data.document, ...prev]);
       clearForm();
