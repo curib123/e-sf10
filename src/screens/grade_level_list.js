@@ -119,7 +119,15 @@ const GradeLevelList = () => {
         <div className="card-body p-4 p-lg-5">
           {/* Header */}
           <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-            <h4 className="fw-bold mb-0">Grade Levels</h4>
+           <div className="row mb-0">
+  <div className="col-12">
+    <h4 className="fw-bold mb-0">Grade Levels</h4>
+    <p className="text-muted mb-0">
+      Manage grade levels and their ordering in the curriculum.
+    </p>
+  </div>
+</div>
+
             <div className="d-flex gap-2">
               <button
                 type="button"

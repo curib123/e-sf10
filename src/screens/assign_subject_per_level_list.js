@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StatusModal from "../components/status_modal";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -9,16 +9,18 @@ import {
   FaChevronDown,
   FaChevronUp,
   FaTrash,
+  FaTimes,
 } from "react-icons/fa";
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
-// Minimal request helper
+// Minimal request helper (kept simple; adds Bearer if token exists)
 const request = async (endpoint, method = "GET", token, body = null) => {
   const res = await fetch(`${BASE_URL}/${endpoint}`, {
     method,
     headers: {
       "Content-Type": "application/json",
+      Accept: "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : null,
@@ -248,73 +250,107 @@ export default function AssignSubjectsTable() {
   const toggleExpand = (id) =>
     setExpanded((e) => ({ ...e, [id]: !e[id] }));
 
+  // convenience
+  const showingFrom = (pageStart + 1);
+  const showingTo = Math.min(pageStart + itemsPerPage, filtered.length);
+
   return (
     <div className="container-xxl my-4">
+      {/* Header */}
+      <div className="row mb-3">
+        <div className="col-12">
+          <h4 className="fw-bold mb-0">Assigned Subjects</h4>
+          <p className="text-muted mb-0">
+            View and manage subjects assigned per grade level.
+          </p>
+        </div>
+      </div>
+
       {/* Toolbar */}
       <div className="card border-0 shadow-sm rounded-4 mb-3">
         <div className="card-body p-3 p-lg-4">
-          <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3">
-            <div className="d-flex align-items-center gap-2">
-              <h4 className="fw-bold mb-0">Assigned Subjects by Grade</h4>
-              {!loading && (
-                <span className="badge text-bg-light">
-                  {filtered.length} grade{filtered.length === 1 ? "" : "s"}
+          <div className="row g-2 align-items-stretch">
+            {/* Filters */}
+            <div className="col-12 col-lg-7 d-flex gap-2">
+              <select
+                className="form-select rounded-3"
+                value={selectedGradeId}
+                onChange={(e) => setSelectedGradeId(Number(e.target.value))}
+                disabled={gradeLevels.length === 0}
+                style={{ minWidth: 220 }}
+                aria-label="Filter by grade level"
+              >
+                <option value={0}>All Grades</option>
+                {gradeLevels.map((g) => (
+                  <option key={g.grade_level_id} value={g.grade_level_id}>
+                    {g.grade_name} {g.grade_code ? `(${g.grade_code})` : ""}
+                  </option>
+                ))}
+              </select>
+
+              <div className="input-group">
+                <span className="input-group-text bg-transparent">
+                  <FaSearch />
                 </span>
-              )}
-            </div>
-
-            <div className="d-flex flex-column flex-md-row align-items-stretch gap-2">
-              <div className="d-flex gap-2">
-                <select
-                  className="form-select rounded-3"
-                  value={selectedGradeId}
-                  onChange={(e) => setSelectedGradeId(Number(e.target.value))}
-                  disabled={gradeLevels.length === 0}
-                  style={{ minWidth: 220 }}
-                >
-                  <option value={0}>All Grades</option>
-                  {gradeLevels.map((g) => (
-                    <option key={g.grade_level_id} value={g.grade_level_id}>
-                      {g.grade_name} {g.grade_code ? `(${g.grade_code})` : ""}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="input-group">
-                  <span className="input-group-text bg-transparent">
-                    <FaSearch />
-                  </span>
-                  <input
-                    className="form-control"
-                    placeholder="Search code, name, or description…"
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="d-flex gap-2 justify-content-end">
-                <button
-                  className="btn btn-light border d-flex align-items-center gap-2"
-                  onClick={handleRefresh}
-                  disabled={refreshing || loading}
-                  title="Refresh"
-                >
-                  {refreshing ? (
-                    <span className="spinner-border spinner-border-sm" role="status" />
-                  ) : (
-                    <FaSync />
-                  )}
-                  Refresh
-                </button>
-                <button
-                  className="btn btn-dark d-flex align-items-center gap-2 px-3"
-                  onClick={() => navigate(`/assign-subject-per-year-level/assign`)}
-                >
-                  <FaPlus /> Assign Subject
-                </button>
+                <input
+                  className="form-control"
+                  placeholder="Search code, name, or description…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  aria-label="Search subjects"
+                />
+                {q && (
+                  <button
+                    type="button"
+                    className="btn btn-light border"
+                    onClick={() => setQ("")}
+                    title="Clear search"
+                  >
+                    <FaTimes />
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* Actions */}
+            <div className="col-12 col-lg-5 d-flex gap-2 justify-content-lg-end">
+              <button
+                className="btn btn-light border d-flex align-items-center gap-2"
+                onClick={handleRefresh}
+                disabled={refreshing || loading}
+                title="Refresh"
+              >
+                {refreshing ? (
+                  <span className="spinner-border spinner-border-sm" role="status" />
+                ) : (
+                  <FaSync />
+                )}
+                Refresh
+              </button>
+              <button
+                className="btn btn-dark d-flex align-items-center gap-2 px-3"
+                onClick={() => navigate(`/assign-subject-per-year-level/assign`)}
+              >
+                <FaPlus /> Assign Subject
+              </button>
+            </div>
+          </div>
+
+          {/* Small stats */}
+          <div className="d-flex align-items-center gap-2 mt-3 small text-muted">
+            {!loading && (
+              <>
+                <span>
+                  Showing <strong>{showingFrom}-{showingTo}</strong> of{" "}
+                  <strong>{filtered.length}</strong> grade
+                  {filtered.length === 1 ? "" : "s"}
+                </span>
+                <span className="vr" />
+                <span>
+                  Page <strong>{currentPage}</strong> / <strong>{totalPages}</strong>
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -376,15 +412,15 @@ export default function AssignSubjectsTable() {
                     </div>
                   ) : (
                     <div className="table-responsive">
-                      <table className="table align-middle mb-0">
+                      <table className="table table-hover align-middle mb-0">
                         <thead className="table-light">
                           <tr>
-                            <th className="text-center">Code</th>
-                            <th>Name</th>
+                            <th style={{ width: 120 }} className="text-center">Code</th>
+                            <th style={{ minWidth: 240 }}>Name</th>
                             <th>Description</th>
-                            <th className="text-center">Required</th>
-                            <th className="text-center">Units</th>
-                            <th className="text-end">Actions</th>
+                            <th style={{ width: 120 }} className="text-center">Required</th>
+                            <th style={{ width: 100 }} className="text-center">Units</th>
+                            <th style={{ width: 160 }} className="text-end">Actions</th>
                           </tr>
                         </thead>
                         <tbody>

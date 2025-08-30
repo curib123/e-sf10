@@ -97,7 +97,15 @@ const SchoolYearList = () => {
         <div className="card-body p-4 p-lg-5">
           {/* Header */}
           <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-            <h4 className="fw-bold mb-0">School Years</h4>
+            <div className="row mb-0">
+  <div className="col-12">
+    <h4 className="fw-bold mb-0">School Years</h4>
+    <p className="text-muted mb-0">
+      Manage academic school years and their active status.
+    </p>
+  </div>
+</div>
+
             <div className="d-flex gap-2">
               <button
                 type="button"

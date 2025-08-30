@@ -27,6 +27,10 @@ import SubjectList from "../screens/subject_list";
 import Curriculum from "../screens/curriculum_list";
 import CurriculumUpsert from "../screens/curriculum_upsert";
 import CurriculumAssign from "../screens/curriculum_assign";
+import TeacherList from "../screens/teacher_list";
+import TeacherUpsert from "../screens/teacher_upsert";
+import TeacherAssign from "../screens/teacher_assign";
+import TeacherAssignUpsert from "../screens/teacher_assign_upsert";
 import AssignSubjectPerYearLevel from "../screens/assign_subject_per_level_list";
 import AssignSubjectPerYearLevelForm from "../screens/assign_subject_per_level_form";
 import SchoolSettings from "../screens/school_settings";
@@ -122,21 +126,50 @@ const menus = [
       { to: "/view_request", icon: FaExchangeAlt, label: "Transfer Requests", permission: "approve_transfers" },
     ],
   },
+
+
+  // --- Academics: Management
   {
     type: "dropdown",
-    label: "Academic Setup",
-    icon: FaUsersCog,
-    key: "academic_settings",
+    label: "Academic Management",
+    icon: FaBook,
+    key: "academic_management",
+    roles: ["admin"],
+    children: [
+      { to: "/subjects", icon: FaBook, label: "Subject Management" },
+      { to: "/curriculum", icon: FaClipboardList, label: "Curriculum Management" },
+      { to: "/teacher", icon: FaClipboardList, label: "Teacher Management" },
+    ],
+  },
+
+  // --- Academics: Assignments
+  {
+    type: "dropdown",
+    label: " Assignments & Scheduling",
+    icon: FaClipboardCheck,
+    key: "academic_assignments",
+    roles: ["admin"],
+    children: [
+       { to: "/teacher-assignments", icon: FaClipboardCheck, label: "Assign Teacher" },
+      { to: "/assign-subject-per-year-level", icon: FaClipboardCheck, label: "Assign Subjects" },
+    ],
+  },
+
+  // --- School: Setup
+  {
+    type: "dropdown",
+    label: "School Setup",
+    icon: FaCalendarAlt,
+    key: "academic_setup",
     roles: ["admin"],
     children: [
       { to: "/school_year", icon: FaCalendarAlt, label: "Academic Year" },
       { to: "/grade_level", icon: FaSchool, label: "Grade Levels" },
-      { to: "/sections", icon: FaSchool, label: "Section Management" },
-      { to: "/subjects", icon: FaBook, label: "Subject Management" },
-      { to: "/assign-subject-per-year-level", icon: FaClipboardCheck, label: "Assign Subjects" },
-      { to: "/curriculum", icon: FaClipboardList, label: "Curriculum Management" },
+       { to: "/sections", icon: FaSchool, label: "Section Creation" },
+       { to: "/school_settings", icon: FaBuilding, label: "School Information", permission: "manage_school_settings" },
     ],
   },
+
   {
     type: "dropdown",
     label: "System Settings",
@@ -145,12 +178,12 @@ const menus = [
     roles: ["admin"],
     children: [
       { to: "/users_account", icon: FaUsersCog, label: "User Management" },
-      { to: "/school_settings", icon: FaBuilding, label: "School Info", permission: "manage_school_settings" },
       { to: "/all_logs", icon: FaHistory, label: "Activity Logs", permission: "view_logs" },
       { to: "/backup", icon: FaDatabase, label: "Backup & Restore", permission: "export_data" },
     ],
   },
 ];
+
 
   // ---- Effects ----
   useEffect(() => {
@@ -330,10 +363,16 @@ const menus = [
             {permissions.request_transfers && <Route path="/request_transfer/:studentId" element={<RequestTransfer />} />}
             {permissions.approve_transfers && <Route path="/view_request" element={<ViewRequest />} />}
 
-            {/* Curriculum */}
+            {/* Academics */}
             <Route path="/curriculum" element={<Curriculum />} />
             <Route path="/curriculum/create" element={<CurriculumUpsert />} />
             <Route path="/curriculum/edit/:id" element={<CurriculumUpsert />} /> 
+            <Route path="/teacher" element={<TeacherList />} />
+            <Route path="/teacher/create" element={<TeacherUpsert />} />
+            <Route path="/teacher/edit/:id" element={<TeacherUpsert />} /> 
+            <Route path="/teacher-assignments" element={<TeacherAssign />} />
+            <Route path="/teacher-assignments/create" element={<TeacherAssignUpsert />} />
+            <Route path="/teacher-assignments/update/:id" element={<TeacherAssignUpsert />} />
             <Route path="/curriculum/assign-subject/:id" element={<CurriculumAssign />} />
             <Route path="/subjects" element={<SubjectList />} />
             <Route path="/subjects/create" element={<SubjectUpsert />} />
