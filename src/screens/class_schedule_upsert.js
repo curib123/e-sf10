@@ -11,16 +11,13 @@ const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sun
 // ---- Time helpers (UI <-> API) ----
 const toTimeInput = (t) => {
   if (!t) return "";
-  const parts = t.split(":");
-  return `${parts[0]?.padStart(2,"0")}:${(parts[1] ?? "00").padStart(2,"0")}`;
+  const [h="00", m="00"] = String(t).split(":");
+  return `${h.padStart(2,"0")}:${m.padStart(2,"0")}`;
 };
 const toApiTime = (t) => {
   if (!t) return "";
-  const parts = t.split(":");
-  const hh = parts[0]?.padStart(2,"0") ?? "00";
-  const mm = parts[1]?.padStart(2,"0") ?? "00";
-  const ss = parts[2]?.padStart(2,"0") ?? "00";
-  return `${hh}:${mm}:${ss}`;
+  const [h="00", m="00"] = String(t).split(":");
+  return `${h.padStart(2,"0")}:${m.padStart(2,"0")}:00`;
 };
 const minutesOf = (t) => {
   const [h, m] = toTimeInput(t).split(":").map(Number);
@@ -41,7 +38,7 @@ const ClassScheduleUpsert = () => {
   const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "info" });
   const showModal = (variant, title, message) => setModal({ show: true, title, message, variant });
 
-  // Dropdown data
+  // Master lists
   const [subjects, setSubjects] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [sections, setSections] = useState([]);
@@ -123,7 +120,7 @@ const ClassScheduleUpsert = () => {
   };
 
   const fetchAssignments = async () => {
-    const res = await apiFetch(`/teacher-assignments`); // per spec: No Auth required, but sending headers is ok
+    const res = await apiFetch(`/teacher-assignments`);
     if (!res.ok) throw new Error("Failed to fetch teacher assignments");
     const js = await res.json();
     return Array.isArray(js?.data) ? js.data : [];
@@ -159,6 +156,7 @@ const ClassScheduleUpsert = () => {
         if (isEdit && id) {
           const data = await fetchSchedule(id);
           if (data && !cancelled) {
+            // Set all fields once; we will not clear dependents during initializing
             setForm({
               subject_id: String(data.subject_id ?? ""),
               teacher_id: String(data.teacher_id ?? ""),
@@ -182,27 +180,30 @@ const ClassScheduleUpsert = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isEdit, token]);
 
-  // ---- Assignment-driven dropdowns (cascade) ----
-
-  // quick maps to inject current values if not present in filtered options
+  // ---- Quick maps & option builders ----
   const subjMap = useMemo(() => Object.fromEntries(subjects.map(s => [String(s.subject_id), s])), [subjects]);
   const teachMap = useMemo(() => Object.fromEntries(teachers.map(t => [String(t.teacher_id), t])), [teachers]);
   const sectMap = useMemo(() => Object.fromEntries(sections.map(s => [String(s.section_id), s])), [sections]);
   const syMap   = useMemo(() => Object.fromEntries(schoolYears.map(sy => [String(sy.school_year_id), sy])), [schoolYears]);
 
-  // School Year options: years that appear in assignments
+  // Helper: when assignments empty, fall back to all *master* lists
+  const hasAssigns = assignments.length > 0;
+
+  // School Year options
   const syOptions = useMemo(() => {
+    if (!hasAssigns) return schoolYears;
     const present = new Set(assignments.map(a => String(a.school_year_id)));
     const out = schoolYears.filter(sy => present.has(String(sy.school_year_id)));
     if (form.school_year_id && !out.find(x => String(x.school_year_id) === String(form.school_year_id)) && syMap[form.school_year_id]) {
       out.unshift(syMap[form.school_year_id]);
     }
     return out;
-  }, [assignments, schoolYears, form.school_year_id, syMap]);
+  }, [assignments, schoolYears, form.school_year_id, syMap, hasAssigns]);
 
-  // Section options: sections with assignments for selected SY
+  // Section options
   const sectionOptions = useMemo(() => {
     if (!form.school_year_id) return [];
+    if (!hasAssigns) return sections; // fallback
     const present = new Set(
       assignments
         .filter(a => String(a.school_year_id) === String(form.school_year_id))
@@ -213,11 +214,12 @@ const ClassScheduleUpsert = () => {
       out.unshift(sectMap[form.section_id]);
     }
     return out;
-  }, [assignments, sections, form.school_year_id, form.section_id, sectMap]);
+  }, [assignments, sections, form.school_year_id, form.section_id, sectMap, hasAssigns]);
 
-  // Subject options: subjects with assignments for selected SY + Section
+  // Subject options
   const subjectOptions = useMemo(() => {
     if (!form.school_year_id || !form.section_id) return [];
+    if (!hasAssigns) return subjects; // fallback
     const present = new Set(
       assignments
         .filter(a =>
@@ -231,11 +233,12 @@ const ClassScheduleUpsert = () => {
       out.unshift(subjMap[form.subject_id]);
     }
     return out;
-  }, [assignments, subjects, form.school_year_id, form.section_id, form.subject_id, subjMap]);
+  }, [assignments, subjects, form.school_year_id, form.section_id, form.subject_id, subjMap, hasAssigns]);
 
-  // Teacher options: teachers assigned for selected SY + Section + Subject
+  // Teacher options
   const teacherOptions = useMemo(() => {
     if (!form.school_year_id || !form.section_id || !form.subject_id) return [];
+    if (!hasAssigns) return teachers; // fallback
     const present = new Set(
       assignments
         .filter(a =>
@@ -250,21 +253,39 @@ const ClassScheduleUpsert = () => {
       out.unshift(teachMap[form.teacher_id]);
     }
     return out;
-  }, [assignments, teachers, form.school_year_id, form.section_id, form.subject_id, form.teacher_id, teachMap]);
+  }, [assignments, teachers, form.school_year_id, form.section_id, form.subject_id, form.teacher_id, teachMap, hasAssigns]);
 
-  // Clear dependents when parent changes (SY -> clear section/subject/teacher; Section -> clear subject/teacher; Subject -> clear teacher)
-  useEffect(() => {
-    setForm(f => ({ ...f, section_id: "", subject_id: "", teacher_id: "" }));
-  }, [form.school_year_id]);
-  useEffect(() => {
-    setForm(f => ({ ...f, subject_id: "", teacher_id: "" }));
-  }, [form.section_id]);
-  useEffect(() => {
-    setForm(f => ({ ...f, teacher_id: "" }));
-  }, [form.subject_id]);
+  // ---- Handlers (with guarded dependent clears) ----
+  const setField = (name, value) => {
+    setForm((prev) => {
+      // During initial load, never clear dependents.
+      if (initializing) return { ...prev, [name]: value };
 
-  // ---- Handlers ----
-  const setField = (name, value) => setForm((f) => ({ ...f, [name]: value }));
+      const next = { ...prev, [name]: value };
+
+      // Only clear when the value actually changed
+      const changed = String(prev[name] ?? "") !== String(value ?? "");
+      if (!changed) return next;
+
+      switch (name) {
+        case "school_year_id":
+          next.section_id = "";
+          next.subject_id = "";
+          next.teacher_id = "";
+          break;
+        case "section_id":
+          next.subject_id = "";
+          next.teacher_id = "";
+          break;
+        case "subject_id":
+          next.teacher_id = "";
+          break;
+        default:
+          break;
+      }
+      return next;
+    });
+  };
 
   const validate = () => {
     const required = [
@@ -345,7 +366,7 @@ const ClassScheduleUpsert = () => {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="row g-3 g-lg-4" noValidate>
-            {/* Row 1: School Year + Section (cascading) */}
+            {/* Row 1: School Year + Section */}
             <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">School Year</label>
               <select
@@ -379,7 +400,7 @@ const ClassScheduleUpsert = () => {
               <div className="form-text">Only sections assigned in the selected school year.</div>
             </div>
 
-            {/* Row 2: Subject + Teacher (cascading) */}
+            {/* Row 2: Subject + Teacher */}
             <div className="col-12 col-md-6">
               <label className="form-label fw-semibold">Subject</label>
               <select
