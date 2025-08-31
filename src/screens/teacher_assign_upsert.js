@@ -290,6 +290,8 @@ const TeacherAssignmentForm = () => {
         id ? "Teacher assignment updated successfully." : "Teacher assignment created successfully."
       );
 
+     window.location.reload();
+      onReset();
       if (HARD_REFRESH_ON_SAVE) {
         window.location.reload();
         return;
@@ -311,7 +313,8 @@ const TeacherAssignmentForm = () => {
   const onReset = () => {
     setSubmitted(false);
     if (id) loadAssignment();
-    else setForm({ teacher_id: "", subject_id: "", section_id: "", school_year_id: "" });
+    else setForm({ teacher_id: form.teacher_id, subject_id: "", section_id: "", school_year_id: "" });
+
   };
 
   // Derived pagination numbers for teacherSubs
