@@ -10,7 +10,6 @@ import {
   Table,
   Badge,
   ProgressBar,
-  Spinner,
   Placeholder,
 } from "react-bootstrap";
 import {
@@ -36,6 +35,21 @@ const fmtDate = new Intl.DateTimeFormat(undefined, {
   day: "2-digit",
 });
 
+// helpers
+const clamp = (n, min, max) => Math.min(max, Math.max(min, Number(n) || 0));
+function formatRelative(ts, now = Date.now()) {
+  const d = typeof ts === "number" ? ts : new Date(ts).getTime();
+  const diff = Math.max(0, now - d);
+  if (diff < 1000) return "just now";
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  const days = Math.floor(diff / 86_400_000);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  return new Date(d).toLocaleString();
+}
+
 const StatCard = ({ icon, label, value = 0, percent = 0, color }) => (
   <Card className="shadow-sm border-0 h-100 rounded-4">
     <Card.Body className="text-center p-4">
@@ -50,7 +64,7 @@ const StatCard = ({ icon, label, value = 0, percent = 0, color }) => (
         {value?.toLocaleString?.() ?? value}
       </div>
       <ProgressBar
-        now={Math.min(100, Math.max(0, percent))}
+        now={clamp(percent, 0, 100)}
         style={{ height: 8, borderRadius: 6 }}
         className="bg-body-tertiary"
       />
@@ -78,19 +92,31 @@ const SkeletonCard = () => (
 );
 
 const HomeDashboard = () => {
+  // ── auth helpers
   const token = useMemo(() => sessionStorage.getItem("token"), []);
   const authHeaders = () => ({ Authorization: `Bearer ${token}` });
 
+  // ── dashboard state
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // ── modal + clock
   const [modal, setModal] = useState({
     show: false,
     title: "",
     message: "",
     variant: "danger",
   });
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState(Date.now());
 
+  // ── logs state (MUST be before any early returns)
+  const [logs, setLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(true);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsLimit, setLogsLimit] = useState(10);
+  const [logsTotalPages, setLogsTotalPages] = useState(1);
+
+  // ── effects (also before early returns)
   useEffect(() => {
     checkToken();
   }, []);
@@ -120,11 +146,43 @@ const HomeDashboard = () => {
     };
   }, [token]);
 
+  // live clock + relative time updates
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
+  // logs fetch effect
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setLogsLoading(true);
+      try {
+        const { data } = await axios.get(`${BASE_URL}/activity-log`, {
+          headers: authHeaders(),
+          params: { page: logsPage, limit: logsLimit },
+        });
+        if (mounted && data?.success) {
+          setLogs(data.logs || []);
+          setLogsTotalPages(data.totalPages || 1);
+        }
+      } catch {
+        setModal({
+          show: true,
+          title: "Error",
+          message: "Failed to fetch activity logs.",
+          variant: "danger",
+        });
+      } finally {
+        if (mounted) setLogsLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [logsPage, logsLimit, token]);
+
+  // ── early returns are AFTER all hooks
   if (loading) {
     return (
       <Container fluid className="p-4 bg-light min-vh-100">
@@ -157,8 +215,7 @@ const HomeDashboard = () => {
 
   if (!dashboardData) return null;
 
-  const { user = {}, studentStats = {}, schoolInfo = {}, recentLogs = [] } =
-    dashboardData;
+  const { user = {}, studentStats = {}, schoolInfo = {} } = dashboardData;
 
   const total = Number(studentStats.total_students || 0);
   const pct = (n) => (total ? (Number(n || 0) / total) * 100 : 0);
@@ -187,7 +244,9 @@ const HomeDashboard = () => {
     },
   ];
 
-  const initials = `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`.toUpperCase();
+  const initials = `${user.first_name?.[0] ?? ""}${
+    user.last_name?.[0] ?? ""
+  }`.toUpperCase();
 
   return (
     <Container
@@ -283,33 +342,111 @@ const HomeDashboard = () => {
         ))}
       </Row>
 
-      {/* Recent Activity */}
+      {/* Recent Activity (API-driven) */}
       <Card className="shadow-sm border-0 rounded-4">
-        <Card.Header className="bg-white border-0 fw-bold text-primary">
-          Recent Activity
+        <Card.Header className="bg-white border-0 fw-bold text-primary d-flex align-items-center justify-content-between">
+          <span>Recent Activity</span>
+          <div className="d-flex align-items-center gap-2">
+            <select
+              className="form-select form-select-sm"
+              value={logsLimit}
+              onChange={(e) => {
+                setLogsLimit(Number(e.target.value));
+                setLogsPage(1);
+              }}
+              style={{ width: 90 }}
+            >
+              {[10, 20, 50, 100].map((n) => (
+                <option key={n} value={n}>
+                  {n}/page
+                </option>
+              ))}
+            </select>
+          </div>
         </Card.Header>
         <Card.Body className="p-0">
-          {recentLogs?.length ? (
-            <Table hover responsive className="mb-0 align-middle">
-              <thead className="table-light">
-                <tr>
-                  <th>Action</th>
-                  <th>Timestamp</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentLogs.map(({ log_id, action, log_timestamp }) => (
-                  <tr key={log_id}>
-                    <td className="text-truncate" style={{ maxWidth: 560 }}>
-                      {action}
-                    </td>
-                    <td className="text-muted">
-                      {new Date(log_timestamp).toLocaleString()}
-                    </td>
+          {logsLoading ? (
+            <div className="p-4">
+              <SkeletonCard />
+            </div>
+          ) : logs?.length ? (
+            <>
+              <Table hover responsive className="mb-0 align-middle">
+                <thead className="table-light">
+                  <tr>
+                    <th style={{ width: "55%" }}>Action</th>
+                    <th>User</th>
+                    <th>When</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {logs.map(
+                    ({
+                      log_id,
+                      action,
+                      log_timestamp,
+                      first_name,
+                      last_name,
+                      email,
+                    }) => (
+                      <tr key={log_id}>
+                        <td className="text-truncate" style={{ maxWidth: 560 }}>
+                          {action}
+                        </td>
+                        <td className="text-muted">
+                          {[first_name, last_name]
+                            .filter(Boolean)
+                            .join(" ") || email || "—"}
+                        </td>
+                        <td
+                          className="text-muted"
+                          title={new Date(log_timestamp).toLocaleString()}
+                        >
+                          {formatRelative(log_timestamp, now)}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </Table>
+
+              {/* Pagination */}
+              <div className="d-flex justify-content-between align-items-center px-3 py-2 border-top bg-white rounded-bottom-4">
+                <div className="text-muted small">
+                  Page {logsPage} of {logsTotalPages}
+                </div>
+                <div className="btn-group">
+                  <button
+                    className="btn btn-sm btn-outline-secondary"
+                    disabled={logsPage <= 1}
+                    onClick={() => setLogsPage(1)}
+                  >
+                    « First
+                  </button>
+                  <button
+                    className="btn btn-sm btn-outline-secondary"
+                    disabled={logsPage <= 1}
+                    onClick={() => setLogsPage((p) => p - 1)}
+                  >
+                    ‹ Prev
+                  </button>
+                  <button
+                    className="btn btn-sm btn-outline-secondary"
+                    disabled={logsPage >= logsTotalPages}
+                    onClick={() => setLogsPage((p) => p + 1)}
+                  >
+                    Next ›
+                  </button>
+                  <button
+                    className="btn btn-sm btn-outline-secondary"
+                    disabled={logsPage >= logsTotalPages}
+                    onClick={() => setLogsPage(logsTotalPages)}
+                  >
+                    Last »
+                  </button>
+                </div>
+              </div>
+            </>
           ) : (
             <div className="text-center py-4 text-muted">
               No recent logs available.

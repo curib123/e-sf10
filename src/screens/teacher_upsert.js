@@ -1,15 +1,39 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { FaArrowLeft, FaSave } from "react-icons/fa";
+import { FaArrowLeft, FaSave, FaCheckCircle, FaCircle, FaExclamationTriangle } from "react-icons/fa";
 import StatusModal from "../components/status_modal";
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 const joinUrl = (path = "") => `${BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 
+/** Lightweight confirm modal */
+const ConfirmModal = ({ show, onCancel, onConfirm, title, body, confirmLabel = "Confirm", confirmVariant = "primary" }) => {
+  if (!show) return null;
+  return (
+    <div className="modal fade show" style={{ display: "block" }} aria-modal="true" role="dialog">
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content rounded-4 shadow-sm">
+          <div className={`modal-header bg-${confirmVariant} text-white rounded-top-4`}>
+            <h6 className="modal-title fw-semibold">{title}</h6>
+            <button type="button" className="btn-close btn-close-white" aria-label="Close" onClick={onCancel} />
+          </div>
+          <div className="modal-body">
+            <p className="mb-0">{body}</p>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-light border" onClick={onCancel}>Cancel</button>
+            <button className={`btn btn-${confirmVariant}`} onClick={onConfirm}>{confirmLabel}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function UpsertTeacher() {
   const navigate = useNavigate();
-  const { id } = useParams();             
+  const { id } = useParams();
   const isEdit = Boolean(id);
 
   const token = useMemo(() => sessionStorage.getItem("token"), []);
@@ -29,6 +53,9 @@ export default function UpsertTeacher() {
   const [toggling, setToggling] = useState(false);
   const [status, setStatus] = useState({ show: false, title: "", message: "", variant: "info" });
   const inFlight = useRef(false);
+
+  // confirm state for toggle
+  const [confirm, setConfirm] = useState({ show: false, nextValue: null });
 
   const showStatus = (variant, title, message) =>
     setStatus({ show: true, title, message, variant });
@@ -89,7 +116,7 @@ export default function UpsertTeacher() {
     (async () => {
       try {
         setLoading(true);
-        const res = await apiFetch(`/teachers/${id}`, { signal: ac.signal }); // ✅ GET with Bearer
+        const res = await apiFetch(`/teachers/${id}`, { signal: ac.signal });
         const data = await res.json().catch(() => ({}));
         if (!data?.success || !data?.data) throw new Error("Failed to load teacher.");
         const t = data.data;
@@ -166,7 +193,7 @@ export default function UpsertTeacher() {
     try {
       const path = isEdit ? `/teachers/update/${id}` : `/teachers/create`;
       const method = isEdit ? "PUT" : "POST";
-      const res = await apiFetch(path, { method, body: JSON.stringify(payload) }); // ✅ Bearer on create/update
+      const res = await apiFetch(path, { method, body: JSON.stringify(payload) });
       const data = await res.json().catch(() => ({}));
       const success = data?.success ?? res.ok;
 
@@ -186,29 +213,107 @@ export default function UpsertTeacher() {
     }
   };
 
-  const handleToggleActive = async () => {
+  // --- Toggle UX ---
+  const openConfirmToggle = (nextVal) => {
+    // Ask confirmation when activating; deactivation goes straight through
+    setConfirm({ show: true, nextValue: nextVal });
+  };
+
+  const commitToggle = async (nextVal) => {
+    setConfirm({ show: false, nextValue: null });
     if (!isEdit || toggling) return;
+
+    const prev = form.is_active;
+    // optimistic UI
+    setForm((f) => ({ ...f, is_active: nextVal }));
     setToggling(true);
+
     try {
-      const res = await apiFetch(`/teachers/toggle-status/${id}`, { method: "PATCH" }); // ✅ Bearer on toggle
+      const res = await apiFetch(`/teachers/toggle-status/${id}`, { method: "PATCH" });
       const data = await res.json().catch(() => ({}));
       const success = data?.success ?? res.ok;
       if (success) {
-        setForm((f) => ({ ...f, is_active: !f.is_active }));
         showStatus("success", "Status updated", data?.message || "Teacher status changed.");
       } else {
-        throw new Error(data?.message || "Toggle failed.");
+        setForm((f) => ({ ...f, is_active: prev })); // rollback
+        showStatus("danger", "Failed", data?.message || "Toggle failed.");
       }
     } catch (err) {
+      setForm((f) => ({ ...f, is_active: prev })); // rollback
       showStatus("danger", "Error", err.message || "Toggle failed.");
     } finally {
       setToggling(false);
     }
   };
 
+  const handleToggleClick = () => {
+    const nextVal = !form.is_active;
+    if (nextVal) openConfirmToggle(true);
+    else commitToggle(false);
+  };
+
+  const handleToggleKey = (e) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      handleToggleClick();
+    }
+  };
+
   return (
     <div className="container-xxl my-4">
+      {/* tiny CSS to polish the switch */}
+      <style>{`
+        .ux-toggle {
+          --h: 28px;
+          --w: 52px;
+          width: var(--w);
+          height: var(--h);
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          border-radius: var(--h);
+          border: 1px solid rgba(0,0,0,.08);
+          background: var(--bg, #e9ecef);
+          transition: background .25s ease, box-shadow .25s ease;
+          cursor: pointer;
+          user-select: none;
+          outline: none;
+        }
+        .ux-thumb {
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: calc(var(--h) - 4px);
+          height: calc(var(--h) - 4px);
+          border-radius: 50%;
+          background: #fff;
+          box-shadow: 0 2px 6px rgba(0,0,0,.08);
+          transform: translateX(var(--x, 0));
+          transition: transform .25s ease;
+          display: grid;
+          place-items: center;
+        }
+        .ux-toggle.active { --bg: #19875422; }
+        .ux-toggle.inactive { --bg: #adb5bd33; }
+        .ux-toggle.active .ux-thumb { --x: calc(var(--w) - var(--h)); }
+        .ux-toggle:focus-visible { box-shadow: 0 0 0 4px rgba(88,111,255,0.25); }
+        .ux-dot { width: 6px; height: 6px; border-radius: 999px; }
+      `}</style>
+
       <StatusModal {...status} onHide={onHideStatus} />
+      <ConfirmModal
+        show={confirm.show}
+        onCancel={() => setConfirm({ show: false, nextValue: null })}
+        onConfirm={() => commitToggle(confirm.nextValue)}
+        title={confirm.nextValue ? "Activate this Teacher?" : "Change Active Status"}
+        body={
+          confirm.nextValue
+            ? "Activating a teacher enables assignments and visibility across the system. Proceed to set this teacher as active?"
+            : "Proceed to change the active status?"
+        }
+        confirmLabel={confirm.nextValue ? "Set Active" : "Confirm"}
+        confirmVariant={confirm.nextValue ? "success" : "primary"}
+      />
 
       <div className="card border-0 shadow-sm rounded-4">
         <div className="card-body p-4 p-lg-5">
@@ -218,18 +323,26 @@ export default function UpsertTeacher() {
             <div className="d-flex align-items-center gap-3">
               {isEdit && (
                 <div className="d-flex align-items-center gap-2">
-                  <span className={`badge ${form.is_active ? "text-bg-success" : "text-bg-secondary"}`}>
-                    {form.is_active ? "Active" : "Inactive"}
+                  <span className={`badge d-inline-flex align-items-center gap-2 ${form.is_active ? "text-bg-success" : "text-bg-secondary"}`}>
+                    <FaCircle size={7} /> {form.is_active ? "Active" : "Inactive"}
                   </span>
-                  <div className="form-check form-switch m-0">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="activeSwitch"
-                      checked={form.is_active}
-                      onChange={handleToggleActive}
-                      disabled={toggling}
-                    />
+                  {/* Accessible custom switch */}
+                  <div
+                    className={`ux-toggle ${form.is_active ? "active" : "inactive"} ${toggling ? "pe-none opacity-75" : ""}`}
+                    role="switch"
+                    aria-checked={form.is_active}
+                    aria-label="Toggle teacher active"
+                    tabIndex={0}
+                    onClick={handleToggleClick}
+                    onKeyDown={handleToggleKey}
+                  >
+                    <div className="ux-thumb">
+                      {toggling ? (
+                        <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+                      ) : (
+                        <FaCheckCircle size={12} className={form.is_active ? "" : "opacity-0"} />
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -242,6 +355,16 @@ export default function UpsertTeacher() {
               </button>
             </div>
           </div>
+
+          {/* subtle helper when inactive */}
+          {isEdit && !form.is_active && (
+            <div className="alert alert-warning d-flex align-items-start gap-2 py-2" role="alert">
+              <FaExclamationTriangle className="mt-1" />
+              <div className="small">
+                This teacher is currently <strong>inactive</strong>. Activate to allow assignments and visibility.
+              </div>
+            </div>
+          )}
 
           {/* Form — Row1: 1 field, Row2+: 2 columns per row */}
           <form onSubmit={handleSubmit} noValidate className="row g-3 g-lg-4">
@@ -365,7 +488,7 @@ export default function UpsertTeacher() {
                 name="teacher_address"
                 className="form-control"
                 placeholder="e.g., 789 Main Street, Quezon City"
-                rows={1}   // normal input height
+                rows={1}
                 value={form.teacher_address}
                 onChange={handleChange}
                 aria-describedby="addrHelp"

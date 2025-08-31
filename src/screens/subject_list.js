@@ -348,7 +348,7 @@ const SubjectList = () => {
             </>
           )}
         </div>
-      </div>
+      </div> 
 
       <StatusModal
         {...statusModal}
