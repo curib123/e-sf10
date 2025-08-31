@@ -16,7 +16,6 @@ import {
   FaListAlt,
   FaUpload,
   FaExchangeAlt,
-  FaClipboardList,
   FaHistory,
   FaBook,
   FaClipboardCheck,
@@ -56,6 +55,8 @@ import TeacherList from "../screens/teacher_list";
 import TeacherUpsert from "../screens/teacher_upsert";
 import TeacherAssign from "../screens/teacher_assign";
 import TeacherAssignUpsert from "../screens/teacher_assign_upsert";
+import ClassScheduleUpsert from "../screens/class_schedule_upsert";
+import ClassScheduleList from "../screens/class_schedule_list";
 import AssignSubjectPerYearLevel from "../screens/assign_subject_per_level_list";
 import AssignSubjectPerYearLevelForm from "../screens/assign_subject_per_level_form";
 import SchoolSettings from "../screens/school_settings";
@@ -69,12 +70,14 @@ import DisplaySchoolYear from "../screens/school_year_list";
 import UpsertSchoolYear from "../screens/school_year_upsert";
 import NotFound from "../screens/not_found";
 
+
 // Helpers
 import { checkToken } from "../components/token_checker";
 import { getUserPermissions } from "../components/get_permission";
 
 // Styles
 import "./sidebar.css";
+import ClassSchedulesList from "../screens/class_schedule_list";
 
 // ---- API Config ----
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
@@ -175,6 +178,7 @@ const menus = [
     key: "academic_assignments",
     roles: ["admin"],
     children: [
+      { to: "/class-schedules", icon: FaListAlt, label: "Class Schedules" },
       { to: "/teacher-assignments", icon: FaChalkboardTeacher, label: "Assign Teacher" },
       { to: "/assign-subject-per-year-level", icon: FaLayerGroup, label: "Assign Subjects" },
     ],
@@ -400,6 +404,9 @@ const menus = [
             <Route path="/teacher-assignments/create" element={<TeacherAssignUpsert />} />
             <Route path="/teacher-assignments/update/:id" element={<TeacherAssignUpsert />} />
             <Route path="/curriculum/assign-subject/:id" element={<CurriculumAssign />} />
+            <Route path="/class-schedules" element={<ClassSchedulesList />} />
+            <Route path="/class-schedules/create" element={<ClassScheduleUpsert />} />
+            <Route path="/class-schedules/edit/:id" element={<ClassScheduleUpsert />} />
             <Route path="/subjects" element={<SubjectList />} />
             <Route path="/subjects/create" element={<SubjectUpsert />} />
             <Route path="/subjects/edit/:id" element={<SubjectUpsert />} />
