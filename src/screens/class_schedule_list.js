@@ -378,8 +378,22 @@ const ClassSchedulesList = () => {
                 <button className="btn btn-outline-secondary" onClick={onClear} aria-label="Clear search">Clear</button>
               ) : null}
             </div>
+            
           </div>
 
+
+            {/* Group By */}
+            <div className="flex-grow-1">
+              <label className="form-label small text-muted mb-1">Group by</label>
+              <select className="form-select" value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
+                <option value="none">None</option>
+                <option value="sy">School Year</option>
+                <option value="teacher">Teacher</option>
+                <option value="subject">Subject</option>
+                <option value="section">Section</option>
+                <option value="day">Day</option>
+              </select>
+            </div>
           {/* Filters row (inline, single line wrapping) */}
           <div className="d-flex flex-wrap align-items-end gap-2">
             {/* Subject */}
@@ -445,18 +459,6 @@ const ClassSchedulesList = () => {
               </select>
             </div>
 
-            {/* Group By */}
-            <div className="flex-grow-1">
-              <label className="form-label small text-muted mb-1">Group by</label>
-              <select className="form-select" value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
-                <option value="none">None</option>
-                <option value="sy">School Year</option>
-                <option value="teacher">Teacher</option>
-                <option value="subject">Subject</option>
-                <option value="section">Section</option>
-                <option value="day">Day</option>
-              </select>
-            </div>
           </div>
         </div>
       </div>
