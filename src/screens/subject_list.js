@@ -43,14 +43,19 @@ const SubjectList = () => {
     setStatusModal({ show: true, title, message, variant, icon: icons[variant] });
 
   // --- Data state ---
-  const [subjects, setSubjects] = useState([]);
+  const [allSubjects, setAllSubjects] = useState([]); // full set from API
+  const [subjects, setSubjects] = useState([]); // current page slice
   const [query, setQuery] = useState("");
+  const [gradeLevels, setGradeLevels] = useState([]);
+  const [gradeLevel, setGradeLevel] = useState(""); // selected grade_level_id
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[1]); // default 10
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 
   const inFlight = useRef(false);
+  const debounceRef = useRef(null);
 
   // --- helpers ---
   const handleUnauthorized = () => {
@@ -80,73 +85,90 @@ const SubjectList = () => {
     return res;
   };
 
-  // --- data loader ---
-  const fetchSubjects = async (pageNumber = 1, searchQuery = query, size = pageSize) => {
+  // slice data for the current page
+  const paginate = (fullList, curPage = page, size = pageSize) => {
+    const total = fullList.length;
+    const pages = Math.max(1, Math.ceil(total / size));
+    const safePage = Math.min(Math.max(1, curPage), pages);
+    const start = (safePage - 1) * size;
+    const end = start + size;
+
+    setSubjects(fullList.slice(start, end));
+    setPage(safePage);
+    setTotalPages(pages);
+    setTotalItems(total);
+  };
+
+  // --- fetch subjects via SEARCH API ---
+  const fetchAndCacheSubjects = async (searchQuery = query, gl = gradeLevel) => {
     if (!token || inFlight.current) return;
     try {
       setLoading(true);
       inFlight.current = true;
 
       const params = new URLSearchParams();
-      params.append("page", pageNumber);
-      params.append("limit", size);
-      if (searchQuery) params.append("query", searchQuery.trim());
+      if (searchQuery?.trim()) params.append("query", searchQuery.trim());
+      if (gl) params.append("grade_level", gl);
 
-      // IMPORTANT: use RELATIVE path; do NOT include /esf10 again.
-      const res = await apiFetch(`/subjects/view-all-subjects?${params.toString()}`, {
-        method: "GET",
-      });
+      const url = `/subjects/search-subjects${params.toString() ? `?${params.toString()}` : ""}`;
+      const res = await apiFetch(url, { method: "GET" });
       if (!res.ok) throw new Error("Failed to fetch subjects");
       const data = await res.json();
 
-      if (data?.success) {
-        const list = Array.isArray(data.data) ? data.data : [];
-        setSubjects(list);
-
-        const pg = data.pagination || {};
-        const newPage = Number(pg.page ?? pageNumber ?? 1);
-        const newTotalPages = Number(pg.totalPages ?? pg.total_pages ?? 1);
-        const newTotalItems = Number(pg.totalItems ?? pg.total_items ?? pg.total ?? list.length);
-
-        setPage(newPage);
-        setTotalPages(Math.max(1, newTotalPages));
-        setTotalItems(Math.max(list.length, newTotalItems));
-      } else {
-        setSubjects([]);
-        setPage(1);
-        setTotalPages(1);
-        setTotalItems(0);
-      }
+      const list = Array.isArray(data?.data) ? data.data : [];
+      setAllSubjects(list);
+      paginate(list, 1, pageSize); // reset to page 1 on new fetch
     } catch (err) {
       if (err.message !== "Unauthorized") {
         showStatus("danger", "Error", err.message || "Something went wrong.");
       }
-      setSubjects([]);
-      setPage(1);
-      setTotalPages(1);
-      setTotalItems(0);
+      setAllSubjects([]);
+      paginate([], 1, pageSize);
     } finally {
       setLoading(false);
       inFlight.current = false;
     }
   };
 
-  // initial load
+  // --- fetch grade levels ---
+  const fetchGradeLevels = async () => {
+    try {
+      const res = await apiFetch("/grade-levels", { method: "GET" });
+      if (!res.ok) throw new Error("Failed to fetch grade levels");
+      const data = await res.json();
+      if (data?.success) {
+        // sort by grade_order if present
+        const sorted = [...data.data].sort((a, b) => (a.grade_order ?? 0) - (b.grade_order ?? 0));
+        setGradeLevels(sorted);
+      } else {
+        setGradeLevels([]);
+      }
+    } catch (err) {
+      console.error("Error fetching grade levels:", err.message);
+      setGradeLevels([]);
+    }
+  };
+
+  // initial load: grade levels then subjects
   useEffect(() => {
-    fetchSubjects(1, "", pageSize);
+    fetchGradeLevels();
+    fetchAndCacheSubjects("", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // debounce search
+  // debounce search + grade level filter
   useEffect(() => {
-    const t = setTimeout(() => fetchSubjects(1, query, pageSize), 300);
-    return () => clearTimeout(t);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchAndCacheSubjects(query, gradeLevel);
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, gradeLevel]);
 
-  // page size change
+  // page size change (re-slice locally)
   useEffect(() => {
-    fetchSubjects(1, query, pageSize);
+    paginate(allSubjects, 1, pageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageSize]);
 
@@ -183,6 +205,7 @@ const SubjectList = () => {
       {/* Toolbar */}
       <div className="card border-0 shadow-sm rounded-4 mb-3">
         <div className="card-body d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2">
+          {/* Search */}
           <div className="input-group">
             <span className="input-group-text"><FaSearch /></span>
             <input
@@ -195,6 +218,23 @@ const SubjectList = () => {
             />
           </div>
 
+          {/* Grade Level Dropdown */}
+          <div style={{ minWidth: 220 }}>
+            <select
+              className="form-select"
+              value={gradeLevel}
+              onChange={(e) => setGradeLevel(e.target.value)}
+            >
+              <option value="">All Grade Levels</option>
+              {gradeLevels.map((gl) => (
+                <option key={gl.grade_level_id} value={gl.grade_level_id}>
+                  {gl.grade_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Page size */}
           <div className="d-flex align-items-center gap-2 ms-lg-auto">
             <label className="form-label mb-0 small text-muted">Show</label>
             <select
@@ -269,13 +309,16 @@ const SubjectList = () => {
               {/* Footer / Pagination */}
               <div className="d-flex flex-column flex-md-row align-items-center justify-content-between gap-2 p-3">
                 <div className="small text-muted">
-                  Showing <strong>{startIndex ? startIndex : 0}–{endIndex}</strong> of <strong>{totalItems || subjects.length}</strong> subjects
+                  Showing <strong>{startIndex ? startIndex : 0}–{endIndex}</strong> of <strong>{totalItems}</strong> subjects
                 </div>
                 <div className="d-flex align-items-center gap-2">
                   <button
                     className="btn btn-outline-secondary btn-sm"
                     disabled={page <= 1}
-                    onClick={() => fetchSubjects(Math.max(1, page - 1), query, pageSize)}
+                    onClick={() => {
+                      const next = Math.max(1, page - 1);
+                      paginate(allSubjects, next, pageSize);
+                    }}
                   >
                     <FaChevronLeft /> Prev
                   </button>
@@ -290,14 +333,17 @@ const SubjectList = () => {
                     onChange={(e) => {
                       const v = Number(e.target.value || 1);
                       const next = Math.min(Math.max(1, v), totalPages);
-                      fetchSubjects(next, query, pageSize);
+                      paginate(allSubjects, next, pageSize);
                     }}
                   />
                   <span className="small text-muted">of {totalPages}</span>
                   <button
                     className="btn btn-outline-secondary btn-sm"
                     disabled={page >= totalPages}
-                    onClick={() => fetchSubjects(Math.min(totalPages, page + 1), query, pageSize)}
+                    onClick={() => {
+                      const next = Math.min(totalPages, page + 1);
+                      paginate(allSubjects, next, pageSize);
+                    }}
                   >
                     Next <FaChevronRight />
                   </button>

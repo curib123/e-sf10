@@ -15,7 +15,7 @@ import {
 } from "react-icons/fa";
 import StatusModal from "../components/status_modal";
 
-const BASE_URL = process.env.REACT_APP_API_BASE_URL; // already includes /esf10
+const BASE_URL = process.env.REACT_APP_API_BASE_URL; 
 const PAGE_SIZES = [5, 10, 20, 50];
 
 const icons = {

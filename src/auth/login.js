@@ -1,6 +1,7 @@
 // Login.jsx
 import React, { useMemo, useState, useCallback } from "react";
 import { FaUser, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
+import { Modal, Button } from "react-bootstrap";
 import StatusModal from "../components/status_modal";
 import "./login.css";
 
@@ -53,6 +54,11 @@ const Login = ({ onLogin }) => {
     variant: "danger",
   });
 
+  // Developer modal state
+  const [showDevModal, setShowDevModal] = useState(false);
+  const handleDevOpen = () => setShowDevModal(true);
+  const handleDevClose = () => setShowDevModal(false);
+
   const handleLogin = useCallback(
     async (e) => {
       e.preventDefault();
@@ -74,7 +80,6 @@ const Login = ({ onLogin }) => {
         }
 
         if (res.ok && data?.token) {
-          // persist auth (session by default; local if "Remember me")
           const storage = remember ? localStorage : sessionStorage;
           storage.setItem("loginResponse", JSON.stringify(data));
           storage.setItem("token", data.token);
@@ -114,12 +119,7 @@ const Login = ({ onLogin }) => {
 
       {/* Loading overlay */}
       {loading && (
-        <div
-          className="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center bg-dark bg-opacity-50"
-          style={{ zIndex: 1050 }}
-          aria-live="assertive"
-          aria-busy="true"
-        >
+        <div className="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center bg-dark bg-opacity-50" style={{ zIndex: 1050 }}>
           <div className="text-center bg-white p-4 rounded-4 shadow-lg" style={{ minWidth: 280 }}>
             <div className="spinner-border text-primary mb-3" role="status" />
             <p className="mb-0 fw-semibold">Signing you in…</p>
@@ -182,7 +182,14 @@ const Login = ({ onLogin }) => {
               <button
                 type="button"
                 className="btn btn-link p-0 small text-decoration-none"
-                onClick={() => setModal({ show: true, title: "Info", message: "Please contact your admin to reset your password.", variant: "info" })}
+                onClick={() =>
+                  setModal({
+                    show: true,
+                    title: "Info",
+                    message: "Please contact your admin to reset your password.",
+                    variant: "info",
+                  })
+                }
               >
                 Forgot password?
               </button>
@@ -199,13 +206,50 @@ const Login = ({ onLogin }) => {
             </button>
           </form>
 
+          {/* Developer Info link */}
           <div className="mt-4 d-flex align-items-center gap-2 text-muted small">
             <div className="flex-grow-1 divider-line" />
-            <span>Secure portal</span>
+            <span
+              style={{ cursor: "pointer" }}
+              onClick={handleDevOpen}
+              className="fst-italic text-primary"
+            >
+              About the developer
+            </span>
             <div className="flex-grow-1 divider-line" />
           </div>
         </div>
       </div>
+
+    {/* Developer Info Modal */}
+<Modal show={showDevModal} onHide={handleDevClose} centered>
+  <Modal.Header closeButton>
+    <Modal.Title>About the Developer</Modal.Title>
+  </Modal.Header>
+  <Modal.Body>
+    <p>
+      This project is an <strong>extension project by the TMC Students Club IT Coding Club</strong>.
+      It was created to provide an academic records system and to showcase software
+      engineering best practices.
+    </p>
+    <hr />
+    <p className="mb-1"><strong>Developers:</strong></p>
+    <ul>
+      <li>John Paul Curib (Front-end Software Engineer)</li>
+      <li>Quiver Cutanda (Back-end Software Engineer)</li>
+    </ul>
+    <p className="mb-1"><strong>Project Adviser / Manager:</strong></p>
+    <ul>
+      <li>Clark Kevin Villamor</li>
+    </ul>
+  </Modal.Body>
+  <Modal.Footer>
+    <Button variant="secondary" onClick={handleDevClose}>
+      Close
+    </Button>
+  </Modal.Footer>
+</Modal>
+
 
       <StatusModal {...modal} onHide={() => setModal((m) => ({ ...m, show: false }))} />
     </div>

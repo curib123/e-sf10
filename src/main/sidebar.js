@@ -3,12 +3,37 @@ import axios from "axios";
 import { Route, Routes, NavLink } from "react-router-dom";
 import { Modal, Button } from "react-bootstrap"; 
 import {
-  FaHome, FaUserGraduate, FaUsersCog, FaChevronDown, FaSchool, FaBuilding, FaBars,
-  FaPlus, FaSignOutAlt, FaDatabase, FaListAlt, FaUpload, FaExchangeAlt,
-  FaClipboardList, FaHistory, FaBook, FaClipboardCheck, FaCog, FaCalendarAlt
+  FaHome,
+  FaUserGraduate,
+  FaUsersCog,
+  FaChevronDown,
+  FaSchool,
+  FaBuilding,
+  FaBars,
+  FaPlus,
+  FaSignOutAlt,
+  FaDatabase,
+  FaListAlt,
+  FaUpload,
+  FaExchangeAlt,
+  FaClipboardList,
+  FaHistory,
+  FaBook,
+  FaClipboardCheck,
+  FaCog,
+  FaCalendarAlt,
+  FaUserPlus,
+  FaAddressBook,
+  FaBookOpen,
+  FaTasks,
+  FaChalkboardTeacher,
+  FaLayerGroup,
+  FaListOl,
+  FaSitemap,
 } from "react-icons/fa";
 
-// Screens
+
+
 import Home from "../screens/home_dashboard";
 import StudentInformation from "../screens/student_information";
 import AddStudent from "../screens/studen_form";
@@ -114,19 +139,19 @@ const menus = [
     icon: FaHome,
     label: "Dashboard",
   },
+
   {
     type: "dropdown",
     label: "Student Records",
     icon: FaUserGraduate,
     key: "student",
     children: [
-      { to: "/add_student", icon: FaPlus, label: "Add New Student", permission: "register_student" },
-      { to: "/student_information", icon: FaListAlt, label: "Student Directory", permission: "view_student_info" },
+      { to: "/add_student", icon: FaUserPlus, label: "Add New Student", permission: "register_student" },
+      { to: "/student_information", icon: FaAddressBook, label: "Student Directory", permission: "view_student_info" },
       { to: "/upload_ecards_all", icon: FaUpload, label: "Upload SF10 Records", permission: "upload_documents" },
       { to: "/view_request", icon: FaExchangeAlt, label: "Transfer Requests", permission: "approve_transfers" },
     ],
   },
-
 
   // --- Academics: Management
   {
@@ -136,22 +161,22 @@ const menus = [
     key: "academic_management",
     roles: ["admin"],
     children: [
-      { to: "/subjects", icon: FaBook, label: "Subject Management" },
-      { to: "/curriculum", icon: FaClipboardList, label: "Curriculum Management" },
-      { to: "/teacher", icon: FaClipboardList, label: "Teacher Management" },
+      { to: "/subjects", icon: FaBookOpen, label: "Subject Management" },
+      { to: "/curriculum", icon: FaTasks, label: "Curriculum Management" },
+      { to: "/teacher", icon: FaChalkboardTeacher, label: "Teacher Management" },
     ],
   },
 
   // --- Academics: Assignments
   {
     type: "dropdown",
-    label: " Assignments & Scheduling",
+    label: "Assignments & Scheduling",
     icon: FaClipboardCheck,
     key: "academic_assignments",
     roles: ["admin"],
     children: [
-       { to: "/teacher-assignments", icon: FaClipboardCheck, label: "Assign Teacher" },
-      { to: "/assign-subject-per-year-level", icon: FaClipboardCheck, label: "Assign Subjects" },
+      { to: "/teacher-assignments", icon: FaChalkboardTeacher, label: "Assign Teacher" },
+      { to: "/assign-subject-per-year-level", icon: FaLayerGroup, label: "Assign Subjects" },
     ],
   },
 
@@ -164,12 +189,13 @@ const menus = [
     roles: ["admin"],
     children: [
       { to: "/school_year", icon: FaCalendarAlt, label: "Academic Year" },
-      { to: "/grade_level", icon: FaSchool, label: "Grade Levels" },
-       { to: "/sections", icon: FaSchool, label: "Section Creation" },
-       { to: "/school_settings", icon: FaBuilding, label: "School Information", permission: "manage_school_settings" },
+      { to: "/grade_level", icon: FaListOl, label: "Grade Levels" },
+      { to: "/sections", icon: FaSitemap, label: "Section Creation" },
+      { to: "/school_settings", icon: FaBuilding, label: "School Information", permission: "manage_school_settings" },
     ],
   },
 
+  // --- System Settings
   {
     type: "dropdown",
     label: "System Settings",
