@@ -11,7 +11,6 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaEdit,
-  FaTrash,
   FaBook,
 } from "react-icons/fa";
 import StatusModal from "../components/status_modal";
@@ -176,10 +175,6 @@ const SubjectList = () => {
   const onCreate = () => navigate("/subjects/create");
   const onAssign = () => navigate("/assign-subject-per-year-level");
   const onEdit = (id) => navigate(`/subjects/edit/${id}`);
-  const onDelete = (id) => {
-    showStatus("warning", "Coming soon", "Delete action isn't wired yet.");
-    console.log("Delete subject id:", id);
-  };
 
   const startIndex = totalItems ? (page - 1) * pageSize + 1 : 0;
   const endIndex = Math.min(page * pageSize, totalItems || subjects.length);
@@ -261,7 +256,10 @@ const SubjectList = () => {
             </div>
           ) : (subjects?.length || 0) === 0 ? (
             <div className="p-5 text-center">
-              <div className="d-inline-flex align-items-center justify-content-center rounded-circle bg-body-secondary" style={{ width: 72, height: 72 }}>
+              <div
+                className="d-inline-flex align-items-center justify-content-center rounded-circle bg-body-secondary"
+                style={{ width: 72, height: 72 }}
+              >
                 <FaBook size={28} className="text-muted" />
               </div>
               <h5 className="fw-semibold mt-3 mb-1">No subjects found</h5>
@@ -279,7 +277,7 @@ const SubjectList = () => {
                       <th style={{ width: 140 }}>Code</th>
                       <th style={{ minWidth: 220 }}>Name</th>
                       <th>Description</th>
-                      <th className="text-end" style={{ width: 200 }}>Action</th>
+                      <th className="text-end" style={{ width: 140 }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -291,14 +289,12 @@ const SubjectList = () => {
                           {s.description || <span className="text-muted">—</span>}
                         </td>
                         <td className="text-end">
-                          <div className="d-flex justify-content-end gap-2">
-                            <button className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" onClick={() => onEdit(s.subject_id)}>
-                              <FaEdit /> Edit
-                            </button>
-                            <button className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" onClick={() => onDelete(s.subject_id)}>
-                              <FaTrash /> Delete
-                            </button>
-                          </div>
+                          <button
+                            className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
+                            onClick={() => onEdit(s.subject_id)}
+                          >
+                            <FaEdit /> Edit
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -354,7 +350,10 @@ const SubjectList = () => {
         </div>
       </div>
 
-      <StatusModal {...statusModal} onHide={() => setStatusModal((s) => ({ ...s, show: false }))} />
+      <StatusModal
+        {...statusModal}
+        onHide={() => setStatusModal((s) => ({ ...s, show: false }))}
+      />
     </div>
   );
 };
