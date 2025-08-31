@@ -1,15 +1,32 @@
-import { FaExclamationTriangle } from 'react-icons/fa';
-import './css/NotFound.css'; // We'll create a small CSS file for animation and styles
+import { FaExclamationTriangle } from "react-icons/fa";
 
-const NotFound = () => {
+const NotFound = ({ isTokenExpired = false }) => {
+  const handleRefresh = () => {
+    window.location.reload();
+  };
+
   return (
-    <div className="notfound-container d-flex flex-column justify-content-center align-items-center vh-100">
-      <div className="text-center">
-        <FaExclamationTriangle size={100} className="text-warning mb-4 shake-animation" />
-        <h1 className="display-1 fw-bold bounce-in">404</h1>
-        <p className="fs-4 text-muted fade-in">
-          Oops! The page you're looking for doesn't exist.
+    <div className="d-flex flex-column justify-content-center align-items-center vh-100 bg-light">
+      <div className="text-center p-4 rounded shadow bg-white">
+        <FaExclamationTriangle
+          size={80}
+          className="text-warning mb-3"
+        />
+        <h1 className="display-4 fw-bold">404</h1>
+        <p className="fs-5 text-muted mb-4">
+          {isTokenExpired
+            ? "Your session has expired. Please refresh to continue."
+            : "Oops! The page you're looking for doesn't exist."}
         </p>
+
+        {isTokenExpired && (
+          <button
+            className="btn btn-primary px-4 py-2"
+            onClick={handleRefresh}
+          >
+            🔄 Refresh
+          </button>
+        )}
       </div>
     </div>
   );

@@ -178,9 +178,9 @@ const menus = [
     key: "academic_assignments",
     roles: ["admin"],
     children: [
-      { to: "/class-schedules", icon: FaListAlt, label: "Class Schedules" },
-      { to: "/teacher-assignments", icon: FaChalkboardTeacher, label: "Assign Teacher" },
       { to: "/assign-subject-per-year-level", icon: FaLayerGroup, label: "Assign Subjects" },
+      { to: "/teacher-assignments", icon: FaChalkboardTeacher, label: "Assign Teacher" },
+      { to: "/class-schedules", icon: FaListAlt, label: "Class Schedules" },
     ],
   },
 
