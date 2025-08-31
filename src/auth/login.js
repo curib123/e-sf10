@@ -236,7 +236,7 @@ const Login = ({ onLogin }) => {
     <p className="mb-1"><strong>Developers:</strong></p>
     <ul>
       <li>John Paul Curib (Front-end Software Engineer)</li>
-      <li>Quiver Cutanda (Back-end Software Engineer)</li>
+      <li>Quivir Cutanda (Back-end Software Engineer)</li>
     </ul>
     <p className="mb-1"><strong>Project Adviser / Manager:</strong></p>
     <ul>
