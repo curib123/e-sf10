@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react";
 import StatusModal from "../components/status_modal";
 import { checkToken } from "../components/token_checker";
+import {
+  FaUserGraduate,
+  FaArrowLeft,
+  FaIdCard,
+  FaHome,
+  FaUserShield,
+  FaInfoCircle,
+  FaSave,
+} from "react-icons/fa";
 
 // Base API URL
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
@@ -130,16 +139,18 @@ export default function StudentForm({ initialData = null, onSubmit }) {
         <form onSubmit={handleSubmit} className="bg-white rounded-4 shadow-sm border p-4 p-md-5">
           {/* Header */}
           <div className="d-flex justify-content-between align-items-center mb-3">
-            <h4 className="mb-0 fw-bold">
+            <h4 className="mb-0 fw-bold d-flex align-items-center gap-2">
+              <FaUserGraduate aria-hidden="true" />
               {student.student_id ? "Update Student" : "Register New Student"}
             </h4>
             {student.student_id && (
               <button
                 type="button"
-                className="btn btn-light border text-nowrap"
+                className="btn btn-light border text-nowrap d-inline-flex align-items-center gap-2"
                 onClick={() => window.history.back()}
+                title="Go back"
               >
-                Back
+                <FaArrowLeft aria-hidden="true" /> Back
               </button>
             )}
           </div>
@@ -162,12 +173,17 @@ export default function StudentForm({ initialData = null, onSubmit }) {
               />
               <label htmlFor="lrn">LRN (12 digits) *</label>
             </div>
-            <div className="form-text">Enter exactly 12 digits. No spaces or dashes.</div>
+            <div className="form-text d-flex align-items-center gap-1">
+              <FaInfoCircle className="opacity-75" aria-hidden="true" />
+              Enter exactly 12 digits. No spaces or dashes.
+            </div>
           </div>
 
           {/* Personal Information */}
           <section className="card border-0 shadow-sm mb-4">
-            <div className="card-header bg-white border-0 fw-semibold">Personal Information</div>
+            <div className="card-header bg-white border-0 fw-semibold d-flex align-items-center gap-2">
+              <FaIdCard aria-hidden="true" /> Personal Information
+            </div>
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-6">
@@ -271,7 +287,9 @@ export default function StudentForm({ initialData = null, onSubmit }) {
 
           {/* Address */}
           <section className="card border-0 shadow-sm mb-4">
-            <div className="card-header bg-white border-0 fw-semibold">Address</div>
+            <div className="card-header bg-white border-0 fw-semibold d-flex align-items-center gap-2">
+              <FaHome aria-hidden="true" /> Address
+            </div>
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12">
@@ -334,7 +352,10 @@ export default function StudentForm({ initialData = null, onSubmit }) {
                     />
                     <label htmlFor="zip_code">ZIP</label>
                   </div>
-                  <div className="form-text">4–6 digits.</div>
+                  <div className="form-text d-flex align-items-center gap-1">
+                    <FaInfoCircle className="opacity-75" aria-hidden="true" />
+                    4–6 digits.
+                  </div>
                 </div>
               </div>
             </div>
@@ -342,7 +363,9 @@ export default function StudentForm({ initialData = null, onSubmit }) {
 
           {/* Guardian */}
           <section className="card border-0 shadow-sm mb-4">
-            <div className="card-header bg-white border-0 fw-semibold">Guardian Information</div>
+            <div className="card-header bg-white border-0 fw-semibold d-flex align-items-center gap-2">
+              <FaUserShield aria-hidden="true" /> Guardian Information
+            </div>
             <div className="card-body">
               <div className="row g-3">
                 <div className="col-12 col-md-8">
@@ -375,7 +398,10 @@ export default function StudentForm({ initialData = null, onSubmit }) {
                     />
                     <label htmlFor="contact_number">Contact Number</label>
                   </div>
-                  <div className="form-text">Digits only, may start with “+”.</div>
+                  <div className="form-text d-flex align-items-center gap-1">
+                    <FaInfoCircle className="opacity-75" aria-hidden="true" />
+                    Digits only, may start with “+”.
+                  </div>
                 </div>
               </div>
             </div>
@@ -386,7 +412,8 @@ export default function StudentForm({ initialData = null, onSubmit }) {
 
           {/* Submit */}
           <div className="d-grid">
-            <button type="submit" className="btn btn-success py-2 fw-semibold text-nowrap">
+            <button type="submit" className="btn btn-success py-2 fw-semibold text-nowrap d-inline-flex align-items-center justify-content-center gap-2">
+              <FaSave aria-hidden="true" />
               {student.student_id ? "Update Student" : "Add Student"}
             </button>
           </div>
