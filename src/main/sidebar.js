@@ -433,7 +433,7 @@ const menus = [
 
 {/* Footer */}
 <div
-  className="footer text-center text-white py-2 bg-dark position-sticky bottom-0"
+  className=" text-center text-white py-2 bg-dark position-sticky bottom-0 right-0 left-0"
   style={{ zIndex: 10, fontSize: "0.75rem" }}
 >
   &copy; {new Date().getFullYear()} All rights reserved. Credits – TMC Coding Club
