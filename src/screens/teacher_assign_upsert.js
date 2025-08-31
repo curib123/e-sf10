@@ -16,15 +16,18 @@ import StatusModal from "../components/status_modal";
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Config
-// BASE_URL already includes /esf10
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 const CREATE_ENDPOINT = `/teacher-assignments/create`;
 const UPDATE_ENDPOINT = (id) => `/teacher-assignments/update/${id}`;
 const SHOW_ENDPOINT = (id) => `/teacher-assignments/${id}`;
-const TEACHER_ASSIGNMENTS_BY_TEACHER = (teacherId) => `/teacher-assignments/teacher/${teacherId}`;
+const TEACHER_ASSIGNMENTS_BY_TEACHER = (teacherId) =>
+  `/teacher-assignments/teacher/${teacherId}`;
 
-// Keep this false to avoid jarring full-page reloads; set true to mimic older behavior
-const HARD_REFRESH_ON_SAVE = false;
+// Persist selected teacher across hard reloads
+const STORAGE_KEY = "teacherAssignment.selectedTeacherId";
+
+// If you ever want old behavior, flip this back to false
+const HARD_REFRESH_ON_SAVE = true;
 const PAGE_SIZES = [5, 10, 20, 50];
 
 const icons = {
@@ -37,7 +40,7 @@ const icons = {
 // ────────────────────────────────────────────────────────────────────────────────
 // Component
 const TeacherAssignmentForm = () => {
-  const { id } = useParams(); // assignment_id (edit if present)
+  const { id } = useParams();
   const navigate = useNavigate();
   const token = useMemo(() => sessionStorage.getItem("token"), []);
   const inFlight = useRef(false);
@@ -72,7 +75,7 @@ const TeacherAssignmentForm = () => {
   // Current assignment (edit)
   const [current, setCurrent] = useState(null);
 
-  // Table below: subjects/assignments for selected teacher
+  // Table below
   const [teacherSubs, setTeacherSubs] = useState([]);
   const [teacherSubsLoading, setTeacherSubsLoading] = useState(false);
   const lastTeacherFetched = useRef(null);
@@ -92,13 +95,32 @@ const TeacherAssignmentForm = () => {
 
   const teacherInitials = useMemo(() => {
     const name = selectedTeacherName || "";
-    return name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((s) => s[0]?.toUpperCase())
-      .join("") || "T";
+    return (
+      name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((s) => s[0]?.toUpperCase())
+        .join("") || "T"
+    );
   }, [selectedTeacherName]);
+
+  // ── persistence helpers ───────────────────────────────────────────────────────
+  const persistSelectedTeacher = (tid) => {
+    if (tid) sessionStorage.setItem(STORAGE_KEY, String(tid));
+  };
+  const restorePersistedTeacher = () => {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      return saved;
+    }
+    return null;
+  };
+  const hardRefreshPreserveTeacher = () => {
+    if (form.teacher_id) persistSelectedTeacher(form.teacher_id);
+    window.location.reload();
+  };
 
   // --- helpers ---
   const handleUnauthorized = () => {
@@ -143,7 +165,10 @@ const TeacherAssignmentForm = () => {
       let page = 1;
       let totalPages = 1;
       do {
-        const res = await apiFetch(`/subjects/view-all-subjects?page=${page}&limit=100`, { method: "GET" });
+        const res = await apiFetch(
+          `/subjects/view-all-subjects?page=${page}&limit=100`,
+          { method: "GET" }
+        );
         const data = await res.json();
         const list = data?.success ? data.data || [] : [];
         all.push(...list);
@@ -169,7 +194,9 @@ const TeacherAssignmentForm = () => {
 
   const loadSchoolYears = async () => {
     try {
-      const res = await apiFetch(`/school-year/all-school-years`, { method: "GET" });
+      const res = await apiFetch(`/school-year/all-school-years`, {
+        method: "GET",
+      });
       const data = await res.json();
       setSchoolYears(data?.success ? data.schoolYears || [] : []);
     } catch {
@@ -177,7 +204,7 @@ const TeacherAssignmentForm = () => {
     }
   };
 
-  // Populate edit form using: GET /teacher-assignments/:assignment_id
+  // Populate edit form
   const loadAssignment = async () => {
     if (!id) return;
     try {
@@ -189,24 +216,37 @@ const TeacherAssignmentForm = () => {
       }
       const a = data.data;
       setCurrent(a);
-      setForm({
+      setForm((f) => ({
+        ...f,
         teacher_id: a.teacher_id ?? "",
         subject_id: a.subject_id ?? "",
         section_id: a.section_id ?? "",
         school_year_id: a.school_year_id ?? "",
-      });
+      }));
     } catch {
       showStatus("danger", "Error", "Failed to load assignment details.");
     }
   };
 
-  // Load initial dropdowns + edit payload
+  // Load dropdowns + edit payload, then restore persisted teacher (if any)
   useEffect(() => {
     if (!token) return handleUnauthorized();
     (async () => {
       setBusy(true);
-      await Promise.all([loadTeachers(), loadAllSubjects(), loadSections(), loadSchoolYears()]);
+      await Promise.all([
+        loadTeachers(),
+        loadAllSubjects(),
+        loadSections(),
+        loadSchoolYears(),
+      ]);
       if (id) await loadAssignment();
+
+      // After options & (maybe) assignment are ready, restore teacher selection if saved
+      const savedTeacherId = restorePersistedTeacher();
+      if (savedTeacherId) {
+        setForm((f) => ({ ...f, teacher_id: savedTeacherId }));
+      }
+
       setBusy(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,12 +259,17 @@ const TeacherAssignmentForm = () => {
       lastTeacherFetched.current = null;
       return;
     }
-    if (String(lastTeacherFetched.current) === String(tid) && teacherSubs.length) {
+    if (
+      String(lastTeacherFetched.current) === String(tid) &&
+      teacherSubs.length
+    ) {
       return; // already have data
     }
     try {
       setTeacherSubsLoading(true);
-      const res = await apiFetch(TEACHER_ASSIGNMENTS_BY_TEACHER(tid), { method: "GET" });
+      const res = await apiFetch(TEACHER_ASSIGNMENTS_BY_TEACHER(tid), {
+        method: "GET",
+      });
       const data = await res.json();
       const list = data?.success ? data.data || [] : [];
       setTeacherSubs(list);
@@ -244,16 +289,19 @@ const TeacherAssignmentForm = () => {
       setTeacherSubs([]);
       lastTeacherFetched.current = null;
     }
-    setPage(1); // reset pagination when teacher changes
+    setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.teacher_id]);
 
   // ---- form helpers ----
-  const setField = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setField = (k) => (e) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
   const invalid = (k) => submitted && !String(form[k]).trim();
 
   const validate = () => {
-    return ["teacher_id", "subject_id", "section_id", "school_year_id"].every((k) => String(form[k]).trim());
+    return ["teacher_id", "subject_id", "section_id", "school_year_id"].every(
+      (k) => String(form[k]).trim()
+    );
   };
 
   const onSubmit = async (e) => {
@@ -261,7 +309,11 @@ const TeacherAssignmentForm = () => {
     if (!token || inFlight.current) return;
     setSubmitted(true);
     if (!validate()) {
-      showStatus("warning", "Missing fields", "Please complete all required fields.");
+      showStatus(
+        "warning",
+        "Missing fields",
+        "Please complete all required fields."
+      );
       return;
     }
 
@@ -282,28 +334,35 @@ const TeacherAssignmentForm = () => {
       });
       const data = await res.json();
 
-      if (!res.ok || data?.success === false) throw new Error(data?.message || "Request failed");
+      if (!res.ok || data?.success === false)
+        throw new Error(data?.message || "Request failed");
 
       showStatus(
         "success",
         id ? "Updated" : "Created",
-        id ? "Teacher assignment updated successfully." : "Teacher assignment created successfully."
+        id
+          ? "Teacher assignment updated successfully."
+          : "Teacher assignment created successfully."
       );
 
-     window.location.reload();
-      onReset();
+      // 🚀 HARD RELOAD while preserving selected teacher
       if (HARD_REFRESH_ON_SAVE) {
+        persistSelectedTeacher(form.teacher_id);
         window.location.reload();
         return;
       }
 
-      // Soft refresh: keep user on page and refresh views
+      // Soft refresh fallback (if you switch HARD_REFRESH_ON_SAVE to false)
+      onReset();
       if (id) await loadAssignment();
       if (form.teacher_id) await fetchTeacherSubjects(form.teacher_id);
-      // prevent accidental duplicate create
       if (!id) setForm((f) => ({ ...f, subject_id: "", section_id: "" }));
     } catch (err) {
-      showStatus("danger", "Error", err.message || "Something went wrong while saving.");
+      showStatus(
+        "danger",
+        "Error",
+        err.message || "Something went wrong while saving."
+      );
     } finally {
       setBusy(false);
       inFlight.current = false;
@@ -313,22 +372,40 @@ const TeacherAssignmentForm = () => {
   const onReset = () => {
     setSubmitted(false);
     if (id) loadAssignment();
-    else setForm({ teacher_id: form.teacher_id, subject_id: "", section_id: "", school_year_id: "" });
-
+    else
+      setForm({
+        teacher_id: form.teacher_id,
+        subject_id: "",
+        section_id: "",
+        school_year_id: "",
+      });
   };
 
   // Derived pagination numbers for teacherSubs
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(teacherSubs.length / pageSize)), [teacherSubs.length, pageSize]);
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(teacherSubs.length / pageSize)),
+    [teacherSubs.length, pageSize]
+  );
   const paginatedSubs = useMemo(() => {
     const start = (page - 1) * pageSize;
     return teacherSubs.slice(start, start + pageSize);
   }, [teacherSubs, page, pageSize]);
-  const rangeStart = useMemo(() => (teacherSubs.length ? (page - 1) * pageSize + 1 : 0), [teacherSubs.length, page, pageSize]);
-  const rangeEnd = useMemo(() => Math.min(teacherSubs.length, page * pageSize), [teacherSubs.length, page, pageSize]);
+  const rangeStart = useMemo(
+    () => (teacherSubs.length ? (page - 1) * pageSize + 1 : 0),
+    [teacherSubs.length, page, pageSize]
+  );
+  const rangeEnd = useMemo(
+    () => Math.min(teacherSubs.length, page * pageSize),
+    [teacherSubs.length, page, pageSize]
+  );
 
   // Keep page in bounds & reset when list or pageSize changes
-  useEffect(() => { setPage(1); }, [teacherSubs.length, pageSize]);
-  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [totalPages, page]);
+  useEffect(() => {
+    setPage(1);
+  }, [teacherSubs.length, pageSize]);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
 
   const buildPageList = useMemo(() => {
     const pages = [];
@@ -358,8 +435,7 @@ const TeacherAssignmentForm = () => {
   };
 
   return (
-    <div className="container-xxl py-4 py-lg-5">
-      {/* Local styles for refined look & feel */}
+    <div className="container-fluid ">
       <style>{`
         .page-header {
           background: linear-gradient(135deg, rgba(13,110,253,.08), rgba(25,135,84,.08));
@@ -398,8 +474,16 @@ const TeacherAssignmentForm = () => {
           <button type="button" className="btn btn-outline-secondary btn-icon" onClick={onBack}>
             <FaChevronLeft /> Back
           </button>
-          <button type="button" className="btn btn-outline-secondary btn-icon" onClick={() => form.teacher_id && fetchTeacherSubjects(form.teacher_id)} disabled={!form.teacher_id || teacherSubsLoading}>
-            <FaSyncAlt /> {teacherSubsLoading ? "Refreshing…" : "Refresh"}
+
+          {/* 🔄 FULL PAGE RELOAD (preserves teacher) */}
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-icon"
+            onClick={hardRefreshPreserveTeacher}
+            aria-label="Refresh page"
+            title="Refresh page"
+          >
+            <FaSyncAlt /> Refresh
           </button>
         </div>
       </div>
@@ -417,7 +501,6 @@ const TeacherAssignmentForm = () => {
           </div>
         </div>
         <div className="card-body p-4">
-          {/* Current assignment summary (edit only) */}
           {id && (
             <div className="mb-4">
               {!current ? (
@@ -442,11 +525,12 @@ const TeacherAssignmentForm = () => {
           )}
 
           <form onSubmit={onSubmit} noValidate>
-            {/* 2 x 2 layout */}
             <div className="row g-4">
               {/* Teacher */}
               <div className="col-12 col-md-6">
-                <label className="form-label fw-semibold">Teacher <span className="text-danger">*</span></label>
+                <label className="form-label fw-semibold">
+                  Teacher <span className="text-danger">*</span>
+                </label>
                 <select
                   className={`form-select ${invalid("teacher_id") ? "is-invalid" : ""}`}
                   value={form.teacher_id}
@@ -470,7 +554,9 @@ const TeacherAssignmentForm = () => {
 
               {/* Subject */}
               <div className="col-12 col-md-6">
-                <label className="form-label fw-semibold">Subject <span className="text-danger">*</span></label>
+                <label className="form-label fw-semibold">
+                  Subject <span className="text-danger">*</span>
+                </label>
                 <select
                   className={`form-select ${invalid("subject_id") ? "is-invalid" : ""}`}
                   value={form.subject_id}
@@ -490,7 +576,9 @@ const TeacherAssignmentForm = () => {
 
               {/* Section */}
               <div className="col-12 col-md-6">
-                <label className="form-label fw-semibold">Section <span className="text-danger">*</span></label>
+                <label className="form-label fw-semibold">
+                  Section <span className="text-danger">*</span>
+                </label>
                 <select
                   className={`form-select ${invalid("section_id") ? "is-invalid" : ""}`}
                   value={form.section_id}
@@ -510,7 +598,9 @@ const TeacherAssignmentForm = () => {
 
               {/* School Year */}
               <div className="col-12 col-md-6">
-                <label className="form-label fw-semibold">School Year <span className="text-danger">*</span></label>
+                <label className="form-label fw-semibold">
+                  School Year <span className="text-danger">*</span>
+                </label>
                 <select
                   className={`form-select ${invalid("school_year_id") ? "is-invalid" : ""}`}
                   value={form.school_year_id}
@@ -534,7 +624,13 @@ const TeacherAssignmentForm = () => {
                 <FaUndo /> Reset
               </button>
               <button type="submit" className="btn btn-primary btn-icon" disabled={busy}>
-                {busy && <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>}
+                {busy && (
+                  <span
+                    className="spinner-border spinner-border-sm me-2"
+                    role="status"
+                    aria-hidden="true"
+                  ></span>
+                )}
                 <FaSave /> {id ? "Update Assignment" : "Save Assignment"}
               </button>
             </div>
@@ -548,20 +644,23 @@ const TeacherAssignmentForm = () => {
           <div className="card-header bg-white px-4 py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
             <div>
               <h6 className="mb-0 fw-semibold">
-                {selectedTeacherName ? `${selectedTeacherName} — Current Subjects` : "Current Subjects"}
+                {selectedTeacherName
+                  ? `${selectedTeacherName} — Current Subjects`
+                  : "Current Subjects"}
               </h6>
               <div className="text-muted small">
                 {teacherSubsLoading
                   ? "Loading assignments for this teacher…"
                   : teacherSubs.length
-                  ? `Showing ${rangeStart}–${rangeEnd} of ${teacherSubs.length} assignment${teacherSubs.length > 1 ? "s" : ""}`
+                  ? `Showing ${rangeStart}–${rangeEnd} of ${teacherSubs.length} assignment${
+                      teacherSubs.length > 1 ? "s" : ""
+                    }`
                   : "No current subjects for this teacher."}
               </div>
             </div>
 
-            {/* Right controls: page size + pagination + refresh */}
+            {/* Right controls: page size + pagination + refresh (soft refresh for table) */}
             <div className="d-flex align-items-center gap-2 ms-auto">
-              {/* Page size */}
               {teacherSubs.length > 0 && (
                 <>
                   <span className="text-muted small">Rows</span>
@@ -572,44 +671,70 @@ const TeacherAssignmentForm = () => {
                     onChange={(e) => setPageSize(Number(e.target.value))}
                   >
                     {PAGE_SIZES.map((n) => (
-                      <option key={n} value={n}>{n}</option>
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
                     ))}
                   </select>
                 </>
               )}
 
-              {/* Pagination */}
               {teacherSubs.length > pageSize && (
                 <nav aria-label="Teacher subjects pagination">
                   <ul className="pagination pagination-sm mb-0">
                     <li className={`page-item ${page === 1 ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => setPage(1)} aria-label="First">
+                      <button
+                        className="page-link"
+                        onClick={() => setPage(1)}
+                        aria-label="First"
+                      >
                         <span aria-hidden="true">«</span>
                       </button>
                     </li>
                     <li className={`page-item ${page === 1 ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label="Previous">
+                      <button
+                        className="page-link"
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        aria-label="Previous"
+                      >
                         <FaChevronLeft />
                       </button>
                     </li>
-                    {buildPageList.map((p, idx) => (
+                    {buildPageList.map((p, idx) =>
                       typeof p === "string" ? (
                         <li key={`ellipsis-${idx}`} className="page-item disabled">
                           <span className="page-link">…</span>
                         </li>
                       ) : (
-                        <li key={`pg-${p}`} className={`page-item ${p === page ? "active" : ""}`}>
-                          <button className="page-link" onClick={() => setPage(p)}>{p}</button>
+                        <li
+                          key={`pg-${p}`}
+                          className={`page-item ${p === page ? "active" : ""}`}
+                        >
+                          <button className="page-link" onClick={() => setPage(p)}>
+                            {p}
+                          </button>
                         </li>
                       )
-                    ))}
-                    <li className={`page-item ${page === totalPages ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria-label="Next">
+                    )}
+                    <li
+                      className={`page-item ${page === totalPages ? "disabled" : ""}`}
+                    >
+                      <button
+                        className="page-link"
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        aria-label="Next"
+                      >
                         <FaChevronRight />
                       </button>
                     </li>
-                    <li className={`page-item ${page === totalPages ? "disabled" : ""}`}>
-                      <button className="page-link" onClick={() => setPage(totalPages)} aria-label="Last">
+                    <li
+                      className={`page-item ${page === totalPages ? "disabled" : ""}`}
+                    >
+                      <button
+                        className="page-link"
+                        onClick={() => setPage(totalPages)}
+                        aria-label="Last"
+                      >
                         <span aria-hidden="true">»</span>
                       </button>
                     </li>
@@ -617,6 +742,7 @@ const TeacherAssignmentForm = () => {
                 </nav>
               )}
 
+              {/* Soft refresh for the table ONLY (no full reload) */}
               <button
                 className="btn btn-outline-secondary btn-sm btn-icon"
                 onClick={() => fetchTeacherSubjects(form.teacher_id)}
@@ -659,7 +785,9 @@ const TeacherAssignmentForm = () => {
                       <td className="text-wrap">{a.section_name}</td>
                       <td>{a.grade_name}</td>
                       <td>{a.school_year}</td>
-                      <td><span className="badge text-bg-light border">{a.assignment_id}</span></td>
+                      <td>
+                        <span className="badge text-bg-light border">{a.assignment_id}</span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

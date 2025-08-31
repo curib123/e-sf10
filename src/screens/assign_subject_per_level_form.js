@@ -190,7 +190,7 @@ const AssignSubjectsForm = () => {
 
       <div className="card border-0 shadow-sm rounded-4">
         <div className="card-body p-4 p-lg-5">
-          <h4 className="fw-bold mb-4">Assign Subjects to Grade</h4>
+          <h3 className="fw-bold mb-4">Assign Subjects to Grade</h3>
 
           {/* Toolbar */}
           <div className="row g-2 align-items-center mb-3">
