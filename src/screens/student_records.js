@@ -11,6 +11,22 @@ const extOf = (name = "") => name.split(".").pop()?.toLowerCase() || "";
 const isImg = (url = "") => ["png", "jpg", "jpeg", "gif", "bmp", "webp"].includes(extOf(url));
 const isPdf = (url = "") => extOf(url) === "pdf";
 
+// profile helpers
+const initialsOf = (s = {}) =>
+  [s.first_name, s.last_name].filter(Boolean).map(n => String(n).trim()[0]).join("").toUpperCase() || "—";
+
+const colorFromString = (str = "") => {
+  const hues = [210, 260, 155, 20, 330, 120, 45];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = hues[Math.abs(hash) % hues.length];
+  return `hsl(${hue} 80% 45%)`;
+};
+
+const fullName = (s = {}) =>
+  [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(" ");
+
+// unified fetch
 async function apiFetch(path, { method = "GET", headers = {}, body } = {}) {
   const token = sessionStorage.getItem("token");
   if (!token) throw new Error("Missing authorization token.");
@@ -33,7 +49,6 @@ export default function StudentRecord() {
   const [student, setStudent] = useState(null);
   const [eCards, setECards] = useState([]);
   const [transferRequest, setTransferRequest] = useState(null);
-
   const [loading, setLoading] = useState(true);
 
   // lightweight feedback
@@ -69,7 +84,6 @@ export default function StudentRecord() {
     };
 
     const fetchTransfer = async () => {
-      // kept simple: scan pages up to a cap
       const pageSize = 100;
       const maxPages = 30;
       let page = 1;
@@ -85,7 +99,7 @@ export default function StudentRecord() {
           page++;
         }
       } catch {
-        // quiet failure for UX calmness
+        // ignore
       }
     };
 
@@ -185,64 +199,93 @@ export default function StudentRecord() {
         </div>
       )}
 
-      {/* Top bar */}
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <button className="btn btn-light border" onClick={() => navigate(-1)}>← Back</button>
+      {/* Profile Header (banner + avatar + meta + actions) */}
+      <div className="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+        <div
+          className="profile-banner w-100"
+          style={{
+            height: 120,
+            background: "linear-gradient(135deg, rgba(88,111,255,.8) 0%, rgba(16,22,47,.85) 100%)",
+          }}
+        />
+        <div className="card-body pt-0">
+          <div className="d-flex flex-wrap align-items-end justify-content-between gap-3" style={{ marginTop: -40 }}>
+            <div className="d-flex align-items-end gap-3">
+              {/* Avatar (initials fallback) */}
+              <div
+                className="rounded-circle d-flex align-items-center justify-content-center shadow-sm"
+                style={{
+                  width: 80,
+                  height: 80,
+                  background: "#fff",
+                  border: `4px solid #fff`,
+                  outline: `4px solid rgba(0,0,0,.05)`,
+                }}
+              >
+                <div
+                  className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold"
+                  style={{
+                    width: 72,
+                    height: 72,
+                    fontSize: 24,
+                    background: colorFromString(fullName(student) || String(student.lrn || "")),
+                  }}
+                  title={fullName(student)}
+                >
+                  {initialsOf(student)}
+                </div>
+              </div>
 
-        {eCards.length > 0 && (
-          <button
-            className="btn btn-dark"
-            onClick={handleDownloadAll}
-            disabled={!permissions.download_documents}
-          >
-            Download All
-          </button>
-        )}
-      </div>
+              <div className="min-w-0">
+                <h1 className="h5 fw-bold mb-5 text- text-white">{fullName(student) || "Unnamed Student"}</h1>
+                <div className="d-flex flex-wrap align-items-center gap-2 small">
+                  <span className="badge rounded-pill text-bg-light border">
+                    LRN&nbsp;<span className="fw-semibold">{student.lrn}</span>
+                  </span>
 
-      {/* Header */}
-      <div className="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
-        <h1 className="fs-4 fw-bold mb-0 text-truncate">
-          {student.first_name} {student.last_name}
-        </h1>
-        {transferRequest?.request_status === "Approved" && (
-          <span className="badge text-bg-success">Transferred Student</span>
-        )}
-      </div>
+                  {transferRequest?.request_status === "Approved" ? (
+                    <span className="badge rounded-pill text-bg-success">Transferred</span>
+                  ) : transferRequest?.request_status ? (
+                    <span className="badge rounded-pill text-bg-secondary">{transferRequest.request_status}</span>
+                  ) : null}
 
-      {/* Student summary */}
-      <div className="card border-0 shadow-sm rounded-4 mb-4">
-        <div className="card-body p-4">
-          <div className="row gy-2 small">
+                  {student.gender && <span className="chip">{student.gender}</span>}
+
+                  {student.date_of_birth && (
+                    <span className="chip">{new Date(student.date_of_birth).toLocaleDateString()}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="d-flex flex-wrap gap-2">
+              <button className="btn btn-light border" onClick={() => navigate(-1)}>
+                ← Back
+              </button>
+              {eCards.length > 0 && (
+                <button
+                  className="btn btn-dark"
+                  onClick={handleDownloadAll}
+                  disabled={!permissions.download_documents}
+                  title="Download all eCards"
+                >
+                  Download All
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Quick meta grid */}
+          <div className="row gy-2 mt-3 small">
             <div className="col-md-3">
-              <div className="text-muted">LRN</div>
-              <div className="fw-semibold">{student.lrn}</div>
-            </div>
-            <div className="col-md-5">
-              <div className="text-muted">Full Name</div>
-              <div className="fw-semibold text-truncate">
-                {student.first_name} {student.middle_name} {student.last_name}
-              </div>
-            </div>
-            <div className="col-md-2">
-              <div className="text-muted">Gender</div>
-              <div className="fw-semibold">{student.gender || "—"}</div>
-            </div>
-            <div className="col-md-2">
-              <div className="text-muted">Birthdate</div>
-              <div className="fw-semibold">
-                {student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—"}
-              </div>
-            </div>
-            <div className="col-md-6">
               <div className="text-muted">Guardian</div>
-              <div className="fw-semibold">{student.guardian_name || "—"}</div>
+              <div className="fw-semibold text-truncate">{student.guardian_name || "—"}</div>
             </div>
-            <div className="col-md-6">
+            <div className="col-md-3">
               <div className="text-muted">Contact</div>
               <div className="fw-semibold text-truncate">{student.contact_number || "—"}</div>
             </div>
-            <div className="col-12">
+            <div className="col-md-6">
               <div className="text-muted">Address</div>
               <div className="fw-semibold text-truncate">
                 {[student.street, student.city, student.province, student.zip_code].filter(Boolean).join(", ") || "—"}
@@ -255,7 +298,9 @@ export default function StudentRecord() {
       {/* E-Cards header */}
       <div className="d-flex align-items-center justify-content-between mb-2">
         <h2 className="fs-6 fw-bold mb-0">E-Cards</h2>
-        <small className="text-muted">{eCards.length} item{eCards.length === 1 ? "" : "s"}</small>
+        <small className="text-muted">
+          {eCards.length} item{eCards.length === 1 ? "" : "s"}
+        </small>
       </div>
 
       {/* E-Cards */}
@@ -281,14 +326,18 @@ export default function StudentRecord() {
                           style={{ width: 56, height: 56, objectFit: "cover" }}
                         />
                       ) : isPdf(url) ? (
-                        <div className="bg-danger text-white d-flex align-items-center justify-content-center rounded"
-                             style={{ width: 56, height: 56 }}>
-                          <i className="bi bi-file-earmark-pdf-fill fs-4" />
+                        <div
+                          className="bg-danger text-white d-flex align-items-center justify-content-center rounded"
+                          style={{ width: 56, height: 56 }}
+                        >
+                          <span className="fw-bold">PDF</span>
                         </div>
                       ) : (
-                        <div className="bg-secondary text-white d-flex align-items-center justify-content-center rounded"
-                             style={{ width: 56, height: 56 }}>
-                          <i className="bi bi-file-earmark-text-fill fs-4" />
+                        <div
+                          className="bg-secondary text-white d-flex align-items-center justify-content-center rounded"
+                          style={{ width: 56, height: 56 }}
+                        >
+                          <span className="fw-bold">FILE</span>
                         </div>
                       )}
 
@@ -300,9 +349,7 @@ export default function StudentRecord() {
                       </div>
                     </div>
 
-                    <div className="text-muted small mb-3">
-                      Uploaded: {prettyDateTime(card.uploaded_at)}
-                    </div>
+                    <div className="text-muted small mb-3">Uploaded: {prettyDateTime(card.uploaded_at)}</div>
 
                     {/* actions */}
                     <div className="mt-auto d-grid gap-2">
@@ -353,8 +400,12 @@ export default function StudentRecord() {
               </div>
               <div className="modal-body">This action cannot be undone.</div>
               <div className="modal-footer border-0">
-                <button className="btn btn-light border" onClick={() => setShowDelete(false)}>Cancel</button>
-                <button className="btn btn-danger" onClick={confirmDelete}>Delete</button>
+                <button className="btn btn-light border" onClick={() => setShowDelete(false)}>
+                  Cancel
+                </button>
+                <button className="btn btn-danger" onClick={confirmDelete}>
+                  Delete
+                </button>
               </div>
             </div>
           </div>
@@ -371,9 +422,7 @@ export default function StudentRecord() {
           <div className="modal-dialog modal-xl modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
             <div className="modal-content rounded-4 border-0" style={{ height: "80vh" }}>
               <div className="modal-header border-0">
-                <h6 className="modal-title text-truncate">
-                  {viewingFile.sf10_document_path.split("/").pop()}
-                </h6>
+                <h6 className="modal-title text-truncate">{viewingFile.sf10_document_path.split("/").pop()}</h6>
                 <button className="btn-close" onClick={() => setViewingFile(null)} />
               </div>
               <div className="modal-body p-0 bg-light" style={{ height: "calc(100% - 56px)" }}>
@@ -385,11 +434,7 @@ export default function StudentRecord() {
                     alt="Document"
                   />
                 ) : isPdf(viewingFile.sf10_document_path) ? (
-                  <iframe
-                    src={viewingFile.sf10_document_path}
-                    title="PDF"
-                    className="w-100 h-100 border-0"
-                  />
+                  <iframe src={viewingFile.sf10_document_path} title="PDF" className="w-100 h-100 border-0" />
                 ) : (
                   <div className="w-100 h-100 d-flex align-items-center justify-content-center">
                     <p className="text-muted fw-medium m-0">Preview not available.</p>
@@ -400,6 +445,18 @@ export default function StudentRecord() {
           </div>
         </div>
       )}
+
+      {/* local styles */}
+      <style>{`
+        .chip{
+          display:inline-flex;align-items:center;gap:.35rem;
+          padding:.25rem .55rem;border-radius:999px;
+          background:#f6f7fb;border:1px solid #e9ecf5;color:#4f5565;
+        }
+        @media (max-width: 576px){
+          .chip{font-size:.78rem}
+        }
+      `}</style>
     </div>
   );
 }
