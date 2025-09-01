@@ -69,7 +69,7 @@ export default function UpsertSubject() {
         const s = data?.data;
         if (!data?.success || !s) throw new Error("Subject not found.");
         setFormData({
-          subject_code: s.subject_code || "",
+          subject_code: (s.subject_code || "").toUpperCase(), // ensure uppercase on load
           subject_name: s.subject_name || "",
           description: s.description || "",
         });
@@ -84,11 +84,15 @@ export default function UpsertSubject() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, id, token]);
 
+  // Force uppercase only for subject_code
   const handleChange = ({ target: { name, value } }) =>
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === "subject_code" ? value.toUpperCase() : value,
+    }));
 
   const validate = () => {
-    const code = formData.subject_code.trim();
+    const code = formData.subject_code.trim().toUpperCase(); // guarantee uppercase
     const name = formData.subject_name.trim();
     if (!code || !name) {
       showModal("warning", "Missing info", "Subject code and name are required.");
@@ -197,40 +201,40 @@ export default function UpsertSubject() {
                 type="text"
                 id="subject_code"
                 name="subject_code"
-                className="form-control"
+                className="form-control text-uppercase"  /* display uppercase */
                 placeholder="e.g., MATH-101"
                 value={formData.subject_code}
                 onChange={handleChange}
+                autoCapitalize="characters"
                 autoComplete="off"
                 maxLength={32}
                 required
                 aria-describedby="codeHelp"
               />
               <div id="codeHelp" className="form-text">
-                Short unique code (letters/numbers/dashes). Example: <strong>MATH-101</strong>.
+                Stored <strong>in UPPERCASE</strong> automatically. Use letters, numbers, or dashes.
+                Example: <strong>MATH-101</strong>.
               </div>
             </div>
 
-          <div className="col-md-6">
-  <label htmlFor="description" className="form-label fw-semibold">
-    Description <span className="text-muted">(optional)</span>
-  </label>
-  <textarea
-    id="description"
-    name="description"
-    className="form-control"
-    placeholder="Brief overview, topics, or notes…"
-    rows={1} // 👈 makes it same height as normal input
-    value={formData.description}
-    onChange={handleChange}
-    aria-describedby="descHelp"
-  />
-  <div id="descHelp" className="form-text">
-    Keep it concise (1–2 sentences). You can edit this later.
-  </div>
-</div>
-
-         
+            <div className="col-md-6">
+              <label htmlFor="description" className="form-label fw-semibold">
+                Description <span className="text-muted">(optional)</span>
+              </label>
+              <textarea
+                id="description"
+                name="description"
+                className="form-control"
+                placeholder="Brief overview, topics, or notes…"
+                rows={1}
+                value={formData.description}
+                onChange={handleChange}
+                aria-describedby="descHelp"
+              />
+              <div id="descHelp" className="form-text">
+                Keep it concise (1–2 sentences). You can edit this later.
+              </div>
+            </div>
 
             {/* Actions */}
             <div className="col-12 d-flex justify-content-end gap-2">

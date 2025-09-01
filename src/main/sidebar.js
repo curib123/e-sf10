@@ -51,6 +51,8 @@ import SubjectList from "../screens/subject_list";
 import Curriculum from "../screens/curriculum_list";
 import CurriculumUpsert from "../screens/curriculum_upsert";
 import CurriculumAssign from "../screens/curriculum_assign";
+import EnrollmentList from "../screens/enrollment_list";
+import EnrollmentUpsert from "../screens/enrollment_upsert";
 import TeacherList from "../screens/teacher_list";
 import TeacherUpsert from "../screens/teacher_upsert";
 import TeacherAssign from "../screens/teacher_assign";
@@ -181,6 +183,7 @@ const menus = [
       { to: "/assign-subject-per-year-level", icon: FaLayerGroup, label: "Assign Subjects" },
       { to: "/teacher-assignments", icon: FaChalkboardTeacher, label: "Assign Teacher" },
       { to: "/class-schedules", icon: FaListAlt, label: "Class Schedules" },
+      { to: "/enrollments", icon: FaListAlt, label: "Student Enrollment" },
     ],
   },
 
@@ -398,6 +401,9 @@ const menus = [
             <Route path="/curriculum/create" element={<CurriculumUpsert />} />
             <Route path="/curriculum/edit/:id" element={<CurriculumUpsert />} /> 
             <Route path="/teacher" element={<TeacherList />} />
+            <Route path="/enrollments" element={<EnrollmentList />} />
+            <Route path="/enrollments/create" element={<EnrollmentUpsert />} />
+            <Route path="/enrollments/edit/:id" element={<EnrollmentUpsert />} />
             <Route path="/teacher/create" element={<TeacherUpsert />} />
             <Route path="/teacher/edit/:id" element={<TeacherUpsert />} /> 
             <Route path="/teacher-assignments" element={<TeacherAssign />} />
