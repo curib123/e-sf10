@@ -183,7 +183,7 @@ const menus = [
       { to: "/assign-subject-per-year-level", icon: FaLayerGroup, label: "Assign Subjects" },
       { to: "/teacher-assignments", icon: FaChalkboardTeacher, label: "Assign Teacher" },
       { to: "/class-schedules", icon: FaListAlt, label: "Class Schedules" },
-      { to: "/enrollments", icon: FaListAlt, label: "Student Enrollment" },
+      { to: "/enrollments", icon: FaSchool, label: "Student Enrollment" },
     ],
   },
 
