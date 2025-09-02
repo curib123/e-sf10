@@ -3,7 +3,6 @@ import axios from "axios";
 import { Route, Routes, NavLink } from "react-router-dom";
 import { Modal, Button } from "react-bootstrap";
 import { FaHome, FaUserGraduate, FaUsersCog, FaChevronDown, FaSchool, FaBuilding, FaBars, FaPlus, FaSignOutAlt, FaDatabase, FaListAlt, FaUpload, FaExchangeAlt, FaHistory, FaBook, FaClipboardCheck, FaCog, FaCalendarAlt, FaUserPlus, FaAddressBook, FaBookOpen, FaTasks, FaChalkboardTeacher, FaLayerGroup, FaListOl, FaSitemap } from "react-icons/fa";
-
 // Screens
 import Home from "../screens/home_dashboard";
 import StudentInformation from "../screens/student_information";
@@ -47,6 +46,7 @@ import NotFound from "../screens/not_found";
 // Helpers
 import { checkToken } from "../components/token_checker";
 import { getUserPermissions } from "../components/get_permission";
+import { useLocation } from "react-router-dom";
 
 // Styles
 import "./sidebar.css";
@@ -67,7 +67,7 @@ const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, collapsed
 
 const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, collapsed, open, onToggle, children }) {
   return (
-    <li className="dropdown-link">
+    <li className="dropdown-link my-2">
       <button type="button" className="link d-flex justify-content-between align-items-center w-100 bg-transparent border-0 p-0" onClick={onToggle} aria-expanded={open}>
         <div className="d-flex align-items-center">
           <Icon /> {!collapsed && <span className="ms-2">{label}</span>}
@@ -246,25 +246,45 @@ const Sidebar = ({ onLogout }) => {
   const avatarInitial = useMemo(() => (user?.first_name?.[0] || "?").toUpperCase(), [user?.first_name]);
   const roleLabel = useMemo(() => (Array.isArray(user?.role) ? user.role[0] : user?.role) || "User", [user?.role]);
 
+  const { pathname } = useLocation();
+
   useEffect(() => {
-    checkToken();
-    setPermissions(getUserPermissions() || {});
-    const loginRaw = sessionStorage.getItem("loginResponse");
-    if (loginRaw) {
-      try {
-        const loginData = JSON.parse(loginRaw);
-        if (loginData?.user) setUser(loginData.user);
-      } catch {}
+    
+  // Skip if we are on the login page
+  if (pathname === "/login" || pathname.startsWith("/login")) {
+    setUser(null);
+    setPermissions({});
+    return;
+  }
+
+  checkToken();
+  setPermissions(getUserPermissions() || {});
+
+  const loginRaw = sessionStorage.getItem("loginResponse");
+  if (loginRaw) {
+    try {
+      const loginData = JSON.parse(loginRaw);
+      if (loginData?.user) setUser(loginData.user);
+    } catch {
+      // ignore parse error
     }
-    api
-      .get(`/school-defaults/${schoolId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(({ data }) => {
-        const { user, school_id, created_at, updated_at, ...filtered } = data || {};
-        setSchoolData(filtered);
-        setLogoUrl(data?.school_logo ? (data.school_logo.startsWith("http") ? data.school_logo : `${LOGO_URL}${data.school_logo}`) : null);
-      })
-      .catch(() => {});
-  }, [schoolId, token]);
+  }
+
+  api
+    .get(`/school-defaults/${schoolId}`, { headers: { Authorization: `Bearer ${token}` } })
+    .then(({ data }) => {
+      const { user, school_id, created_at, updated_at, ...filtered } = data || {};
+      setSchoolData(filtered);
+      setLogoUrl(
+        data?.school_logo
+          ? data.school_logo.startsWith("http")
+            ? data.school_logo
+            : `${LOGO_URL}${data.school_logo}`
+          : null
+      );
+    })
+    .catch(() => {});
+}, [pathname, schoolId, token]);
 
   const filteredMenus = useMemo(() => {
     const hasPerm = (perm) => (perm ? Boolean(permissions[perm]) : true);
@@ -380,7 +400,7 @@ const Sidebar = ({ onLogout }) => {
 
           {/* Profile Dropdown */}
           <div className="dropdown">
-            <button className="btn bg-white border rounded-pill d-flex align-items-center gap-2 px-3 py-1" data-bs-toggle="dropdown">
+            <button className="btn bg-white border rounded-pill d-flex align-items-center gap-2 px-3 py-2" data-bs-toggle="dropdown">
               <div className="rounded-circle bg-primary text-white d-flex justify-content-center align-items-center" style={{ width: 36, height: 36 }}>{avatarInitial}</div>
               <div className="d-none d-md-flex flex-column text-start ms-2">
                 <span className="fw-medium">{fullName}</span>
