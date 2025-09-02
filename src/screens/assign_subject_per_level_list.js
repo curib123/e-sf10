@@ -176,7 +176,7 @@ export default function AssignSubjectsTable() {
         );
         setModal({ show: true, title: "Success", message: resp.message || "Deleted.", variant: "success" });
       } else {
-        setModal({ show: true, title: "Error", message: resp?.message || "Cannot delete.", variant: "danger" });
+        setModal({ show: true, title: "Error", message: resp?.message || "Cannot delete subject grade level assignment as it is being used in curriculum", variant: "danger" });
       }
     } catch {
       setModal({ show: true, title: "Error", message: "An error occurred while deleting.", variant: "danger" });
