@@ -354,8 +354,8 @@ const Sidebar = ({ onLogout }) => {
         <div className="sidebar-header p-3 border-bottom border-secondary text-center">
           {!collapsed && (
             <>
-              <h2 className="fw-bold text-white mb-1" style={{ letterSpacing: "2px", fontSize: "1.8rem" }}>E-SF10 SYSTEM</h2>
-              <p className="text-white" style={{ maxWidth: "260px", fontSize: "0.45rem", margin: "10 auto" }}>Manage student forms easily and securely.</p>
+              <h2 className="fw-bold text-white mb-1" style={{ letterSpacing: "5px", fontSize: "1.8rem" }}>E-SF10 SYSTEM</h2>
+              <p className="text-white text-center" style={{ fontSize: "0.60rem", margin: "10 auto" }}>Manage student forms easily and securely.</p>
             </>
           )}
         </div>
@@ -377,7 +377,7 @@ const Sidebar = ({ onLogout }) => {
             <p>We aim to provide learning opportunities and showcase coding skills through practical projects.</p>
             <hr />
             <p className="mb-1"><strong>Software Engineers:</strong></p>
-            <ul><li>John Paul Curib</li><li>Quiver Cutanda</li></ul>
+            <ul><li>John Paul Curib</li><li>Quivir Cutanda</li></ul>
             <p className="mb-1"><strong>Project Manager & Adviser:</strong></p>
             <ul><li>Clark Kevin Villamor</li></ul>
           </Modal.Body>
