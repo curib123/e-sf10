@@ -544,7 +544,7 @@ const EnrollmentList = () => {
                 <FaTag /> Status
               </label>
               <select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}>
-                <option value="all">All statuses</option>
+                <option value="all">All status</option>
                 {(availableStatuses.length ? availableStatuses : ["Enrolled", "Pending", "Dropped", "Completed", "Cancelled"])
                   .map((st) => <option key={st} value={st}>{st}</option>)}
               </select>

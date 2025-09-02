@@ -256,7 +256,7 @@ export default function AssignSubjectsTable() {
             </button>
 
             <button
-              className="btn btn-dark d-inline-flex align-items-center gap-2"
+              className="btn btn-primary d-inline-flex align-items-center gap-2"
               onClick={() => navigate(`/assign-subject-per-year-level/assign`)}
             >
               <FaPlus /> Assign Subject
@@ -278,7 +278,7 @@ export default function AssignSubjectsTable() {
             <h5 className="mt-2 mb-1">No subjects found</h5>
             <p className="text-muted small mb-4">Try a different grade filter or search.</p>
             <button
-              className="btn btn-dark d-inline-flex align-items-center gap-2"
+              className="btn btn-primary d-inline-flex align-items-center gap-2"
               onClick={() => navigate(`/assign-subject-per-year-level/assign`)}
             >
               <FaPlus /> Assign Subject

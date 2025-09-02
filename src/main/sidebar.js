@@ -184,6 +184,10 @@ const EXTRA_ROUTES = {
     { path: "/class-schedules/create", el: <ClassScheduleUpsert /> },
     { path: "/class-schedules/edit/:id", el: <ClassScheduleUpsert /> },
   ],
+  "/enrollments": [
+    { path: "/enrollments/create", el: <EnrollmentUpsert /> },
+    { path: "/enrollments/edit/:id", el: <EnrollmentUpsert /> },
+  ],
   "/assign-subject-per-year-level": [
     { path: "/assign-subject-per-year-level/assign", el: <AssignSubjectPerYearLevelForm /> },
   ],
