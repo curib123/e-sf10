@@ -1,3 +1,19 @@
+# e-sf10
+
+A React-based application for managing ESF10 forms.
+
+## Prerequisites
+
+Ensure you have the following installed:
+
+- Node.js (v14 or higher)
+- npm
+
+## Installation Steps
+
+1. **Clone the repository:**
+
+```bash
 git clone https://github.com/curib123/e-sf10.git
 Navigate into the project directory:
 
