@@ -326,7 +326,7 @@ export default function UploadSf10WithSearch() {
         <label className="form-label">Search Student (LRN / Name)</label>
         <input
           className="form-control"
-          placeholder="Type at least 2 characters… e.g., 123456789012 or Cutanda Quivir"
+          placeholder="Type at least 2 characters… e.g., 123456789012 or Curib John Paul"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);

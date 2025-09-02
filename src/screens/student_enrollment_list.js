@@ -500,7 +500,7 @@ const EnrollmentList = () => {
                 <FaUserGraduate /> Student
               </label>
               <StudentFilterSearch token={token} value={studentId} onPick={(id) => setStudentId(id || "all")} />
-              <div className="form-text">Pick a student by searching. Clear to show all.</div>
+              
             </div>
 
             <div className="flex-grow-1">
