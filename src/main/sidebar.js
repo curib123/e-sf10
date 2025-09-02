@@ -6,7 +6,7 @@ import { FaHome, FaUserGraduate, FaUsersCog, FaChevronDown, FaSchool, FaBuilding
 // Screens
 import Home from "../screens/home_dashboard";
 import StudentInformation from "../screens/student_information";
-import AddStudent from "../screens/studen_form";
+import AddStudent from "../screens/student_form";
 import AddUser from "../screens/user_upsert";
 import EditStudent from "../screens/student_edit";
 import StudentRecord from "../screens/student_records";

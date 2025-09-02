@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import AddStudent from "./studen_form";
+import AddStudent from "./student_form";
 import StatusModal from "../components/status_modal";
 
 // Base API URL

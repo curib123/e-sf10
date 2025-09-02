@@ -71,11 +71,10 @@ const StudentInformation = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // URL-initialized
+  // URL-initialized (birthdate/year removed)
   const initial = useMemo(() => ({
     q: readQP(location.search, "q", ""),
     gender: readQP(location.search, "gender", "All"),
-    year: readQP(location.search, "year", "All"),
     page: Number(readQP(location.search, "page", 1)) || 1,
     size: Number(readQP(location.search, "size", DEFAULT_PAGE_SIZE)) || DEFAULT_PAGE_SIZE,
     sort: readQP(location.search, "sort", DEFAULT_SORT),
@@ -100,7 +99,6 @@ const StudentInformation = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [genderFilter, setGenderFilter] = useState(initial.gender);
-  const [yearFilter, setYearFilter] = useState(initial.year);
 
   // UI
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -109,16 +107,15 @@ const StudentInformation = () => {
 
   useEffect(() => { checkToken(); setPermissions(getUserPermissions()); }, []);
 
-  // URL sync
+  // URL sync (no year)
   useEffect(() => {
     writeQP(navigate, location, {
       q: debouncedQuery || undefined,
       gender: genderFilter !== "All" ? genderFilter : undefined,
-      year: yearFilter !== "All" ? yearFilter : undefined,
       page: currentPage, size: pageSize, sort,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQuery, genderFilter, yearFilter, currentPage, pageSize, sort]);
+  }, [debouncedQuery, genderFilter, currentPage, pageSize, sort]);
 
   const showError = useCallback((message) => {
     setModal({ show: true, title: "Error", message, variant: "danger" });
@@ -134,12 +131,10 @@ const StudentInformation = () => {
       const rows = Array.isArray(data?.data) ? data.data : [];
       const map = new Map();
       for (const r of rows) {
-        // last write wins; usually one active per SY — OK for status badge
         map.set(String(r.student_id), r.status || "Enrolled");
       }
       setEnrollStatusByStudentId(map);
     } catch {
-      // If this fails, we’ll just show "Not yet enrolled" for everyone until it loads later.
       setEnrollStatusByStudentId(new Map());
     }
   }, [token]);
@@ -191,19 +186,7 @@ const StudentInformation = () => {
     else fetchStudents();
   }, [debouncedQuery, fetchStudents, searchStudents]);
 
-  // Birth year options (from current list)
-  const birthYears = useMemo(() => {
-    const set = new Set();
-    for (const s of students) {
-      if (s?.date_of_birth) {
-        const y = new Date(s.date_of_birth).getFullYear();
-        if (!isNaN(y)) set.add(y);
-      }
-    }
-    return Array.from(set).sort((a, b) => b - a);
-  }, [students]);
-
-  // Decorate with status, then filter/sort/page
+  // Decorate with status, then filter/sort/page (no birth year filter)
   const { filtered, pageRows } = useMemo(() => {
     const withStatus = students.map((s) => ({
       ...s,
@@ -213,10 +196,6 @@ const StudentInformation = () => {
     const filtered = withStatus.filter((s) => {
       if (genderFilter !== "All" && String(s?.gender || "").toLowerCase() !== genderFilter.toLowerCase())
         return false;
-      if (yearFilter !== "All") {
-        const y = s?.date_of_birth ? new Date(s.date_of_birth).getFullYear() : null;
-        if (String(y) !== String(yearFilter)) return false;
-      }
       return true;
     });
 
@@ -232,10 +211,10 @@ const StudentInformation = () => {
     }
     return { filtered: sorted, pageRows: slice };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, enrollStatusByStudentId, genderFilter, yearFilter, sort, pageSize, currentPage, isSearching]);
+  }, [students, enrollStatusByStudentId, genderFilter, sort, pageSize, currentPage, isSearching]);
 
   // UX niceties
-  useEffect(() => { setCurrentPage(1); }, [genderFilter, yearFilter, pageSize, sort]);
+  useEffect(() => { setCurrentPage(1); }, [genderFilter, pageSize, sort]);
   const onReload = () => window.location.reload();
   const onClearSearch = () => setSearchQuery("");
 
@@ -263,7 +242,7 @@ const StudentInformation = () => {
     }
   };
 
-  const clearFilters = () => { setGenderFilter("All"); setYearFilter("All"); };
+  const clearFilters = () => { setGenderFilter("All"); };
 
   return (
     <div className="container-xxl py-4 py-lg-5">
@@ -276,7 +255,11 @@ const StudentInformation = () => {
           </div>
         </div>
         <div className="d-flex flex-wrap gap-2">
-          <button className="btn btn-outline-secondary rounded-3 d-inline-flex align-items-center gap-2" onClick={onReload} title="Reload">
+          <button
+            className="btn btn-outline-secondary rounded-3 d-inline-flex align-items-center gap-2"
+            onClick={onReload}
+            title="Reload"
+          >
             <FaRedoAlt /> Refresh
           </button>
 
@@ -289,7 +272,6 @@ const StudentInformation = () => {
             </button>
           )}
 
-          {/* Enroll moved here beside Bulk/Add */}
           <Link
             to="/enrollments/create"
             className="btn btn-outline-dark rounded-3 d-inline-flex align-items-center gap-2"
@@ -306,7 +288,7 @@ const StudentInformation = () => {
         </div>
       </div>
 
-      {/* Toolbar (search + filters that expand when space) */}
+      {/* Toolbar (search + gender filter) */}
       <div className="card border-0 shadow-sm rounded-4 mb-3">
         <div className="card-body d-flex flex-column gap-3">
           {/* Search */}
@@ -338,7 +320,7 @@ const StudentInformation = () => {
             </div>
           </div>
 
-          {/* Filters (expand if there’s room) */}
+          {/* Filters */}
           <div className="d-flex flex-wrap align-items-center gap-2">
             <div className="d-flex align-items-center gap-2 flex-grow-1" style={{ minWidth: 220 }}>
               <label className="form-label small text-muted mb-0">Gender</label>
@@ -351,19 +333,6 @@ const StudentInformation = () => {
                 <option>All</option>
                 <option>Male</option>
                 <option>Female</option>
-              </select>
-            </div>
-
-            <div className="d-flex align-items-center gap-2 flex-grow-1" style={{ minWidth: 240 }}>
-              <label className="form-label small text-muted mb-0">Birth Year</label>
-              <select
-                className="form-select form-select-sm"
-                value={yearFilter}
-                onChange={(e) => setYearFilter(e.target.value)}
-                aria-label="Filter by birth year"
-              >
-                <option value="All">All</option>
-                {birthYears.map((y) => (<option key={y} value={y}>{y}</option>))}
               </select>
             </div>
 
@@ -420,7 +389,7 @@ const StudentInformation = () => {
                           <td className="text-nowrap">{s.last_name}</td>
                           <td className="text-nowrap">{s.first_name}</td>
                           <td className="text-nowrap">{s.gender || "—"}</td>
-                         <td className="text-nowrap">{status}</td>
+                          <td className="text-nowrap">{status}</td>
                           <td className="text-end">
                             <div className="d-inline-flex flex-nowrap gap-1">
                               <Link
@@ -475,8 +444,11 @@ const StudentInformation = () => {
                   <strong>{filtered.length}</strong> students (after filters)
                 </div>
                 <div className="d-flex align-items-center gap-2">
-                  <button className="btn btn-outline-secondary btn-sm" disabled={currentPage <= 1}
-                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}>
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  >
                     <FaChevronLeft /> Prev
                   </button>
                   <span className="small text-muted">Page</span>
@@ -501,8 +473,11 @@ const StudentInformation = () => {
                   >
                     {PAGE_SIZES.map((s) => (<option key={s} value={s}>{s} / page</option>))}
                   </select>
-                  <button className="btn btn-outline-secondary btn-sm" disabled={currentPage >= totalPages}
-                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}>
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  >
                     Next <FaChevronRight />
                   </button>
                 </div>
@@ -525,8 +500,12 @@ const StudentInformation = () => {
               </div>
               <div className="modal-body" style={{ maxHeight: "65vh", overflowY: "auto" }}>
                 <p className="mb-2">Download the official template:</p>
-                <a href={`${BASE_URL}/generate-excel`} target="_blank" rel="noopener noreferrer"
-                   className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2">
+                <a
+                  href={`${BASE_URL}/generate-excel`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2"
+                >
                   <FaDownload /> Download Template
                 </a>
                 <div className="alert alert-info mt-3 small mb-0">
@@ -540,14 +519,26 @@ const StudentInformation = () => {
                 </div>
                 <div className="mt-3">
                   <label className="form-label">Choose Excel File</label>
-                  <input type="file" accept=".xlsx" className="form-control" onChange={(e) => setSelectedFile(e.target.files[0])} />
+                  <input
+                    type="file"
+                    accept=".xlsx"
+                    className="form-control"
+                    onChange={handleFileChange}
+                  />
                 </div>
               </div>
               <div className="modal-footer bg-white rounded-bottom-4 border-0">
-                <button className="btn btn-outline-secondary d-inline-flex align-items-center gap-2" onClick={() => setShowUploadModal(false)}>
+                <button
+                  className="btn btn-outline-secondary d-inline-flex align-items-center gap-2"
+                  onClick={() => setShowUploadModal(false)}
+                >
                   <FaTimes /> Cancel
                 </button>
-                <button className="btn btn-success d-inline-flex align-items-center gap-2" disabled={!selectedFile} onClick={handleUpload}>
+                <button
+                  className="btn btn-success d-inline-flex align-items-center gap-2"
+                  disabled={!selectedFile}
+                  onClick={handleUpload}
+                >
                   <FaUpload /> Upload
                 </button>
               </div>
