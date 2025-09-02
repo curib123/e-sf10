@@ -202,7 +202,6 @@ const SectionsList = () => {
                     <th className="text-nowrap">Section</th>
                     <th className="text-nowrap">Grade</th>
                     <th className="text-nowrap">School Year</th>
-                    <th className="text-nowrap">ID</th>
                     <th className="text-end text-nowrap">Actions</th>
                   </tr>
                 </thead>
@@ -212,7 +211,6 @@ const SectionsList = () => {
                       <td className="fw-medium">{s.section_name}</td>
                       <td>{s.grade_name || "—"}</td>
                       <td>{s.school_year || "—"}</td>
-                      <td>{s.section_id}</td>
                       <td className="text-end">
                         <div className="d-flex justify-content-end gap-2 flex-nowrap">
                           <button

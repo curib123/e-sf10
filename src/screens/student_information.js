@@ -295,7 +295,7 @@ const StudentInformation = () => {
             className="btn btn-outline-dark rounded-3 d-inline-flex align-items-center gap-2"
             title="Enroll a student"
           >
-            <FaUserGraduate /> Enroll
+            <FaUserGraduate /> Enroll Students
           </Link>
 
           {permissions.register_student && (
@@ -420,13 +420,7 @@ const StudentInformation = () => {
                           <td className="text-nowrap">{s.last_name}</td>
                           <td className="text-nowrap">{s.first_name}</td>
                           <td className="text-nowrap">{s.gender || "—"}</td>
-                          <td className="text-nowrap">
-                            {status === "Not yet enrolled" ? (
-                              <span className="badge text-bg-primary-subtle text-dark border">{status}</span>
-                            ) : (
-                              <span className="badge text-bg-success-subtle border">{status}</span>
-                            )}
-                          </td>
+                         <td className="text-nowrap">{status}</td>
                           <td className="text-end">
                             <div className="d-inline-flex flex-nowrap gap-1">
                               <Link
