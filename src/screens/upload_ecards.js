@@ -36,7 +36,7 @@ const toNumericGrade = (gradeObj) => {
   return m ? m[0] : "";
 };
 
-export default function StudentRecord() {
+export default function UploadEcards() {
   const { lrn } = useParams();
 
   // data

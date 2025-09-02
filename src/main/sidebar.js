@@ -87,6 +87,7 @@ const MENU_CONFIG = [
     children: [
       { to: "/add_student", icon: FaUserPlus, label: "Add New Student", permission: "register_student" },
       { to: "/student_information", icon: FaAddressBook, label: "Student Directory", permission: "view_student_info" },
+      { to: "/enrollments", icon: FaListAlt, label: "Student Enrollment" },
       { to: "/upload_ecards_all", icon: FaUpload, label: "Upload SF10 Records", permission: "upload_documents" },
       { to: "/view_request", icon: FaExchangeAlt, label: "Transfer Requests", permission: "approve_transfers" },
     ],
@@ -105,7 +106,6 @@ const MENU_CONFIG = [
       { to: "/assign-subject-per-year-level", icon: FaLayerGroup, label: "Assign Subjects" },
       { to: "/teacher-assignments", icon: FaChalkboardTeacher, label: "Assign Teacher" },
       { to: "/class-schedules", icon: FaSchool, label: "Class Schedules" },
-      { to: "/enrollments", icon: FaListAlt, label: "Student Enrollment" },
     ],
   },
   {
