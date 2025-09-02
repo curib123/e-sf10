@@ -13,17 +13,13 @@ Ensure you have the following installed:
 
 1. **Clone the repository:**
 
-```bash
 git clone https://github.com/curib123/e-sf10.git
 Navigate into the project directory:
 
-bash
-Copy code
+
 cd e-sf10
 Install project dependencies:
 
-bash
-Copy code
 npm install
 Set up environment variables:
 
@@ -34,7 +30,7 @@ REACT_APP_API_BASE_URL=http://localhost:3001/esf10
 REACT_APP_API_LOGO_URL=http://localhost:3001
 
 npm start
-The app will run at http://localhost:3000
+The app will run at http://localhost:<Your Port>
 
 Additional Notes
 Ensure your backend server is running at http://localhost:3001 to handle API requests.
