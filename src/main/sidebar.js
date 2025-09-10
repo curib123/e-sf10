@@ -86,6 +86,7 @@ import SubjectList from '../screens/subject_list';
 import SubjectUpsert from '../screens/subject_upsert';
 import TeacherAssign from '../screens/teacher_assign';
 import TeacherAssignUpsert from '../screens/teacher_assign_upsert';
+import HomeTeacher from '../screens/teacher_dashboard';
 import TeacherList from '../screens/teacher_list';
 import TeacherUpsert from '../screens/teacher_upsert';
 import UploadEcard from '../screens/upload_ecards';
@@ -311,7 +312,8 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, colla
 // MENU (source of truth for order) — each link declares the permission it needs
 // ────────────────────────────────────────────────────────────────────────
 const MENU_CONFIG = [
-  { type: 'link', roles: ['admin', 'registrar', 'teacher'], permission: PERMS.VIEW_REPORTS, to: '/dashboard', icon: FaHome, label: 'Dashboard' },
+  { type: 'link', roles: ['admin', 'registrar'], permission: PERMS.VIEW_REPORTS, to: '/dashboard', icon: FaHome, label: 'Dashboard' },
+  { type: 'link', roles: ['teacher'], to: '/teacher-dashboard', icon: FaHome, label: 'Dashboard' },
   {
     type: 'dropdown',
     label: 'Student Records',
@@ -323,7 +325,7 @@ const MENU_CONFIG = [
       { to: '/student_information', icon: FaAddressBook, label: 'Student Directory', permission: PERMS.VIEW_STUDENT_INFO },
       { to: '/enrollments', icon: FaListAlt, label: 'Student Enrollment', permission: PERMS.VIEW_ENROLLMENTS },
       { to: '/upload_ecards_all', icon: FaUpload, label: 'Upload SF10 Records', permission: PERMS.UPLOAD_DOCUMENTS },
-      { to: '/input-grades', icon: FaSchool, label: 'Input Grades', permission: PERMS.MANAGE_GRADE_INPUT },
+      { to: '/input-grades', icon: FaBookOpen, label: 'Input Students Grades', permission: PERMS.MANAGE_GRADE_INPUT },
       { to: '/view_request', icon: FaExchangeAlt, label: 'Transfer Requests', permission: PERMS.APPROVE_TRANSFERS },
     ],
   },
@@ -383,6 +385,7 @@ const MENU_CONFIG = [
 // ────────────────────────────────────────────────────────────────────────
 const ROUTE_COMPONENTS = {
   '/dashboard': { el: <Home />, perm: PERMS.VIEW_REPORTS },
+  '/teacher-dashboard': { el: <HomeTeacher /> },
 
   // Student records
   '/add_student': { el: <AddStudent />, perm: PERMS.REGISTER_STUDENT },
@@ -603,25 +606,48 @@ const Sidebar = ({ onLogout }) => {
 
   const toggleMenu = (key) => setOpenMenus((p) => ({ ...p, [key]: !p[key] }));
 
-  const renderMenu = (menu) => {
-    if (menu.type === 'link') {
-      return (
-        <li key={menu.to}>
-          <SidebarLink to={menu.to} icon={menu.icon} label={menu.label} collapsed={collapsed} />
-        </li>
-      );
-    }
-    const isOpen = !!openMenus[menu.key];
+  // put these inside the Sidebar component (above renderMenu)
+const can = React.useCallback((perm) => !perm || Boolean(permissions[perm]), [permissions]);
+const hasRole = React.useCallback((roles) => (roles ? roles.includes(userRole) : true), [userRole]);
+
+
+const renderMenu = (menu) => {
+  if (menu.type === 'link') {
+    // hide top-level links if no role/permission
+    if (!hasRole(menu.roles) || !can(menu.permission)) return null;
     return (
-      <SidebarDropdown key={menu.key} label={menu.label} icon={menu.icon} collapsed={collapsed} open={isOpen} onToggle={() => toggleMenu(menu.key)}>
-        {menu.children.map((c) => (
-          <li key={c.to}>
-            <SidebarLink to={c.to} icon={c.icon} label={c.label} collapsed={collapsed} />
-          </li>
-        ))}
-      </SidebarDropdown>
+      <li key={menu.to}>
+        <SidebarLink to={menu.to} icon={menu.icon} label={menu.label} collapsed={collapsed} />
+      </li>
     );
-  };
+  }
+
+  // dropdown
+  if (!hasRole(menu.roles)) return null;
+
+  // filter children by permission
+  const visibleChildren = (menu.children || []).filter((c) => can(c.permission));
+  if (visibleChildren.length === 0) return null; // hide entire dropdown if nothing visible
+
+  const isOpen = !!openMenus[menu.key];
+  return (
+    <SidebarDropdown
+      key={menu.key}
+      label={menu.label}
+      icon={menu.icon}
+      collapsed={collapsed}
+      open={isOpen}
+      onToggle={() => toggleMenu(menu.key)}
+    >
+      {visibleChildren.map((c) => (
+        <li key={c.to}>
+          <SidebarLink to={c.to} icon={c.icon} label={c.label} collapsed={collapsed} />
+        </li>
+      ))}
+    </SidebarDropdown>
+  );
+};
+
 
   return (
     <div className="dashboard-container">

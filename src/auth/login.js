@@ -1,9 +1,24 @@
+import './login.css';
+
 // Login.jsx
-import React, { useMemo, useState, useCallback } from "react";
-import { FaUser, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
-import { Modal, Button } from "react-bootstrap";
-import StatusModal from "../components/status_modal";
-import "./login.css";
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+} from 'react';
+
+import {
+  Button,
+  Modal,
+} from 'react-bootstrap';
+import {
+  FaEye,
+  FaEyeSlash,
+  FaLock,
+  FaUser,
+} from 'react-icons/fa';
+
+import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
@@ -84,6 +99,7 @@ const Login = ({ onLogin }) => {
           storage.setItem("loginResponse", JSON.stringify(data));
           storage.setItem("token", data.token);
           storage.setItem("user_id", data.user?.user_id || "");
+          storage.setItem("teacher_id", data.user?.user_id || "");
           storage.setItem("user_email", data.user?.email || "");
           storage.setItem("user_role", data.user?.role || "");
 
