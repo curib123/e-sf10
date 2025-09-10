@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StatusModal from "../components/status_modal";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { FaEdit, FaTrash, FaPlus } from "react-icons/fa";
+import { FaEdit, FaPlus } from "react-icons/fa";
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
@@ -15,10 +15,18 @@ const SectionsList = () => {
   const [statusModal, setStatusModal] = useState({ show: false, title: "", message: "", variant: "info" });
   const [selectedId, setSelectedId] = useState(null);
 
-  // UI state
-  const [q, setQ] = useState("");                // search
+  // Search / sort
+  const [q, setQ] = useState("");
   const [sortBy, setSortBy] = useState("name");  // name | grade | year | id
   const [sortDir, setSortDir] = useState("asc"); // asc | desc
+
+  // Inline filters
+  const [filterSection, setFilterSection] = useState("all");
+  const [filterGrade, setFilterGrade] = useState("all");
+  const [filterYear, setFilterYear] = useState("all");
+
+  // Organize table by group
+  const [groupByKey, setGroupByKey] = useState("none"); // none | section | grade | year
 
   const authHeaders = () => ({
     "Content-Type": "application/json",
@@ -67,35 +75,46 @@ const SectionsList = () => {
     setRefreshing(false);
   };
 
-  const handleDelete = async () => {
-    if (!selectedId || !checkToken()) return;
-    try {
-      const res = await fetch(`${BASE_URL}/sections/delete/${selectedId}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const data = await res.json().catch(() => ({}));
-      setStatusModal({
-        show: true,
-        title: data?.success ? "Success" : "Error",
-        message: data?.message || (data?.success ? "Deleted." : "Delete failed."),
-        variant: data?.success ? "success" : "danger",
-      });
-      if (data?.success) setSections((prev) => prev.filter((s) => s.section_id !== selectedId));
-    } catch {
-      setStatusModal({ show: true, title: "Error", message: "Something went wrong.", variant: "danger" });
-    } finally {
-      setSelectedId(null);
-    }
+  // Options for filters (derived from data)
+  const sectionOptions = useMemo(
+    () => Array.from(new Set(sections.map(s => s.section_name).filter(Boolean))).sort((a, b) =>
+      String(a).localeCompare(String(b), undefined, { numeric: true })
+    ),
+    [sections]
+  );
+  const gradeOptions = useMemo(
+    () => Array.from(new Set(sections.map(s => s.grade_name).filter(Boolean))).sort((a, b) =>
+      String(a).localeCompare(String(b), undefined, { numeric: true })
+    ),
+    [sections]
+  );
+  const yearOptions = useMemo(
+    () => Array.from(new Set(sections.map(s => s.school_year).filter(Boolean))).sort((a, b) =>
+      String(a).localeCompare(String(b), undefined, { numeric: true })
+    ),
+    [sections]
+  );
+
+  const resetFilters = () => {
+    setQ("");
+    setFilterSection("all");
+    setFilterGrade("all");
+    setFilterYear("all");
+    setGroupByKey("none");
+    setSortBy("name");
+    setSortDir("asc");
   };
 
-  // Client-side search + sort
+  // Client-side search + filters + sort
   const filteredSorted = useMemo(() => {
     const term = q.trim().toLowerCase();
     const list = sections.filter((s) => {
       const txt = `${s.section_name ?? ""} ${s.grade_name ?? ""} ${s.school_year ?? ""} ${s.section_id ?? ""}`.toLowerCase();
-      return term === "" || txt.includes(term);
+      const matchSearch = term === "" || txt.includes(term);
+      const matchSection = filterSection === "all" || (s.section_name ?? "") === filterSection;
+      const matchGrade = filterGrade === "all" || (s.grade_name ?? "") === filterGrade;
+      const matchYear = filterYear === "all" || (s.school_year ?? "") === filterYear;
+      return matchSearch && matchSection && matchGrade && matchYear;
     });
 
     const sorted = [...list].sort((a, b) => {
@@ -108,7 +127,30 @@ const SectionsList = () => {
     });
 
     return sorted;
-  }, [sections, q, sortBy, sortDir]);
+  }, [sections, q, sortBy, sortDir, filterSection, filterGrade, filterYear]);
+
+  // Grouped view for table organization
+  const groupedRows = useMemo(() => {
+    if (groupByKey === "none") return [{ key: null, items: filteredSorted }];
+
+    const keyFn =
+      groupByKey === "section"
+        ? (s) => s.section_name || "—"
+        : groupByKey === "grade"
+        ? (s) => s.grade_name || "—"
+        : (s) => s.school_year || "—"; // year
+
+    const map = new Map();
+    for (const item of filteredSorted) {
+      const k = keyFn(item);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(item);
+    }
+    const keys = Array.from(map.keys()).sort((a, b) =>
+      String(a).localeCompare(String(b), undefined, { numeric: true })
+    );
+    return keys.map((k) => ({ key: k, items: map.get(k) }));
+  }, [filteredSorted, groupByKey]);
 
   return (
     <div className="container-xxl my-4">
@@ -117,13 +159,13 @@ const SectionsList = () => {
           {/* Header */}
           <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
             <div className="row mb-4">
-  <div className="col-12">
-    <h4 className="fw-bold mb-0">Sections</h4>
-    <p className="text-muted mb-0">
-      Manage class sections and link them to grade levels and school years.
-    </p>
-  </div>
-</div>
+              <div className="col-12">
+                <h4 className="fw-bold mb-0">Sections</h4>
+                <p className="text-muted mb-0">
+                  Manage class sections and link them to grade levels and school years.
+                </p>
+              </div>
+            </div>
 
             <div className="d-flex gap-2">
               <button
@@ -150,9 +192,9 @@ const SectionsList = () => {
             </div>
           </div>
 
-          {/* Toolbar */}
-          <div className="row g-2 mb-3">
-            <div className="col-12 col-md-6">
+          {/* Toolbar: search + sort */}
+          <div className="row g-2 mb-2">
+            <div className="col-12 col-lg-6">
               <div className="input-group">
                 <span className="input-group-text">Search</span>
                 <input
@@ -164,7 +206,7 @@ const SectionsList = () => {
                 />
               </div>
             </div>
-            <div className="col-6 col-md-3">
+            <div className="col-6 col-lg-3">
               <select className="form-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
                 <option value="name">Sort by Name</option>
                 <option value="grade">Sort by Grade</option>
@@ -172,11 +214,84 @@ const SectionsList = () => {
                 <option value="id">Sort by ID</option>
               </select>
             </div>
-            <div className="col-6 col-md-3">
+            <div className="col-6 col-lg-3">
               <select className="form-select" value={sortDir} onChange={(e) => setSortDir(e.target.value)}>
                 <option value="asc">Ascending</option>
                 <option value="desc">Descending</option>
               </select>
+            </div>
+          </div>
+
+          {/* Inline filters: Section | Grade Level | School Year + Group by */}
+          <div className="row g-2 mb-3">
+            <div className="col-12 col-md-6 col-lg-3">
+              <div className="input-group">
+                <span className="input-group-text">Section</span>
+                <select
+                  className="form-select"
+                  value={filterSection}
+                  onChange={(e) => setFilterSection(e.target.value)}
+                >
+                  <option value="all">All</option>
+                  {sectionOptions.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="col-6 col-md-3 col-lg-3">
+              <div className="input-group">
+                <span className="input-group-text">Grade</span>
+                <select
+                  className="form-select"
+                  value={filterGrade}
+                  onChange={(e) => setFilterGrade(e.target.value)}
+                >
+                  <option value="all">All</option>
+                  {gradeOptions.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="col-6 col-md-3 col-lg-3">
+              <div className="input-group">
+                <span className="input-group-text">School Year</span>
+                <select
+                  className="form-select"
+                  value={filterYear}
+                  onChange={(e) => setFilterYear(e.target.value)}
+                >
+                  <option value="all">All</option>
+                  {yearOptions.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="col-8 col-md-2 col-lg-2">
+              <div className="input-group">
+                <span className="input-group-text">Group</span>
+                <select
+                  className="form-select"
+                  value={groupByKey}
+                  onChange={(e) => setGroupByKey(e.target.value)}
+                >
+                  <option value="none">None</option>
+                  <option value="section">Section</option>
+                  <option value="grade">Grade</option>
+                  <option value="year">School Year</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="col-4 col-md-1 col-lg-1 d-flex">
+              <button className="btn btn-link ms-auto text-decoration-none" onClick={resetFilters}>
+                Reset
+              </button>
             </div>
           </div>
 
@@ -206,24 +321,36 @@ const SectionsList = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSorted.map((s) => (
-                    <tr key={s.section_id}>
-                      <td className="fw-medium">{s.section_name}</td>
-                      <td>{s.grade_name || "—"}</td>
-                      <td>{s.school_year || "—"}</td>
-                      <td className="text-end">
-                        <div className="d-flex justify-content-end gap-2 flex-nowrap">
-                          <button
-                            className="btn btn-sm btn-outline-primary d-flex align-items-center gap-2 px-3"
-                            onClick={() => navigate(`/sections/edit/${s.section_id}`)}
-                            title="Edit section"
-                          >
-                            <FaEdit /> Edit
-                          </button>
-                         
-                        </div>
-                      </td>
-                    </tr>
+                  {groupedRows.map((g) => (
+                    <React.Fragment key={`grp-${g.key ?? "all"}`}>
+                      {groupByKey !== "none" && (
+                        <tr>
+                          <td colSpan={4} className="bg-body-secondary fw-semibold">
+                            {groupByKey === "section" && "Section"}
+                            {groupByKey === "grade" && "Grade"}
+                            {groupByKey === "year" && "School Year"}: {g.key ?? "—"}
+                          </td>
+                        </tr>
+                      )}
+                      {g.items.map((s) => (
+                        <tr key={s.section_id}>
+                          <td className="fw-medium">{s.section_name}</td>
+                          <td>{s.grade_name || "—"}</td>
+                          <td>{s.school_year || "—"}</td>
+                          <td className="text-end">
+                            <div className="d-flex justify-content-end gap-2 flex-nowrap">
+                              <button
+                                className="btn btn-sm btn-outline-primary d-flex align-items-center gap-2 px-3"
+                                onClick={() => navigate(`/sections/edit/${s.section_id}`)}
+                                title="Edit section"
+                              >
+                                <FaEdit /> Edit
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>

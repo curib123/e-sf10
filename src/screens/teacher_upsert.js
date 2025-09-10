@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { FaArrowLeft, FaSave, FaCheckCircle, FaCircle, FaExclamationTriangle } from "react-icons/fa";
+import { FaArrowLeft, FaSave, FaCheckCircle, FaCircle, FaExclamationTriangle, FaEye, FaEyeSlash } from "react-icons/fa";
 import StatusModal from "../components/status_modal";
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
@@ -47,8 +47,10 @@ export default function UpsertTeacher() {
     email: "",
     contact_number: "",
     is_active: true,
+    password: "", // used only on CREATE per API
   });
 
+  const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [status, setStatus] = useState({ show: false, title: "", message: "", variant: "info" });
@@ -95,7 +97,7 @@ export default function UpsertTeacher() {
   const toYMD = (iso) => {
     if (!iso) return "";
     const d = new Date(iso);
-    if (isNaN(d)) return "";
+    if (Number.isNaN(d.getTime())) return "";
     const y = d.getUTCFullYear();
     const m = String(d.getUTCMonth() + 1).padStart(2, "0");
     const day = String(d.getUTCDate()).padStart(2, "0");
@@ -120,7 +122,8 @@ export default function UpsertTeacher() {
         const data = await res.json().catch(() => ({}));
         if (!data?.success || !data?.data) throw new Error("Failed to load teacher.");
         const t = data.data;
-        setForm({
+        setForm((f) => ({
+          ...f,
           first_name: t.first_name || "",
           middle_name: t.middle_name || "",
           last_name: t.last_name || "",
@@ -130,7 +133,8 @@ export default function UpsertTeacher() {
           email: t.email || "",
           contact_number: t.contact_number || "",
           is_active: Boolean(t.is_active),
-        });
+          password: "", // never prefill on edit
+        }));
       } catch (err) {
         if (err.message !== "Unauthorized" && err.name !== "AbortError") {
           showStatus("danger", "Error", err.message || "Unable to load teacher.");
@@ -168,17 +172,31 @@ export default function UpsertTeacher() {
       return null;
     }
 
+    // API: POST /teachers/create requires password
+    if (!isEdit) {
+      const pwd = form.password.trim();
+      if (!pwd) {
+        showStatus("warning", "Password required", "Please set an initial password for this teacher.");
+        return null;
+      }
+      if (pwd.length < 8) {
+        showStatus("warning", "Weak password", "Password must be at least 8 characters.");
+        return null;
+      }
+    }
+
     const base = {
       first_name: first,
       middle_name: form.middle_name.trim(),
       last_name: last,
       extension_name: form.extension_name.trim(),
       teacher_address: form.teacher_address.trim(),
-      date_of_birth: dob,
+      date_of_birth: dob, // "YYYY-MM-DD"
       email,
       contact_number: phone,
     };
-    return isEdit ? { ...base, is_active: Boolean(form.is_active) } : base;
+    // PUT may include is_active (bool or 0/1). We'll send boolean.
+    return isEdit ? { ...base, is_active: Boolean(form.is_active) } : { ...base, password: form.password.trim() };
   };
 
   const handleSubmit = async (e) => {
@@ -214,18 +232,13 @@ export default function UpsertTeacher() {
   };
 
   // --- Toggle UX ---
-  const openConfirmToggle = (nextVal) => {
-    // Ask confirmation when activating; deactivation goes straight through
-    setConfirm({ show: true, nextValue: nextVal });
-  };
-
+  const openConfirmToggle = (nextVal) => setConfirm({ show: true, nextValue: nextVal });
   const commitToggle = async (nextVal) => {
     setConfirm({ show: false, nextValue: null });
     if (!isEdit || toggling) return;
 
     const prev = form.is_active;
-    // optimistic UI
-    setForm((f) => ({ ...f, is_active: nextVal }));
+    setForm((f) => ({ ...f, is_active: nextVal })); // optimistic
     setToggling(true);
 
     try {
@@ -248,6 +261,7 @@ export default function UpsertTeacher() {
 
   const handleToggleClick = () => {
     const nextVal = !form.is_active;
+    // Ask confirmation when ACTIVATING (per your UX); deactivate immediately
     if (nextVal) openConfirmToggle(true);
     else commitToggle(false);
   };
@@ -297,7 +311,6 @@ export default function UpsertTeacher() {
         .ux-toggle.inactive { --bg: #adb5bd33; }
         .ux-toggle.active .ux-thumb { --x: calc(var(--w) - var(--h)); }
         .ux-toggle:focus-visible { box-shadow: 0 0 0 4px rgba(88,111,255,0.25); }
-        .ux-dot { width: 6px; height: 6px; border-radius: 999px; }
       `}</style>
 
       <StatusModal {...status} onHide={onHideStatus} />
@@ -366,7 +379,7 @@ export default function UpsertTeacher() {
             </div>
           )}
 
-          {/* Form — Row1: 1 field, Row2+: 2 columns per row */}
+          {/* Form */}
           <form onSubmit={handleSubmit} noValidate className="row g-3 g-lg-4">
             {/* Row 1 */}
             <div className="col-12">
@@ -455,7 +468,7 @@ export default function UpsertTeacher() {
                 name="email"
                 type="email"
                 className="form-control"
-                placeholder="e.g., michael.delacruz@example.com"
+                placeholder="e.g., michael.doblas@example.com"
                 value={form.email}
                 onChange={handleChange}
                 required
@@ -496,6 +509,38 @@ export default function UpsertTeacher() {
               />
               <div id="addrHelp" className="form-text">Street, city/municipality.</div>
             </div>
+
+            {/* Row 6: Password (CREATE only, per API) */}
+            {!isEdit && (
+              <div className="col-md-6">
+                <label htmlFor="password" className="form-label fw-semibold">Initial Password</label>
+                <div className="input-group">
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPwd ? "text" : "password"}
+                    className="form-control"
+                    placeholder="e.g., SecurePass123!"
+                    value={form.password}
+                    onChange={handleChange}
+                    required
+                    aria-describedby="pwdHelp"
+                    minLength={8}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={() => setShowPwd((v) => !v)}
+                    title={showPwd ? "Hide" : "Show"}
+                  >
+                    {showPwd ? <FaEyeSlash /> : <FaEye />}
+                  </button>
+                </div>
+                <div id="pwdHelp" className="form-text">
+                  At least 8 characters. This is required by <code>POST /teachers/create</code>.
+                </div>
+              </div>
+            )}
 
             {/* Actions */}
             <div className="col-12 d-flex justify-content-end gap-2">
