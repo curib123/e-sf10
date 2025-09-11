@@ -19,8 +19,15 @@ function App() {
   }, []);
 
   const handleLogin = () => {
+    const user_role = sessionStorage.getItem('user_role');
     setIsLoggedIn(true);
-    window.location.href = '/dashboard';
+
+    if(user_role == "teacher"){
+    window.location.href = '/teacher-dashboard';
+    }else{s
+      window.location.href = '/dashboard';
+    }
+    
   };
 
   const handleLogout = () => {
