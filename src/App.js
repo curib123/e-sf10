@@ -24,7 +24,7 @@ function App() {
 
     if(user_role == "teacher"){
     window.location.href = '/teacher-dashboard';
-    }else{s
+    }else{
       window.location.href = '/dashboard';
     }
     
