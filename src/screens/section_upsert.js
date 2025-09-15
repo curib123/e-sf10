@@ -1,13 +1,25 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
-import StatusModal from "../components/status_modal";
-import "bootstrap/dist/css/bootstrap.min.css";
-import { FaSave, FaArrowLeft } from "react-icons/fa";
+import 'bootstrap/dist/css/bootstrap.min.css';
 
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
+import {
+  FaArrowLeft,
+  FaSave,
+} from 'react-icons/fa';
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 const joinUrl = (path = "") => `${BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
-
 
 async function apiFetch(path, { method = "GET", headers = {}, body, signal } = {}) {
   const token = sessionStorage.getItem("token");
@@ -44,7 +56,6 @@ export default function SectionUpsert() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-
   const isEdit = !!id;
 
   // form state
@@ -62,14 +73,13 @@ export default function SectionUpsert() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState({ show: false, title: "", message: "", variant: "danger" });
-
   const onHideStatus = () => setStatus((s) => ({ ...s, show: false }));
 
   const applySectionToForm = (section) => {
     setForm({
       section_name: section?.section_name ?? "",
-      grade_level_id: section?.grade_level_id ?? "",
-      school_year_id: section?.school_year_id ?? "",
+      grade_level_id: String(section?.grade_level_id ?? ""),
+      school_year_id: String(section?.school_year_id ?? ""),
     });
   };
 
@@ -92,27 +102,52 @@ export default function SectionUpsert() {
           setGradeLevels(sorted);
         }
 
+        let yearsList = [];
         if (years?.success) {
-          const sortedYears = [...(years.schoolYears || [])].sort(
-            (a, b) => (b.start_year ?? 0) - (a.start_year ?? 0)
-          );
-          setSchoolYears(sortedYears);
+          yearsList = [...(years.schoolYears || [])];
+          // keep all fields (including is_active) and sort newest first
+          yearsList.sort((a, b) => (b.start_year ?? 0) - (a.start_year ?? 0));
+          setSchoolYears(yearsList);
         }
 
         // 2) Prefill from navigation state if available and matches id
         const fromState = location.state?.section;
         if (isEdit && fromState && String(fromState.section_id) === String(id)) {
           applySectionToForm(fromState);
-          return;
-        }
-
-        // 3) Otherwise, fetch all sections and find the one to edit
-        if (isEdit) {
+        } else if (isEdit) {
+          // 3) Otherwise, fetch all sections and find the one to edit
           const all = await apiFetch("/sections", { signal: ac.signal }); // GET /esf10/sections
           if (!all?.success) throw new Error("Failed to load sections.");
           const found = (all.data || []).find((s) => String(s.section_id) === String(id));
           if (!found) throw new Error("Section not found.");
           applySectionToForm(found);
+        } else {
+          // 4) Create mode: auto-select ACTIVE school year if available
+          // Try flag from /school-year/all-school-years
+          const activeYears = yearsList.filter((y) => Number(y.is_active) === 1);
+          let chosen = null;
+          if (activeYears.length) {
+            // choose the latest active by start_year
+            chosen = activeYears.sort((a, b) => (b.start_year ?? 0) - (a.start_year ?? 0))[0];
+          }
+
+          // Fallback: if none flagged active, try /curriculum/active-curriculums for school_year_id
+          if (!chosen) {
+            try {
+              const cur = await apiFetch("/curriculum/active-curriculums", { signal: ac.signal });
+              const syId = cur?.data?.school_year_id;
+              if (syId) {
+                const match = yearsList.find((y) => String(y.school_year_id) === String(syId));
+                if (match) chosen = match;
+              }
+            } catch {
+              /* ignore fallback errors silently */
+            }
+          }
+
+          if (chosen && !ac.signal.aborted) {
+            setForm((f) => ({ ...f, school_year_id: String(chosen.school_year_id) }));
+          }
         }
       } catch (err) {
         if (ac.signal.aborted) return;
@@ -274,13 +309,20 @@ export default function SectionUpsert() {
                 <option value="" disabled>
                   Select school year…
                 </option>
-                {schoolYears.map((y) => (
-                  <option key={y.school_year_id} value={String(y.school_year_id)}>
-                    {y.start_year > 0 && y.end_year > 0 ? `${y.start_year}-${y.end_year}` : "Unknown"}
-                  </option>
-                ))}
+                {schoolYears.map((y) => {
+                  const label =
+                    y.start_year > 0 && y.end_year > 0 ? `${y.start_year}-${y.end_year}` : "Unknown";
+                  const active = Number(y.is_active) === 1;
+                  return (
+                    <option key={y.school_year_id} value={String(y.school_year_id)}>
+                      {label}{active ? " (Active)" : ""}
+                    </option>
+                  );
+                })}
               </select>
-              <div className="form-text">Newest years appear first.</div>
+              <div className="form-text">
+                Defaults to the active school year when creating a section.
+              </div>
             </div>
 
             {/* Chips */}
@@ -299,6 +341,7 @@ export default function SectionUpsert() {
                 {selectedYear && (
                   <span className="badge text-bg-info text-nowrap">
                     SY: {selectedYear.start_year}-{selectedYear.end_year}
+                    {Number(selectedYear.is_active) === 1 ? " (Active)" : ""}
                   </span>
                 )}
               </div>

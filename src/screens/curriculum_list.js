@@ -1,19 +1,27 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import "bootstrap/dist/css/bootstrap.min.css";
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import {
+  FaBookOpen,
   FaCheckCircle,
-  FaExclamationTriangle,
-  FaTimesCircle,
-  FaInfoCircle,
-  FaPlus,
-  FaSearch,
   FaChevronLeft,
   FaChevronRight,
   FaEdit,
-  FaBookOpen,
-} from "react-icons/fa";
-import StatusModal from "../components/status_modal";
+  FaExclamationTriangle,
+  FaInfoCircle,
+  FaPlus,
+  FaSearch,
+  FaTimesCircle,
+} from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL; // already includes /esf10
 const PAGE_SIZES = [5, 10, 20, 50];
@@ -31,6 +39,7 @@ const CurriculumList = () => {
 
   // --- UI state ---
   const [loading, setLoading] = useState(false);
+  const [togglingId, setTogglingId] = useState(null);
   const [statusModal, setStatusModal] = useState({
     show: false,
     title: "",
@@ -107,7 +116,7 @@ const CurriculumList = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // --- data loader (preserves your logic, adds pagination support) ---
+  // --- data loader ---
   const fetchCurriculums = async (
     pageNumber = page,
     currentQuery = query,
@@ -124,7 +133,6 @@ const CurriculumList = () => {
       if (currentQuery) params.append("query", currentQuery);
       if (currentSy) params.append("school_year_id", currentSy);
       if (currentActive) params.append("is_active", currentActive);
-      // pagination params (server may ignore; UI still consistent)
       params.append("page", pageNumber);
       params.append("limit", size);
 
@@ -182,7 +190,7 @@ const CurriculumList = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageSize]);
 
-  // --- actions (preserve routes) ---
+  // --- actions ---
   const createCurriculum = () => {
     if (!checkToken()) return;
     navigate("/curriculum/create");
@@ -194,6 +202,58 @@ const CurriculumList = () => {
   const assignSubject = (id) => {
     if (!checkToken()) return;
     navigate(`/curriculum/assign-subject/${id}`);
+  };
+
+  // --- toggle status ---
+  const toggleStatus = async (curr) => {
+    if (!checkToken() || togglingId) return;
+    try {
+      setTogglingId(curr.curriculum_id);
+
+      const res = await apiFetch(`/curriculum/toggle-status/${curr.curriculum_id}`, {
+        method: "PATCH",
+      });
+      const data = await res.json();
+
+      if (data?.success) {
+        const becameActive = Boolean(data?.data?.new_status);
+
+        // Optimistic local update:
+        setCurriculums((prev) => {
+          if (becameActive) {
+            // ensure only one active per school year
+            return prev.map((item) =>
+              item.school_year_id === curr.school_year_id
+                ? { ...item, is_active: item.curriculum_id === curr.curriculum_id }
+                : item
+            );
+          }
+          // just turned inactive
+          return prev.map((item) =>
+            item.curriculum_id === curr.curriculum_id ? { ...item, is_active: false } : item
+          );
+        });
+
+        showStatus(
+          "success",
+          "Status Updated",
+          `${data.message || "Curriculum status updated."} ${
+            data?.data?.curriculum_name
+              ? `${data.data.curriculum_name} is now ${becameActive ? "Active" : "Inactive"}.`
+              : ""
+          }`
+        );
+
+        // Keep UI consistent with server (esp. if server also deactivated others):
+        fetchCurriculums(page, query, pageSize, schoolYearId, isActive);
+      } else {
+        showStatus("danger", "Update Failed", data?.message || "Failed to toggle status.");
+      }
+    } catch {
+      showStatus("danger", "Error", "Failed to toggle status.");
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   // computed
@@ -310,7 +370,7 @@ const CurriculumList = () => {
                     <tr>
                       <th style={{ minWidth: 240 }}>Name</th>
                       <th style={{ width: 180 }}>School Year</th>
-                      <th style={{ width: 120 }}>Status</th>
+                      <th style={{ width: 180 }}>Status</th>
                       <th className="text-end" style={{ width: 240 }}>Action</th>
                     </tr>
                   </thead>
@@ -325,9 +385,27 @@ const CurriculumList = () => {
                               : curr.school_year_id)}
                         </td>
                         <td>
-                          <span className={`badge ${curr.is_active ? "text-bg-success" : "text-bg-secondary"}`}>
-                            {curr.is_active ? "Active" : "Inactive"}
-                          </span>
+                          <div className="d-flex align-items-center gap-2">
+                            <div className="form-check form-switch m-0">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                role="switch"
+                                id={`sw-${curr.curriculum_id}`}
+                                checked={!!curr.is_active}
+                                disabled={togglingId === curr.curriculum_id}
+                                onChange={() => toggleStatus(curr)}
+                                aria-checked={!!curr.is_active}
+                                aria-label={`Set ${curr.curriculum_name} ${curr.is_active ? "inactive" : "active"}`}
+                              />
+                              <label className="form-check-label small ms-1" htmlFor={`sw-${curr.curriculum_id}`}>
+                                {curr.is_active ? "Active" : "Inactive"}
+                              </label>
+                            </div>
+                            {togglingId === curr.curriculum_id && (
+                              <span className="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                            )}
+                          </div>
                         </td>
                         <td className="text-end">
                           <div className="d-flex justify-content-end gap-2">
@@ -337,12 +415,7 @@ const CurriculumList = () => {
                             >
                               <FaEdit /> Edit
                             </button>
-                            <button
-                              className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1"
-                              onClick={() => assignSubject(curr.curriculum_id)}
-                            >
-                              <FaPlus /> Assign Subject
-                            </button>
+                          
                           </div>
                         </td>
                       </tr>

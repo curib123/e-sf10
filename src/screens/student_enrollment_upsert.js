@@ -1,12 +1,29 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import "bootstrap/dist/css/bootstrap.min.css";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
-import { FaArrowLeft, FaSave } from "react-icons/fa";
-import StatusModal from "../components/status_modal";
+// src/pages/EnrollmentUpsert.jsx
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import {
+  FaArrowLeft,
+  FaSave,
+} from 'react-icons/fa';
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL; // already includes /esf10
+const DEFAULT_STATUS = "Enrolled";
 
-// ---- Date helpers (UI <-> API) ----
+// ---- Date helpers ----
 const todayYMD = () => {
   const d = new Date();
   const y = d.getFullYear();
@@ -14,21 +31,9 @@ const todayYMD = () => {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 };
-const toDateInput = (isoOrYmd) => {
-  if (!isoOrYmd) return "";
-  const d = new Date(isoOrYmd);
-  if (Number.isNaN(d.getTime())) return isoOrYmd; // assume already YYYY-MM-DD
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
-};
-const toApiDate = (ymd) => (ymd ? ymd : "");
-
-const STATUSES = ["Enrolled", "Pending", "Dropped", "Completed", "Cancelled"];
 
 // ────────────────────────────────────────────────────────────────────────────────
-// Minimal async "search dropdown" for students (Bootstrap-only, no lib deps)
+// Minimal async search dropdown for students (Bootstrap-only)
 const StudentSearchSelect = ({
   token,
   value,                 // student_id
@@ -45,23 +50,17 @@ const StudentSearchSelect = ({
   const abortRef = useRef(null);
   const inputRef = useRef(null);
 
-  useEffect(() => {
-    if (!touched) setQuery(initialLabel || "");
-  }, [initialLabel, touched]);
+  useEffect(() => { if (!touched) setQuery(initialLabel || ""); }, [initialLabel, touched]);
 
   useEffect(() => {
     const q = query.trim();
-    if (!touched || q.length < minChars) {
-      setItems([]);
-      return;
-    }
+    if (!touched || q.length < minChars) { setItems([]); return; }
 
     const doSearch = async () => {
       try {
         setLoading(true);
-        if (abortRef.current) abortRef.current.abort();
+        abortRef.current?.abort();
         abortRef.current = new AbortController();
-
         const res = await fetch(
           `${BASE_URL}/students/search?query=${encodeURIComponent(q)}`,
           {
@@ -76,11 +75,7 @@ const StudentSearchSelect = ({
         const js = await res.json();
         setItems(Array.isArray(js) ? js : []);
         setOpen(true);
-      } catch {
-        // swallow errors
-      } finally {
-        setLoading(false);
-      }
+      } catch {/* ignore */} finally { setLoading(false); }
     };
 
     const t = setTimeout(doSearch, 300);
@@ -90,18 +85,11 @@ const StudentSearchSelect = ({
   const pick = (it) => {
     const label = `${it.last_name}, ${it.first_name}${it.middle_name ? " " + it.middle_name : ""}`;
     onChange(String(it.student_id), label, it);
-    setQuery(label);
-    setOpen(false);
-    setTouched(false);
+    setQuery(label); setOpen(false); setTouched(false);
   };
 
   const clear = () => {
-    setQuery("");
-    onChange("", "", null);
-    setItems([]);
-    setOpen(false);
-    setTouched(true);
-    inputRef.current?.focus();
+    setQuery(""); onChange("", "", null); setItems([]); setOpen(false); setTouched(true); inputRef.current?.focus();
   };
 
   return (
@@ -118,9 +106,7 @@ const StudentSearchSelect = ({
           autoComplete="off"
         />
         {query ? (
-          <button type="button" className="btn btn-outline-secondary" onClick={clear}>
-            Clear
-          </button>
+          <button type="button" className="btn btn-outline-secondary" onClick={clear}>Clear</button>
         ) : null}
       </div>
 
@@ -153,13 +139,14 @@ const StudentSearchSelect = ({
         </div>
       )}
 
-      <input type="hidden" value={value || ""} />
+      <input type="hidden" value={value || ""} readOnly />
     </div>
   );
 };
 
 // ────────────────────────────────────────────────────────────────────────────────
-// Enrollment Upsert (Create/Update) — School Year → Grade Level → Section → Curriculum
+// Enrollment Upsert — SY/Curriculum/Date/Status are AUTO (hidden)
+// Exactly 3 inputs: Student (top), Grade Level + Section (bottom)
 const EnrollmentUpsert = () => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -175,33 +162,37 @@ const EnrollmentUpsert = () => {
   const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "info" });
   const showModal = (variant, title, message) => setModal({ show: true, title, message, variant });
 
-  // Master lists
-  const [schoolYears, setSchoolYears] = useState([]);  // all SYs
-  const [sections, setSections] = useState([]);        // includes school_year_id + grade_level_id
-  const [gradeLevels, setGradeLevels] = useState([]);  // full list (for names)
-  const [curriculaAll, setCurriculaAll] = useState([]); // all curricula (with school_year_id)
+  // Data buckets
+  const [gradeLevels, setGradeLevels] = useState([]);  // grade_level_id, grade_name, grade_order
+  const [activeEnrollments, setActiveEnrollments] = useState([]); // from /enrollments/active-enrollments
+
+  // Sections are fetched ONLY when grade is selected:
+  const sectionsCacheRef = useRef(new Map()); // key: `${syId}:${gradeId}` -> array
+  const [sectionsForGrade, setSectionsForGrade] = useState([]);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+
+  // Auto context from active curriculum / active school year
+  const [autoInfo, setAutoInfo] = useState({
+    school_year_id: "",
+    school_year_period: "",
+    curriculum_id: "",
+    curriculum_name: "",
+  });
 
   const [studentLabel, setStudentLabel] = useState("");
 
-  // Prefill via querystring (IDs).
+  // Prefill (student/section only)
   const prefill = useMemo(() => ({
     student_id: qs.get("student_id") || "",
-    school_year_id: qs.get("school_year_id") || "",
-    grade_level_id: qs.get("grade_level_id") || "",
     section_id: qs.get("section_id") || "",
-    curriculum_id: qs.get("curriculum_id") || "",
-    enrollment_date: qs.get("date") || "",
-    status: qs.get("status") || "",
   }), [qs]);
 
+  // Hidden status; visible inputs: student, grade, section
   const [form, setForm] = useState({
     student_id: prefill.student_id || "",
-    school_year_id: prefill.school_year_id || "",
-    grade_level_id: prefill.grade_level_id || "",
+    grade_level_id: "",
     section_id: prefill.section_id || "",
-    curriculum_id: prefill.curriculum_id || "",
-    enrollment_date: prefill.enrollment_date || todayYMD(),
-    status: prefill.status || "Enrolled",
+    status: DEFAULT_STATUS,
   });
 
   // ---- Auth + fetch helpers ----
@@ -217,57 +208,10 @@ const EnrollmentUpsert = () => {
   };
   const apiFetch = async (path, options = {}) => {
     const res = await fetch(`${BASE_URL}${path}`, { ...options, headers: { ...authHeaders(), ...(options.headers || {}) } });
-    if (res.status === 401) {
-      handleUnauthorized();
-      throw new Error("Unauthorized");
-    }
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Unauthorized"); }
     return res;
   };
 
-  // Get ALL school years (no filtering), with labeling and sensible sorting.
-  const fetchSchoolYearsAll = async () => {
-    const res = await apiFetch(`/school-year/all-school-years`);
-    if (!res.ok) throw new Error("Failed to fetch school years");
-    const js = await res.json();
-    const all = Array.isArray(js?.schoolYears) ? js.schoolYears : [];
-    const norm = all.map((sy) => {
-      const start = Number(sy.start_year) || 0;
-      const end = Number(sy.end_year) || 0;
-      const isActive = Number(sy.is_active) === 1;
-      const labelBase = (start && end) ? `${start}-${end}` : "Unspecified";
-      return {
-        school_year_id: String(sy.school_year_id),
-        is_active: isActive,
-        start_year: start,
-        end_year: end,
-        label: labelBase + (isActive ? " (Active)" : ""),
-      };
-    });
-    norm.sort((a, b) => {
-      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;       // active first
-      if (b.start_year !== a.start_year) return b.start_year - a.start_year; // newest first
-      return b.end_year - a.end_year;
-    });
-    return norm;
-  };
-
-  // Sections (with school_year_id, grade_level_id)
-  const fetchSections = async () => {
-    const res = await apiFetch(`/sections`);
-    if (!res.ok) throw new Error("Failed to fetch sections");
-    const js = await res.json();
-    const arr = Array.isArray(js?.data) ? js.data : [];
-    return arr.map((s) => ({
-      section_id: String(s.section_id),
-      section_name: s.section_name ?? `Section ${s.section_id}`,
-      grade_level_id: String(s.grade_level_id ?? ""),
-      grade_name: s.grade_name ?? "",
-      school_year_id: String(s.school_year_id ?? ""),
-      school_year_label: s.school_year ?? "",
-    }));
-  };
-
-  // Grade levels (for nice labels; we still rely on sections to know availability)
   const fetchGradeLevels = async () => {
     const res = await apiFetch(`/grade-levels`);
     if (!res.ok) throw new Error("Failed to fetch grade levels");
@@ -279,22 +223,51 @@ const EnrollmentUpsert = () => {
       .map((g) => ({
         grade_level_id: String(g.grade_level_id),
         grade_level_name: g.grade_name ?? g.grade_code ?? `Grade ${g.grade_order ?? ""}`.trim(),
+        grade_order: Number(g.grade_order ?? 0),
       }));
   };
 
-  // ALL curricula (with school_year_id)
-  const fetchCurriculaAll = async () => {
-    const res = await apiFetch(`/curriculum/view-all-curriculums`);
-    if (!res.ok) throw new Error("Failed to fetch curriculums");
+  const fetchActiveEnrollmentList = async () => {
+    const res = await apiFetch(`/enrollments/active-enrollments`);
+    if (!res.ok) throw new Error("Failed to fetch active enrollments");
     const js = await res.json();
-    const arr = Array.isArray(js?.data) ? js.data : [];
-    return arr.map((c) => ({
-      curriculum_id: String(c.curriculum_id),
-      curriculum_name: c.curriculum_name,
-      school_year_id: String(c.school_year_id ?? ""),
-      is_active: Number(c.is_active) === 1,
-      school_year_period: c.school_year_period ?? "",
-    }));
+    return Array.isArray(js?.data) ? js.data : [];
+  };
+
+  // Primary: Active curriculum (gives us active school_year_id + curriculum)
+  const fetchActiveCurriculum = async () => {
+    const res = await apiFetch(`/curriculum/active-curriculums`);
+    if (!res.ok) throw new Error("Failed to fetch active curriculum");
+    const js = await res.json();
+    const d = js?.data;
+    if (!d?.school_year_id) throw new Error("No active curriculum found");
+    return {
+      curriculum_id: d?.curriculum_id ? String(d.curriculum_id) : "",
+      curriculum_name: d?.curriculum_name ?? "",
+      school_year_id: String(d.school_year_id),
+      school_year_period: d?.school_year_period ?? "",
+    };
+  };
+
+  // Fallback: get active SY from /school-year/all-school-years if needed
+  const fetchActiveSchoolYearFallback = async () => {
+    const res = await apiFetch(`/school-year/all-school-years`);
+    if (!res.ok) throw new Error("Failed to fetch school years");
+    const js = await res.json();
+    const list = Array.isArray(js?.schoolYears) ? js.schoolYears : [];
+    const actives = list.filter((y) => Number(y.is_active) === 1);
+    const chosen = (actives.length ? actives : list)
+      .slice()
+      .sort((a, b) => (b.start_year ?? 0) - (a.start_year ?? 0))[0];
+    if (!chosen) throw new Error("No school years available");
+
+    return {
+      school_year_id: String(chosen.school_year_id),
+      school_year_period:
+        (chosen.start_year > 0 && chosen.end_year > 0)
+          ? `${chosen.start_year}-${chosen.end_year}`
+          : "",
+    };
   };
 
   const fetchEnrollment = async (enrollmentId) => {
@@ -304,44 +277,65 @@ const EnrollmentUpsert = () => {
     return js?.data || null;
   };
 
+  // Fetch ALL sections once (only after grade is selected we’ll filter & cache)
+  const fetchSectionsOnce = async () => {
+    const res = await apiFetch(`/sections`);
+    if (!res.ok) throw new Error("Failed to fetch sections");
+    const js = await res.json();
+    return Array.isArray(js?.data) ? js.data : [];
+  };
+
   // ---- Init ----
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setInitializing(true);
-        const [sysAll, sects, grades, currsAll] = await Promise.all([
-          fetchSchoolYearsAll(),
-          fetchSections(),
-          fetchGradeLevels(),
-          fetchCurriculaAll(),
-        ]);
-        if (!cancelled) {
-          setSchoolYears(sysAll);
-          setSections(sects);
-          setGradeLevels(grades);
-          setCurriculaAll(currsAll);
-        }
 
-        // If editing, enrollment data wins over query prefill
+        // 1) load grades + active enrollments in parallel
+        const [grades, enrActive] = await Promise.all([
+          fetchGradeLevels(),
+          fetchActiveEnrollmentList(),
+        ]);
+        if (cancelled) return;
+        setGradeLevels(grades);
+        setActiveEnrollments(enrActive);
+
+        // 2) resolve active School Year & Curriculum
+        let active = null;
+        try {
+          active = await fetchActiveCurriculum(); // primary path
+        } catch {
+          const fb = await fetchActiveSchoolYearFallback(); // fallback path
+          active = {
+            school_year_id: fb.school_year_id,
+            school_year_period: fb.school_year_period,
+            curriculum_id: "",
+            curriculum_name: "",
+          };
+        }
+        if (cancelled) return;
+        setAutoInfo(active);
+
+        // 3) If editing, load enrollment (we keep status; autos still apply)
         if (isEdit && id) {
           const data = await fetchEnrollment(id);
-          if (data && !cancelled) {
+          if (cancelled) return;
+          if (data) {
             setForm((prev) => ({
               ...prev,
               student_id: String(data.student_id ?? prev.student_id ?? ""),
-              school_year_id: String(data.school_year_id ?? prev.school_year_id ?? ""),
               grade_level_id: String(data.grade_level_id ?? prev.grade_level_id ?? ""),
               section_id: String(data.section_id ?? prev.section_id ?? ""),
-              curriculum_id: String(data.curriculum_id ?? prev.curriculum_id ?? ""),
-              enrollment_date: toDateInput(data.enrollment_date) || prev.enrollment_date || todayYMD(),
-              status: data.status ?? prev.status ?? "Enrolled",
+              status: String(data.status ?? prev.status ?? DEFAULT_STATUS),
             }));
             setStudentLabel(data.student_name || "");
           }
         }
       } catch (err) {
-        if (err?.message !== "Unauthorized") showModal("danger", "Load error", err?.message || "Something went wrong.");
+        if (err?.message !== "Unauthorized") {
+          showModal("danger", "Load error", err?.message || "Something went wrong.");
+        }
       } finally {
         if (!cancelled) setInitializing(false);
       }
@@ -349,100 +343,127 @@ const EnrollmentUpsert = () => {
     return () => { cancelled = true; };
   }, [id, isEdit, token]);
 
-  // ────────────────────────────────────────────────────────────────────────────────
-  // DEPENDENCIES:
-  // 1) School Year → limits available Grade Levels (based on sections in that SY)
-  // 2) Grade Level + School Year → limits available Sections
-  // 3) School Year → limits available Curricula (from /curriculum/view-all-curriculums)
+  // Helpers
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  // Sections in the selected School Year (or empty if none chosen)
-  const sectionsForSY = useMemo(() => {
-    if (!form.school_year_id) return [];
-    return sections.filter(s => String(s.school_year_id) === String(form.school_year_id));
-  }, [sections, form.school_year_id]);
+  // Find next grade for a given current grade_order
+  const findNextGrade = (currentOrder) => {
+    const higher = gradeLevels
+      .filter(g => Number(g.grade_order) > Number(currentOrder))
+      .sort((a, b) => Number(a.grade_order) - Number(b.grade_order));
+    return higher[0] || null;
+  };
 
-  // Grade Level IDs available in that School Year (unique from sectionsForSY)
-  const availableGradeIdsInSY = useMemo(() => {
-    const set = new Set();
-    for (const s of sectionsForSY) {
-      if (s.grade_level_id) set.add(String(s.grade_level_id));
+  // Is there an active enrollment for this student?
+  const activeForStudent = useMemo(() => {
+    if (!form.student_id) return null;
+    return activeEnrollments.find(e => String(e.student_id) === String(form.student_id)) || null;
+  }, [activeEnrollments, form.student_id]);
+
+  // Final grade options:
+  // - If student has active enrollment: ONLY the single next grade (by grade_order).
+  // - Otherwise: ALL grade levels from /grade-levels.
+  const gradeOptions = useMemo(() => {
+    if (activeForStudent) {
+      const current = gradeLevels.find(
+        g => String(g.grade_level_id) === String(activeForStudent.grade_level_id)
+      );
+      if (!current) return [];
+      const next = findNextGrade(current.grade_order);
+      return next ? [next] : [];
     }
-    return set;
-  }, [sectionsForSY]);
+    return [...gradeLevels].sort((a, b) => Number(a.grade_order) - Number(b.grade_order));
+  }, [gradeLevels, activeForStudent]);
 
-  // Grade Levels to show = intersection of master grade list and grades present in SY
-  const filteredGradeLevels = useMemo(() => {
-    if (!form.school_year_id) return [];
-    return gradeLevels.filter(g => availableGradeIdsInSY.has(String(g.grade_level_id)));
-  }, [gradeLevels, availableGradeIdsInSY, form.school_year_id]);
-
-  // Sections to show = sections in SY and (if grade selected) matching that grade
-  const filteredSections = useMemo(() => {
-    if (!form.school_year_id) return [];
-    const base = sectionsForSY;
-    if (!form.grade_level_id) return base;
-    return base.filter(s => String(s.grade_level_id) === String(form.grade_level_id));
-  }, [sectionsForSY, form.grade_level_id, form.school_year_id]);
-
-  // Curricula filtered by School Year
-  const filteredCurricula = useMemo(() => {
-    if (!form.school_year_id) return [];
-    return curriculaAll.filter(c => String(c.school_year_id) === String(form.school_year_id));
-  }, [curriculaAll, form.school_year_id]);
-
-  // Clear invalid fields when School Year changes
+  // Auto-pick/clear grade when gradeOptions change
   useEffect(() => {
-    // If SY cleared, also clear grade, section, curriculum
-    if (!form.school_year_id) {
-      setForm(f => ({ ...f, grade_level_id: "", section_id: "", curriculum_id: "" }));
+    if (!gradeOptions.length) {
+      setForm(f => ({ ...f, grade_level_id: "", section_id: "" }));
+      setSectionsForGrade([]);
+      return;
+    }
+    const hasCurrent = gradeOptions.some(g => String(g.grade_level_id) === String(form.grade_level_id));
+    if (!hasCurrent) {
+      if (gradeOptions.length === 1) {
+        setForm(f => ({ ...f, grade_level_id: String(gradeOptions[0].grade_level_id), section_id: "" }));
+      } else {
+        setForm(f => ({ ...f, grade_level_id: "", section_id: "" }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gradeOptions]);
+
+  // 🔑 Fetch sections ONLY when grade is selected (and active SY is known)
+  useEffect(() => {
+    const syId = autoInfo.school_year_id;
+    const gradeId = form.grade_level_id;
+    if (!syId || !gradeId) {
+      setSectionsForGrade([]);
+      setSectionsLoading(false);
       return;
     }
 
-    // Grade level invalid under new SY?
-    if (form.grade_level_id && !availableGradeIdsInSY.has(String(form.grade_level_id))) {
-      setForm(f => ({ ...f, grade_level_id: "", section_id: "" }));
-    } else {
-      // Section invalid under new SY/grade?
-      if (form.section_id) {
-        const stillValid = filteredSections.some(s => String(s.section_id) === String(form.section_id));
-        if (!stillValid) setForm(f => ({ ...f, section_id: "" }));
+    const key = `${syId}:${gradeId}`;
+    const cached = sectionsCacheRef.current.get(key);
+    if (cached) {
+      setSectionsForGrade(cached);
+      setSectionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setSectionsLoading(true);
+        const all = await fetchSectionsOnce(); // fetch after grade chosen
+        // filter by active school year + selected grade
+        const filtered = all
+          .filter(s =>
+            String(s.school_year_id) === String(syId) &&
+            String(s.grade_level_id) === String(gradeId)
+          )
+          .map((s) => ({
+            section_id: String(s.section_id),
+            section_name: s.section_name ?? `Section ${s.section_id}`,
+          }));
+        if (cancelled) return;
+        sectionsCacheRef.current.set(key, filtered);
+        setSectionsForGrade(filtered);
+      } catch (err) {
+        if (err?.message !== "Unauthorized") {
+          showModal("danger", "Load error", err?.message || "Failed to fetch sections.");
+        }
+        setSectionsForGrade([]);
+      } finally {
+        if (!cancelled) setSectionsLoading(false);
       }
-    }
+    })();
 
-    // Curriculum invalid under new SY?
-    if (form.curriculum_id) {
-      const stillValidCurr = filteredCurricula.some(c => String(c.curriculum_id) === String(form.curriculum_id));
-      if (!stillValidCurr) setForm(f => ({ ...f, curriculum_id: "" }));
-    }
-  }, [form.school_year_id, form.grade_level_id, form.section_id, form.curriculum_id, availableGradeIdsInSY, filteredSections, filteredCurricula]);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoInfo.school_year_id, form.grade_level_id]);
 
-  // If grade level changes and current section doesn't belong, clear it
+  // Clear section if no longer valid when new list arrives
   useEffect(() => {
     if (!form.section_id) return;
-    const stillValid = filteredSections.some((s) => String(s.section_id) === String(form.section_id));
-    if (!stillValid) {
-      setForm((f) => ({ ...f, section_id: "" }));
-    }
-  }, [form.grade_level_id, filteredSections]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---- Handlers ----
-  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+    const stillValid = sectionsForGrade.some(s => String(s.section_id) === String(form.section_id));
+    if (!stillValid) setForm(f => ({ ...f, section_id: "" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionsForGrade]);
 
   const validate = () => {
     const required = [
       ["student_id", "Student is required."],
-      ["school_year_id", "School Year is required."],
       ["grade_level_id", "Grade Level is required."],
       ["section_id", "Section is required."],
-      ["curriculum_id", "Curriculum is required."],
-      ["enrollment_date", "Enrollment date is required."],
-      ["status", "Status is required."],
+      // Auto deps:
+      ["__auto_sy", !autoInfo.school_year_id ? "Active School Year not found." : ""],
+      ["__grade_opts", gradeOptions.length === 0 ? "No available grade option for this student." : ""],
+      ["__sections", sectionsForGrade.length === 0 ? "No sections for the selected grade under the active school year." : ""],
     ];
     for (const [key, msg] of required) {
-      if (!String(form[key] || "").trim()) {
-        showModal("warning", "Missing field", msg);
-        return false;
-      }
+      if (key.startsWith("__")) { if (msg) { showModal("warning", "Missing data", msg); return false; } }
+      else if (!String(form[key] || "").trim()) { showModal("warning", "Missing field", msg); return false; }
     }
     return true;
   };
@@ -456,12 +477,12 @@ const EnrollmentUpsert = () => {
     try {
       const payload = {
         student_id: Number(form.student_id),
-        school_year_id: Number(form.school_year_id),
+        school_year_id: Number(autoInfo.school_year_id),   // ✅ ACTIVE SY
         grade_level_id: Number(form.grade_level_id),
         section_id: Number(form.section_id),
-        curriculum_id: Number(form.curriculum_id),
-        enrollment_date: toApiDate(form.enrollment_date), // YYYY-MM-DD
-        status: form.status,
+        curriculum_id: autoInfo.curriculum_id ? Number(autoInfo.curriculum_id) : undefined, // from active curriculum if present
+        enrollment_date: todayYMD(),                       // AUTO: today
+        status: form.status || DEFAULT_STATUS,             // AUTO: Enrolled
       };
 
       const path = isEdit ? `/enrollments/update/${id}` : `/enrollments/create`;
@@ -508,10 +529,26 @@ const EnrollmentUpsert = () => {
             </div>
           </div>
 
-          {/* Form */}
+          {/* Auto context summary (read-only) */}
+          <div className="alert alert-secondary d-flex flex-wrap gap-2 align-items-center" role="alert">
+            <span className="badge text-bg-dark">Auto</span>
+            <span>School Year: <strong>{autoInfo.school_year_period || autoInfo.school_year_id || "…"}</strong></span>
+            {autoInfo.curriculum_id ? (
+              <>
+                <span className="mx-1">•</span>
+                <span>Curriculum: <strong>{autoInfo.curriculum_name || autoInfo.curriculum_id}</strong></span>
+              </>
+            ) : null}
+            <span className="mx-1">•</span>
+            <span>Enrollment Date: <strong>{todayYMD()}</strong></span>
+            <span className="mx-1">•</span>
+            <span>Status: <strong>{form.status || DEFAULT_STATUS}</strong></span>
+          </div>
+
+          {/* Form — exactly 3 inputs: 1 top (Student), 2 bottom (Grade, Section) */}
           <form onSubmit={handleSubmit} className="row g-3 g-lg-4" noValidate>
-            {/* Row 1: Student + School Year */}
-            <div className="col-12 col-md-6">
+            {/* Top: Student */}
+            <div className="col-12">
               <label className="form-label fw-semibold">Student</label>
               <StudentSearchSelect
                 token={token}
@@ -525,45 +562,33 @@ const EnrollmentUpsert = () => {
               <div className="form-text">Type at least 2 characters (LRN or name) to search.</div>
             </div>
 
+            {/* Bottom: Grade Level + Section */}
             <div className="col-12 col-md-6">
-              <label className="form-label fw-semibold">School Year</label>
-              <select
-                className="form-select"
-                value={form.school_year_id}
-                onChange={(e) => setField("school_year_id", e.target.value)}
-                required
-              >
-                <option value="" disabled>— Select school year —</option>
-                {schoolYears.map((sy) => (
-                  <option key={sy.school_year_id} value={sy.school_year_id}>{sy.label}</option>
-                ))}
-              </select>
-              <div className="form-text">All school years are listed (active marked). Grade, Section, and Curriculum depend on this.</div>
-            </div>
-
-            {/* Row 2: Grade Level (filtered by SY) + Section (filtered by SY & Grade) */}
-            <div className="col-12 col-md-6">
-              <label className="form-label fw-semibold">Grade Level</label>
+              <label className="form-label fw-semibold">
+                Grade Level {activeForStudent ? <span className="badge text-bg-dark ms-2">Next grade only</span> : null}
+              </label>
               <select
                 className="form-select"
                 value={form.grade_level_id}
                 onChange={(e) => setField("grade_level_id", e.target.value)}
                 required
-                disabled={!form.school_year_id || !filteredGradeLevels.length}
+                disabled={!autoInfo.school_year_id || gradeOptions.length === 0}
               >
                 <option value="" disabled>
-                  {form.school_year_id ? (filteredGradeLevels.length ? "— Select grade level —" : "— No grade levels in this school year —") : "— Select a school year first —"}
+                  {!autoInfo.school_year_id
+                    ? "— Waiting for active school year —"
+                    : (gradeOptions.length ? "— Select grade level —" : "— No grade option available —")}
                 </option>
-                {filteredGradeLevels.map((g) => (
+                {gradeOptions.map((g) => (
                   <option key={g.grade_level_id} value={g.grade_level_id}>
                     {g.grade_level_name}
                   </option>
                 ))}
               </select>
               <div className="form-text">
-                {form.school_year_id
-                  ? "Showing grade levels that have sections in the selected school year."
-                  : "Pick a school year to load available grade levels."}
+                {activeForStudent
+                  ? "Student has an active enrollment — only the immediate next grade is allowed."
+                  : "No active enrollment — showing all available grade levels."}
               </div>
             </div>
 
@@ -574,77 +599,31 @@ const EnrollmentUpsert = () => {
                 value={form.section_id}
                 onChange={(e) => setField("section_id", e.target.value)}
                 required
-                disabled={!form.school_year_id || !filteredSections.length}
+                disabled={
+                  !autoInfo.school_year_id ||
+                  !form.grade_level_id ||
+                  sectionsLoading ||
+                  sectionsForGrade.length === 0
+                }
               >
                 <option value="" disabled>
-                  {form.school_year_id
-                    ? (filteredSections.length
-                        ? (form.grade_level_id ? "— Select section —" : "— Select section (optionally filter by grade) —")
-                        : "— No sections for the selected school year/grade —")
-                    : "— Select a school year first —"}
+                  {!autoInfo.school_year_id
+                    ? "— Waiting for active school year —"
+                    : (!form.grade_level_id
+                        ? "— Select grade level first —"
+                        : (sectionsLoading
+                            ? "— Loading sections… —"
+                            : (sectionsForGrade.length ? "— Select section —" : "— No sections for this grade —")))}
                 </option>
-                {filteredSections.map((s) => (
+                {sectionsForGrade.map((s) => (
                   <option key={s.section_id} value={s.section_id}>
                     {s.section_name}
                   </option>
                 ))}
               </select>
               <div className="form-text">
-                {form.school_year_id
-                  ? (form.grade_level_id
-                      ? "Showing sections for the selected school year and grade level."
-                      : "Showing all sections for the selected school year.")
-                  : "Pick a school year to load its sections."}
+                Sections are fetched only after you pick a grade (filtered by the active school year).
               </div>
-            </div>
-
-            {/* Row 3: Curriculum (filtered by SY) + Date */}
-            <div className="col-12 col-md-6">
-              <label className="form-label fw-semibold">Curriculum</label>
-              <select
-                className="form-select"
-                value={form.curriculum_id}
-                onChange={(e) => setField("curriculum_id", e.target.value)}
-                required
-                disabled={!form.school_year_id || !filteredCurricula.length}
-              >
-                <option value="" disabled>
-                  {form.school_year_id
-                    ? (filteredCurricula.length ? "— Select curriculum —" : "— No curricula for the selected school year —")
-                    : "— Select a school year first —"}
-                </option>
-                {filteredCurricula.map((c) => (
-                  <option key={c.curriculum_id} value={c.curriculum_id}>
-                    {c.curriculum_name}{c.is_active ? " (Active)" : ""}{c.school_year_period ? ` — ${c.school_year_period}` : ""}
-                  </option>
-                ))}
-              </select>
-              <div className="form-text">Curriculum list is filtered by the selected school year.</div>
-            </div>
-
-            <div className="col-12 col-md-6">
-              <label className="form-label fw-semibold">Enrollment Date</label>
-              <input
-                type="date"
-                className="form-control"
-                value={form.enrollment_date}
-                onChange={(e) => setField("enrollment_date", e.target.value)}
-                required
-              />
-              <div className="form-text">Defaults to today ({todayYMD()}). Sent as <code>YYYY-MM-DD</code>.</div>
-            </div>
-
-            {/* Row 4: Status */}
-            <div className="col-12 col-md-6">
-              <label className="form-label fw-semibold">Status</label>
-              <select
-                className="form-select"
-                value={form.status}
-                onChange={(e) => setField("status", e.target.value)}
-                required
-              >
-                {STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
-              </select>
             </div>
 
             {/* Actions */}

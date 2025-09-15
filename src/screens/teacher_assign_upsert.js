@@ -1,18 +1,29 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import "bootstrap/dist/css/bootstrap.min.css";
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import {
   FaCheckCircle,
-  FaExclamationTriangle,
-  FaTimesCircle,
-  FaInfoCircle,
-  FaSave,
-  FaUndo,
   FaChevronLeft,
   FaChevronRight,
+  FaExclamationTriangle,
+  FaInfoCircle,
+  FaSave,
   FaSyncAlt,
-} from "react-icons/fa";
-import StatusModal from "../components/status_modal";
+  FaTimesCircle,
+  FaUndo,
+} from 'react-icons/fa';
+import {
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Config
@@ -35,6 +46,37 @@ const icons = {
   danger: <FaTimesCircle size={18} />,
   warning: <FaExclamationTriangle size={18} />,
   info: <FaInfoCircle size={18} />,
+};
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Helpers
+const pickActiveSchoolYear = (list = []) => {
+  if (!Array.isArray(list) || list.length === 0) return null;
+
+  // 1) Prefer explicit active flags
+  const byFlag =
+    list.find((sy) => sy.is_active === true) ||
+    list.find((sy) => sy.active === true) ||
+    list.find((sy) => sy.isActive === true) ||
+    list.find((sy) => sy.status === 1 || sy.status === "1");
+
+  if (byFlag) return byFlag;
+
+  // 2) Otherwise, pick the most recent by end_year, then start_year, else by school_year string
+  const toNum = (v) => (v == null ? NaN : Number(String(v).match(/\d{4}/)?.[0]));
+  const sorted = [...list].sort((a, b) => {
+    const ae = toNum(a.end_year);
+    const be = toNum(b.end_year);
+    if (Number.isFinite(ae) && Number.isFinite(be) && be !== ae) return be - ae;
+
+    const as = toNum(a.start_year);
+    const bs = toNum(b.start_year);
+    if (Number.isFinite(as) && Number.isFinite(bs) && bs !== as) return bs - as;
+
+    // last fallback: sort by school_year string (e.g., "2024-2025")
+    return String(b.school_year || "").localeCompare(String(a.school_year || ""));
+  });
+  return sorted[0] || null;
 };
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -104,6 +146,13 @@ const TeacherAssignmentForm = () => {
         .join("") || "T"
     );
   }, [selectedTeacherName]);
+
+  // Active SY (derived from options)
+  const activeSY = useMemo(() => pickActiveSchoolYear(schoolYears), [schoolYears]);
+  const getDefaultSyId = useMemo(
+    () => () => (activeSY?.school_year_id ? String(activeSY.school_year_id) : ""),
+    [activeSY]
+  );
 
   // ── persistence helpers ───────────────────────────────────────────────────────
   const persistSelectedTeacher = (tid) => {
@@ -239,6 +288,7 @@ const TeacherAssignmentForm = () => {
         loadSections(),
         loadSchoolYears(),
       ]);
+
       if (id) await loadAssignment();
 
       // After options & (maybe) assignment are ready, restore teacher selection if saved
@@ -252,6 +302,24 @@ const TeacherAssignmentForm = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, id]);
 
+  // 💡 Auto-select default School Year once options are loaded,
+  //     but only if we don't already have one (create mode or missing on edit)
+  useEffect(() => {
+    if (!schoolYears.length) return;
+
+    // If editing and payload has school_year_id, respect it
+    if (id && current && current.school_year_id) return;
+
+    // If user already picked something, don't override
+    if (String(form.school_year_id || "")) return;
+
+    const active = pickActiveSchoolYear(schoolYears);
+    if (active?.school_year_id) {
+      setForm((f) => ({ ...f, school_year_id: String(active.school_year_id) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schoolYears, id, current]);
+
   // Fetch subjects by selected teacher (for the table below)
   const fetchTeacherSubjects = async (tid) => {
     if (!tid) {
@@ -259,10 +327,7 @@ const TeacherAssignmentForm = () => {
       lastTeacherFetched.current = null;
       return;
     }
-    if (
-      String(lastTeacherFetched.current) === String(tid) &&
-      teacherSubs.length
-    ) {
+    if (String(lastTeacherFetched.current) === String(tid) && teacherSubs.length) {
       return; // already have data
     }
     try {
@@ -371,14 +436,18 @@ const TeacherAssignmentForm = () => {
 
   const onReset = () => {
     setSubmitted(false);
-    if (id) loadAssignment();
-    else
-      setForm({
-        teacher_id: form.teacher_id,
+    if (id) {
+      // editing — reload assignment (keeps its school year)
+      loadAssignment();
+    } else {
+      // creating — keep teacher, restore default active SY
+      setForm((f) => ({
+        teacher_id: f.teacher_id,
         subject_id: "",
         section_id: "",
-        school_year_id: "",
-      });
+        school_year_id: getDefaultSyId(),
+      }));
+    }
   };
 
   // Derived pagination numbers for teacherSubs
@@ -596,7 +665,7 @@ const TeacherAssignmentForm = () => {
                 <div className="invalid-feedback">Section is required.</div>
               </div>
 
-              {/* School Year */}
+              {/* School Year (auto-populated to active) */}
               <div className="col-12 col-md-6">
                 <label className="form-label fw-semibold">
                   School Year <span className="text-danger">*</span>
@@ -611,10 +680,15 @@ const TeacherAssignmentForm = () => {
                   {schoolYears.map((sy) => (
                     <option key={sy.school_year_id} value={sy.school_year_id}>
                       {sy.start_year} - {sy.end_year}
+                      {activeSY?.school_year_id === sy.school_year_id ? " (Active)" : ""}
                     </option>
                   ))}
                 </select>
-                <div className="form-text">Choose the school year for this assignment.</div>
+                <div className="form-text">
+                  {activeSY
+                    ? `Auto-selected default: ${activeSY.start_year} - ${activeSY.end_year}`
+                    : "Choose the school year for this assignment."}
+                </div>
                 <div className="invalid-feedback">School year is required.</div>
               </div>
             </div>

@@ -51,14 +51,11 @@ import { getUserPermissions } from '../components/get_permission';
 import { checkToken } from '../components/token_checker';
 // Screens ---------------------------------------------------------------
 import AllLogs from '../screens/all_logs';
-import AssignSubjectPerYearLevelForm
-  from '../screens/assign_subject_per_level_form';
 import AssignSubjectPerYearLevel
   from '../screens/assign_subject_per_level_list';
 import Backup from '../screens/backup';
 import ClassSchedulesList from '../screens/class_schedule_list';
 import ClassScheduleUpsert from '../screens/class_schedule_upsert';
-import CurriculumAssign from '../screens/curriculum_assign';
 import Curriculum from '../screens/curriculum_list';
 import CurriculumUpsert from '../screens/curriculum_upsert';
 import GradeInputsList from '../screens/grade_inputs_list';
@@ -432,7 +429,6 @@ const EXTRA_ROUTES = {
   '/curriculum': [
     { path: '/curriculum/create', el: <CurriculumUpsert />, perm: PERMS.MANAGE_CURRICULUM },
     { path: '/curriculum/edit/:id', el: <CurriculumUpsert />, perm: PERMS.MANAGE_CURRICULUM },
-    { path: '/curriculum/assign-subject/:id', el: <CurriculumAssign />, perm: PERMS.MANAGE_CURRICULUM },
   ],
   '/teacher': [
     { path: '/teacher/create', el: <TeacherUpsert />, perm: PERMS.MANAGE_TEACHERS },
@@ -452,9 +448,6 @@ const EXTRA_ROUTES = {
   ],
   '/grade-inputs': [
     { path: '/grade-inputs/upsert', el: <GradeInputUpsert />, perm: PERMS.MANAGE_GRADE_INPUT },
-  ],
-  '/assign-subject-per-year-level': [
-    { path: '/assign-subject-per-year-level/assign', el: <AssignSubjectPerYearLevelForm />, perm: PERMS.MANAGE_SUBJECTS },
   ],
   '/grade_level': [
     { path: '/grade_level/create', el: <GradeLevelUpsert />, perm: PERMS.MANAGE_GRADE_LEVELS },

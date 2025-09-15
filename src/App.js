@@ -1,9 +1,15 @@
 import './App.css';
-import { useEffect, useState } from 'react';
+
+import {
+  useEffect,
+  useState,
+} from 'react';
+
 import { BrowserRouter as Router } from 'react-router-dom';
+
 import Login from './auth/login';
-import Dashboard from './main/sidebar';
 import { isTokenExpired } from './components/token_checker';
+import Dashboard from './main/sidebar';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -19,8 +25,13 @@ function App() {
   }, []);
 
   const handleLogin = () => {
+    const user_role = sessionStorage.getItem('user_role');
     setIsLoggedIn(true);
-    window.location.href = '/dashboard';
+    if(user_role === 'teacher'){
+      window.location.href = '/teacher-dashboard';
+    } else {
+      window.location.href = '/dashboard';
+    }
   };
 
   const handleLogout = () => {

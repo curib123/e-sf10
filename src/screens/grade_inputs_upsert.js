@@ -14,22 +14,29 @@ import {
   FaTimes,
   FaTimesCircle,
 } from 'react-icons/fa';
-import { useNavigate } from 'react-router-dom';
+import {
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 
 import StatusModal from '../components/status_modal';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Config & helpers
 // ─────────────────────────────────────────────────────────────────────────────
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
-const joinUrl = (path = "") => `${BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+const joinUrl = (path = "") =>
+  `${BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 
 const headers = (token) => ({
   "Content-Type": "application/json",
   ...(token ? { Authorization: `Bearer ${token}` } : {}),
 });
 
-const isAbort = (err) => err && (err.name === "AbortError" || String(err).includes("aborted"));
+const isAbort = (err) =>
+  err && (err.name === "AbortError" || String(err).includes("aborted"));
+
+const GRADE_PERIODS = ["1st", "2nd", "3rd", "4th"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reusable: SearchableSelect
@@ -58,7 +65,9 @@ function SearchableSelect({
     const q = (query || "").toLowerCase().trim();
     if (!q) return options;
     return options.filter((o) =>
-      [o.label, o.subtitle, o.code].filter(Boolean).some((v) => String(v).toLowerCase().includes(q))
+      [o.label, o.subtitle, o.code]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q))
     );
   }, [options, query]);
 
@@ -111,7 +120,10 @@ function SearchableSelect({
           className="form-control"
           placeholder={placeholder}
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
           disabled={disabled}
@@ -135,13 +147,16 @@ function SearchableSelect({
       </div>
 
       {open && !disabled && (
-        <div className="dropdown-menu show w-100 mt-1 p-0" style={{ maxHeight: 260, overflowY: "auto" }}>
+        <div
+          className="dropdown-menu show w-100 mt-1 p-0"
+          style={{ maxHeight: 260, overflowY: "auto" }}
+        >
           {loading ? (
             <div className="px-3 py-2 small text-muted">Loading…</div>
           ) : filtered.length === 0 ? (
             <div className="px-3 py-2 small text-muted">No matches</div>
           ) : (
-            filtered.slice(0, 50).map((o, idx) => (
+            filtered.slice(0, 60).map((o, idx) => (
               <button
                 key={o.value}
                 type="button"
@@ -151,329 +166,390 @@ function SearchableSelect({
                 onClick={() => selectAt(idx)}
               >
                 <span>{o.label}</span>
-                {o.subtitle ? <small className="text-muted">{o.subtitle}</small> : null}
+                {o.subtitle ? (
+                  <small className="text-muted">{o.subtitle}</small>
+                ) : null}
               </button>
             ))
           )}
         </div>
       )}
-      <div className="form-text">Start typing to filter, then hit Enter or click to select.</div>
+      <div className="form-text">
+        Start typing to filter, then hit Enter or click to select.
+      </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Component: GradeInputUpsert
+// Page: Grade entry by Teacher → Student → Period → Subjects list (per-row save)
 // ─────────────────────────────────────────────────────────────────────────────
-const GRADE_PERIODS = ["1st", "2nd", "3rd", "4th"];
-
 export default function GradeInputUpsert() {
   const navigate = useNavigate();
+  const location = useLocation();
+
   const token = useMemo(() => sessionStorage.getItem("token"), []);
+  const teacherId = useMemo(() => {
+    const q = new URLSearchParams(location.search).get("teacher_id");
+    return (
+      q ||
+      sessionStorage.getItem("teacher_id") ||
+      sessionStorage.getItem("user_id") ||
+      ""
+    );
+  }, [location.search]);
 
-  // Data state
-  const [enrollments, setEnrollments] = useState([]);
-  const [subjects, setSubjects] = useState([]);
+  // Students (for this teacher)
+  const [students, setStudents] = useState([]);
+  const [loadingStudents, setLoadingStudents] = useState(true);
 
-  // Selection state
-  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState("");
-  const [derivedGradeLevelId, setDerivedGradeLevelId] = useState(null);
-  const [selectedSubjectId, setSelectedSubjectId] = useState("");
+  // Selection
+  const [selectedStudentId, setSelectedStudentId] = useState("");
   const [gradingPeriod, setGradingPeriod] = useState("");
-  const [gradeValue, setGradeValue] = useState("");
 
-  // UI state
-  const [loadingEnrollments, setLoadingEnrollments] = useState(true);
+  // Derived from selected student
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [subjects, setSubjects] = useState([]); // subjects for that student's grade level
   const [loadingSubjects, setLoadingSubjects] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [statusModal, setStatusModal] = useState({ show: false, variant: "info", title: "", message: "" });
 
-  // NEW: current grades state
-  const [studentId, setStudentId] = useState(null);
-  const [grades, setGrades] = useState([]);
+  // Saved grades + inputs (for selected student & period)
   const [loadingGrades, setLoadingGrades] = useState(false);
+  const [existingGrades, setExistingGrades] = useState([]); // raw list from API
+  const [inputsBySubject, setInputsBySubject] = useState({}); // { [subject_id]: "88" }
+  const [savingBySubject, setSavingBySubject] = useState({}); // { [subject_id]: bool }
+  const [savedTickBySubject, setSavedTickBySubject] = useState({}); // { [subject_id]: timestamp }
+
+  // UI status
+  const [statusModal, setStatusModal] = useState({
+    show: false,
+    variant: "info",
+    title: "",
+    message: "",
+  });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Fetch: Enrollments  (GET /enrollments)
+  // Fetch Teacher's Students
+  // GET /grades/students/:teacher_id
   // ───────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     const ac = new AbortController();
 
-    (async () => {
+    async function run() {
+      if (!teacherId) {
+        setLoadingStudents(false);
+        return;
+      }
       try {
-        setLoadingEnrollments(true);
-        const res = await fetch(joinUrl("/enrollments"), {
+        setLoadingStudents(true);
+        const res = await fetch(joinUrl(`/grades/students/${teacherId}`), {
           method: "GET",
           headers: headers(token),
           signal: ac.signal,
         });
-        if (!res.ok) throw new Error(`Enrollments request failed (${res.status})`);
+        if (!res.ok) throw new Error(`Students load failed (${res.status})`);
         const json = await res.json();
         if (!mounted) return;
+
         const list = Array.isArray(json?.data) ? json.data : [];
-        setEnrollments(list);
+        setStudents(list);
       } catch (err) {
         if (isAbort(err)) return;
         console.error(err);
-        if (mounted) setStatusModal({ show: true, variant: "danger", title: "Load failed", message: String(err?.message || err) });
+        if (mounted) {
+          setStatusModal({
+            show: true,
+            variant: "danger",
+            title: "Load failed",
+            message: String(err?.message || err),
+          });
+        }
       } finally {
-        if (mounted) setLoadingEnrollments(false);
+        if (mounted) setLoadingStudents(false);
       }
-    })();
+    }
 
-    return () => { mounted = false; ac.abort(); };
-  }, [token]);
+    run();
+    return () => {
+      mounted = false;
+      ac.abort();
+    };
+  }, [teacherId, token]);
+
+  // Selected student record
+  useEffect(() => {
+    const sid = Number(selectedStudentId) || null;
+    setSelectedStudent(
+      sid ? students.find((s) => Number(s.student_id) === sid) || null : null
+    );
+  }, [selectedStudentId, students]);
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Enrollment → derive grade level & subjects (existing)
+  // When a student changes → fetch subjects for their grade level
+  // Uses ONLY: GET /subjects/view-all-sub-grade-levels
   // ───────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const eid = Number(selectedEnrollmentId) || null;
-
-    setDerivedGradeLevelId(null);
-    setSubjects([]);
-    setSelectedSubjectId("");
-
-    if (!eid) return;
-
     let mounted = true;
     const ac = new AbortController();
 
-    const fetchAllSubjects = async () => {
+    async function fetchSubjectsForGradeLevel(gradeLevelId) {
       try {
-        const resAll = await fetch(joinUrl("/subjects/view-all-subjects"), {
+        setLoadingSubjects(true);
+        const res = await fetch(joinUrl(`/subjects/view-all-sub-grade-levels`), {
           method: "GET",
           headers: headers(token),
           signal: ac.signal,
         });
-        if (!resAll.ok) throw new Error(`View-all subjects failed (${resAll.status})`);
-        const jsonAll = await resAll.json();
-        const rowsAll = Array.isArray(jsonAll?.data) ? jsonAll.data : [];
-        const mappedAll = rowsAll.map((s) => ({
-          value: s.subject_id,
-          label: s.subject_name || s.subject_code || `Subject #${s.subject_id}`
+        if (!res.ok) throw new Error(`Subjects load failed (${res.status})`);
+        const json = await res.json();
+        if (!mounted) return;
+
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        const match = rows.find(
+          (r) => Number(r.grade_level_id) === Number(gradeLevelId)
+        );
+        const subs = Array.isArray(match?.subjects) ? match.subjects : [];
+        // Normalize shape: ensure subject_id, subject_code, subject_name are present
+        const mapped = subs.map((s) => ({
+          subject_id: s.subject_id,
+          subject_code: s.subject_code || "",
+          subject_name: s.subject_name || `Subject #${s.subject_id}`,
         }));
-        if (mounted) setSubjects(mappedAll);
+        setSubjects(mapped);
       } catch (err) {
         if (isAbort(err)) return;
         console.error(err);
-        if (mounted) setStatusModal({ show: true, variant: "danger", title: "Subjects load failed", message: String(err?.message || err) });
-      }
-    };
-
-    const fetchSubjectsByGradeLevel = async (gradeLevelId) => {
-      if (!gradeLevelId) return fetchAllSubjects();
-      try {
-        const res = await fetch(joinUrl(`/subject-grade-levels/by-grade-level/${gradeLevelId}`), {
-          method: "GET",
-          headers: headers(token),
-          signal: ac.signal,
-        });
-        if (!res.ok) throw new Error(`Subjects by grade-level failed (${res.status})`);
-        const json = await res.json();
-        const rows = Array.isArray(json?.data) ? json.data : [];
-        const mapped = rows.map((r) => ({
-          value: r.subject_id,
-          label: r.subject?.subject_name || r.subject?.subject_code || `Subject #${r.subject_id}`,
-          subtitle: r.subject?.subject_code || "",
-          code: r.subject?.subject_code || "",
-          units: r.units,
-          is_required: r.is_required,
-        }));
-        if (mounted) setSubjects(mapped);
-      } catch (err) {
-        if (isAbort(err)) return;
-        console.warn("Grade-level subjects failed; falling back to ALL subjects", err);
-        await fetchAllSubjects();
-      }
-    };
-
-    const run = async () => {
-      setLoadingSubjects(true);
-      try {
-        const enrollment = enrollments.find((e) => Number(e.enrollment_id) === eid);
-        if (!enrollment) return;
-
-        if (enrollment?.grade_level_id) {
-          if (mounted) setDerivedGradeLevelId(enrollment.grade_level_id);
-          await fetchSubjectsByGradeLevel(enrollment.grade_level_id);
-          return;
-        }
-
-        const sectionId = enrollment?.section_id;
-        if (!sectionId) { await fetchAllSubjects(); return; }
-
-        try {
-          const res = await fetch(joinUrl(`/sections/${sectionId}`), {
-            method: "GET",
-            headers: headers(token),
-            signal: ac.signal,
+        if (mounted) {
+          setSubjects([]);
+          setStatusModal({
+            show: true,
+            variant: "danger",
+            title: "Subjects load failed",
+            message: String(err?.message || err),
           });
-          if (!res.ok) throw new Error(`Section lookup failed (${res.status})`);
-          const json = await res.json();
-          const glId = json?.data?.grade_level_id ?? json?.data?.grade_level?.grade_level_id ?? null;
-          if (mounted) setDerivedGradeLevelId(glId);
-          await fetchSubjectsByGradeLevel(glId);
-        } catch (err) {
-          if (isAbort(err)) return;
-          console.warn("Section lookup failed; will show all subjects", err);
-          if (mounted) setDerivedGradeLevelId(null);
-          await fetchAllSubjects();
         }
       } finally {
         if (mounted) setLoadingSubjects(false);
       }
-    };
+    }
 
-    run();
-    return () => { mounted = false; ac.abort(); };
-  }, [selectedEnrollmentId, enrollments, token]);
+    // Reset whenever student changes
+    setSubjects([]);
+    setInputsBySubject({});
+    setSavedTickBySubject({});
+    setExistingGrades([]);
+
+    const glId =
+      selectedStudent?.grade_level?.grade_level_id ||
+      selectedStudent?.grade_level_id ||
+      null;
+
+    if (glId) fetchSubjectsForGradeLevel(glId);
+  }, [selectedStudent, token]);
 
   // ───────────────────────────────────────────────────────────────────────────
-  // NEW: Enrollment → fetch student_id → fetch current grades
-  // GET /enrollments/:enrollment_id  -> student_id
-  // GET /grades/student/:student_id  -> grades[]
+  // Load existing grades for this student (all periods), then prefill inputs
+  // GET /grades/student/:student_id
   // ───────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     const ac = new AbortController();
 
-    const eid = Number(selectedEnrollmentId) || null;
-    setStudentId(null);
-    setGrades([]);
-
-    if (!eid) return;
-
-    const fetchEnrollmentAndGrades = async () => {
+    async function fetchExistingGrades(studentId) {
       try {
         setLoadingGrades(true);
-
-        // 1) Enrollment detail to get student_id
-        const resEnroll = await fetch(joinUrl(`/enrollments/${eid}`), {
+        const res = await fetch(joinUrl(`/grades/student/${studentId}`), {
           method: "GET",
           headers: headers(token),
           signal: ac.signal,
         });
-        if (!resEnroll.ok) throw new Error(`Enrollment detail failed (${resEnroll.status})`);
-        const jsonEnroll = await resEnroll.json();
-        const sid = jsonEnroll?.data?.student_id || null;
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.message || `Grades load failed (${res.status})`);
         if (!mounted) return;
-        setStudentId(sid);
 
-        if (!sid) { setGrades([]); return; }
-
-        // 2) Grades by student_id
-        const resGrades = await fetch(joinUrl(`/grades/student/${sid}`), {
-          method: "GET",
-          headers: headers(token),
-          signal: ac.signal,
-        });
-        if (!resGrades.ok) throw new Error(`Grades request failed (${resGrades.status})`);
-        const jsonGrades = await resGrades.json();
-        if (!mounted) return;
-        setGrades(Array.isArray(jsonGrades?.data) ? jsonGrades.data : []);
+        const list = Array.isArray(json?.data) ? json.data : [];
+        setExistingGrades(list);
       } catch (err) {
         if (isAbort(err)) return;
         console.error(err);
-        if (mounted) setStatusModal({ show: true, variant: "danger", title: "Grades load failed", message: String(err?.message || err) });
+        if (mounted) {
+          setExistingGrades([]);
+          setStatusModal({
+            show: true,
+            variant: "danger",
+            title: "Grades load failed",
+            message: String(err?.message || err),
+          });
+        }
       } finally {
         if (mounted) setLoadingGrades(false);
       }
-    };
+    }
 
-    fetchEnrollmentAndGrades();
-    return () => { mounted = false; ac.abort(); };
-  }, [selectedEnrollmentId, token]);
+    // Reset when student or period changes
+    setInputsBySubject({});
+    setSavedTickBySubject({});
 
-  // Helpers
-  const enrollmentOptions = useMemo(() =>
-    enrollments.map((e) => ({
-      value: e.enrollment_id,
-      label: `${e.student_name ?? "(Unnamed)"} • ${e.section_name ?? "?"} • ${e.school_year ?? "?"}`,
-      subtitle: `#${e.enrollment_id} • ${e.status ?? ""}`,
-    })), [enrollments]);
+    const sid = Number(selectedStudentId) || null;
+    if (sid) fetchExistingGrades(sid);
+  }, [selectedStudentId, token]);
 
-  const subjectOptions = useMemo(() => subjects, [subjects]);
+  // Prefill inputs whenever (subjects OR existingGrades OR gradingPeriod) changes
+  useEffect(() => {
+    if (!gradingPeriod) {
+      setInputsBySubject({});
+      return;
+    }
+    // Build an index of saved grades for the selected period
+    const index = {};
+    for (const g of existingGrades) {
+      const sid = g.subject_id || g.subject?.subject_id;
+      if (!sid) continue;
+      const gp = g.grading_period;
+      if (gp === gradingPeriod) index[String(sid)] = g.grade ?? "";
+    }
 
-  const selectedEnrollment = useMemo(() => {
-    const id = Number(selectedEnrollmentId) || null;
-    return enrollments.find((e) => Number(e.enrollment_id) === id) || null;
-  }, [selectedEnrollmentId, enrollments]);
+    const nextInputs = {};
+    for (const s of subjects) {
+      const key = String(s.subject_id);
+      nextInputs[key] = index[key] != null ? String(index[key]) : "";
+    }
+    setInputsBySubject(nextInputs);
+  }, [subjects, existingGrades, gradingPeriod]);
 
-  const fmtGrade = (g) => {
-    const n = Number(g);
-    return Number.isFinite(n) ? n.toFixed(2) : String(g ?? "—");
-    // backend may already send "88.00" as string; this normalizes display
+  // Options for the Student selector (limited to this teacher)
+  const studentOptions = useMemo(
+    () =>
+      students.map((s) => ({
+        value: s.student_id,
+        label: `${s.student_name ?? "(Unnamed)"} • ${s.section?.section_name ?? "?"} • ${s.school_year?.school_year ?? "?"}`,
+        subtitle: `LRN: ${s.lrn ?? "—"}`,
+      })),
+    [students]
+  );
+
+  const onChangeGradeInput = (subjectId, val) => {
+    setInputsBySubject((prev) => ({ ...prev, [String(subjectId)]: val }));
   };
 
   const refreshGrades = async () => {
-    if (!studentId) return;
-    setLoadingGrades(true);
+    const sid = Number(selectedStudentId) || null;
+    if (!sid) return;
     try {
-      const res = await fetch(joinUrl(`/grades/student/${studentId}`), {
+      setLoadingGrades(true);
+      const res = await fetch(joinUrl(`/grades/student/${sid}`), {
         method: "GET",
         headers: headers(token),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.message || `Grades request failed (${res.status})`);
-      setGrades(Array.isArray(json?.data) ? json.data : []);
+      if (!res.ok) throw new Error(json?.message || `Grades refresh failed (${res.status})`);
+      const list = Array.isArray(json?.data) ? json.data : [];
+      setExistingGrades(list);
     } catch (err) {
       console.error(err);
-      setStatusModal({ show: true, variant: "danger", title: "Grades refresh failed", message: String(err?.message || err) });
+      setStatusModal({
+        show: true,
+        variant: "danger",
+        title: "Refresh failed",
+        message: String(err?.message || err),
+      });
     } finally {
       setLoadingGrades(false);
     }
   };
 
-  // Submit
-  const handleSubmit = async (e) => {
-    e?.preventDefault?.();
-    const eid = Number(selectedEnrollmentId) || null;
-    const sid = Number(selectedSubjectId) || null;
-    const period = gradingPeriod || "";
-    const gradeNum = Number(gradeValue);
+  const saveOne = async (subjectId) => {
+    const sid = Number(selectedStudentId) || null;
+    const gp = gradingPeriod || "";
+    const raw = inputsBySubject[String(subjectId)];
+    const n = Number(raw);
 
-    if (!eid) return setStatusModal({ show: true, variant: "warning", title: "Missing selection", message: "Please choose an enrollment." });
-    if (!sid) return setStatusModal({ show: true, variant: "warning", title: "Missing selection", message: "Please choose a subject." });
-    if (!period) return setStatusModal({ show: true, variant: "warning", title: "Missing selection", message: "Please choose a grading period (1st–4th)." });
-    if (!Number.isFinite(gradeNum) || gradeNum < 0 || gradeNum > 100)
-      return setStatusModal({ show: true, variant: "warning", title: "Invalid grade", message: "Enter a number between 0 and 100." });
+    if (!sid)
+      return setStatusModal({
+        show: true,
+        variant: "warning",
+        title: "Missing student",
+        message: "Please select a student.",
+      });
+
+    if (!gp)
+      return setStatusModal({
+        show: true,
+        variant: "warning",
+        title: "Missing grading period",
+        message: "Please choose 1st / 2nd / 3rd / 4th.",
+      });
+
+    if (!Number.isFinite(n) || n < 0 || n > 100)
+      return setStatusModal({
+        show: true,
+        variant: "warning",
+        title: "Invalid grade",
+        message: "Enter a number between 0 and 100.",
+      });
 
     try {
-      setSubmitting(true);
-      const body = { enrollment_id: eid, subject_id: sid, grading_period: period, grade: gradeNum };
-      const res = await fetch(joinUrl("/grades/create-or-update"), {
+      setSavingBySubject((m) => ({ ...m, [String(subjectId)]: true }));
+
+      // We post by student_id (since we're not using Enrollment dropdown anymore).
+      // If your backend expects enrollment_id, adjust here accordingly.
+      const body = {
+        student_id: sid,
+        subject_id: Number(subjectId),
+        grading_period: gp,
+        grade: n,
+      };
+
+      // Extra context (optional; backend may ignore):
+      if (selectedStudent?.section?.section_id)
+        body.section_id = selectedStudent.section.section_id;
+      const glId =
+        selectedStudent?.grade_level?.grade_level_id ||
+        selectedStudent?.grade_level_id;
+      if (glId) body.grade_level_id = glId;
+      if (selectedStudent?.school_year?.school_year_id)
+        body.school_year_id = selectedStudent.school_year.school_year_id;
+
+      const res = await fetch(joinUrl(`/grades/create-or-update`), {
         method: "POST",
         headers: headers(token),
         body: JSON.stringify(body),
       });
+
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.message || `Request failed (${res.status})`);
+      if (!res.ok)
+        throw new Error(json?.message || `Save failed (${res.status})`);
+
+      setSavedTickBySubject((m) => ({
+        ...m,
+        [String(subjectId)]: Date.now(),
+      }));
+
+      // Refresh saved grades then re-prefill inputs for consistency
+      await refreshGrades();
 
       setStatusModal({
         show: true,
         variant: "success",
-        title: "Grade saved",
-        message: json?.message || "Grade has been created/updated successfully.",
+        title: "Saved",
+        message: json?.message || "Grade saved successfully.",
       });
-
-      // Auto-refresh current grades table
-      await refreshGrades();
     } catch (err) {
       if (isAbort(err)) return;
       console.error(err);
-      setStatusModal({ show: true, variant: "danger", title: "Save failed", message: String(err?.message || err) });
+      setStatusModal({
+        show: true,
+        variant: "danger",
+        title: "Save failed",
+        message: String(err?.message || err),
+      });
     } finally {
-      setSubmitting(false);
+      setSavingBySubject((m) => ({ ...m, [String(subjectId)]: false }));
     }
   };
 
-  const handleCancel = () => navigate(-1);
+  const handleClose = () => navigate(-1);
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // UI
-  // ───────────────────────────────────────────────────────────────────────────
   return (
     <div className="container py-3">
       <StatusModal
@@ -485,156 +561,179 @@ export default function GradeInputUpsert() {
       />
 
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h5 className="mb-0">Create / Update Grade</h5>
+        <h5 className="mb-0">Grade Entry</h5>
         <div className="btn-group">
-          <button className="btn btn-outline-secondary btn-sm" onClick={() => window.history.back()}>
-            <FaTimes className="me-1" /> Close
+          <button
+            className="btn btn-outline-secondary btn-sm"
+            onClick={handleClose}
+          >
+            <FaTimes className="me-1" />
+            Close
           </button>
           <button
             className="btn btn-outline-primary btn-sm"
-            onClick={() => window.location.reload()}
-            disabled={loadingEnrollments || submitting}
+            onClick={refreshGrades}
+            disabled={!selectedStudentId || loadingGrades}
+            title="Refresh grades"
           >
-            <FaSync className={loadingEnrollments ? "me-1 spin" : "me-1"} /> Refresh
+            <FaSync className={loadingGrades ? "me-1 spin" : "me-1"} />
+            Refresh
           </button>
         </div>
       </div>
 
-      {/* FORM CARD */}
-      <div className="card shadow-sm border-0">
+      {/* Top controls */}
+      <div className="card border-0 shadow-sm mb-3">
         <div className="card-body">
-          <form onSubmit={handleSubmit}>
-            {/* Row 1: THREE DROPDOWNS */}
-            <div className="row g-3">
-              <div className="col-12 col-lg-4">
-                <SearchableSelect
-                  label={<span>Enrollment <span className="text-muted">(student • section • SY)</span></span>}
-                  options={enrollmentOptions}
-                  value={selectedEnrollmentId}
-                  onChange={setSelectedEnrollmentId}
-                  placeholder="Search enrollments…"
-                  disabled={loadingEnrollments}
-                  loading={loadingEnrollments}
-                />
-              </div>
+          {!teacherId ? (
+            <div className="alert alert-warning mb-3">
+              No <code>teacher_id</code> found. Provide it via query
+              <code>?teacher_id=</code> or store it in{' '}
+              <code>sessionStorage.teacher_id</code>.
+            </div>
+          ) : null}
 
-              <div className="col-12 col-lg-4">
-                <SearchableSelect
-                  label={<span>Subject <span className="text-muted">(filtered by grade level)</span></span>}
-                  options={subjectOptions}
-                  value={selectedSubjectId}
-                  onChange={setSelectedSubjectId}
-                  placeholder="Search subjects…"
-                  disabled={!selectedEnrollmentId || loadingSubjects}
-                  loading={loadingSubjects}
-                />
-              </div>
-
-              <div className="col-12 col-lg-4">
-                <label className="form-label">Grading Period</label>
-                <select
-                  className="form-select"
-                  value={gradingPeriod}
-                  onChange={(e) => setGradingPeriod(e.target.value)}
-                  disabled={!selectedEnrollmentId}
-                >
-                  <option value="">— Select period —</option>
-                  {GRADE_PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-                <div className="form-text">Choose one of: 1st, 2nd, 3rd, or 4th grading.</div>
-              </div>
+          <div className="row g-3">
+            <div className="col-12 col-lg-6">
+              <SearchableSelect
+                label="Teacher’s Students"
+                options={studentOptions}
+                value={selectedStudentId}
+                onChange={(v) => {
+                  setSelectedStudentId(v);
+                  setGradingPeriod(""); // reset period when switching student
+                }}
+                placeholder="Search students…"
+                disabled={loadingStudents || !teacherId}
+                loading={loadingStudents}
+              />
             </div>
 
-  {/* Grade input — expands to occupy free width */}
-  <div className="col-12 col-lg">
-    <label className="form-label">Grade</label>
-    <input
-      type="number"
-      inputMode="numeric"
-      className="form-control"
-      placeholder="e.g., 89"
-      min={0}
-      max={100}
-      step={1}
-      value={gradeValue}
-      onChange={(e) => setGradeValue(e.target.value)}
-      disabled={!selectedEnrollmentId}
-    />
-    <div className="form-text">Enter a whole number from 0 to 100.</div>
-  </div>
-
-        
-            {/* Row 4: ACTIONS */}
-            <div className="row g-3 mt-3">
-              <div className="col-12">
-                <div className="d-flex justify-content-end gap-2">
-                  <button type="button" className="btn btn-outline-secondary" onClick={handleCancel} disabled={submitting}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={submitting || loadingEnrollments || !selectedEnrollmentId}>
-                    <FaSave className={submitting ? "me-2 spin" : "me-2"} />
-                    {submitting ? "Saving..." : "Save"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      {/* ──────────────────────────────────────────────────────────────────── */}
-      {/* CURRENT GRADES TABLE (BELOW THE FORM)                               */}
-      {/* ──────────────────────────────────────────────────────────────────── */}
-      <div className="card shadow-sm border-0 mt-3">
-        <div className="card-body">
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h6 className="mb-0">Current Grades {studentId ? <span className="text-muted">• Student #{studentId}</span> : null}</h6>
-            <div className="d-flex align-items-center gap-2">
-              <span className="badge bg-light text-dark">Count: {grades?.length ?? 0}</span>
-              <button
-                className="btn btn-outline-primary btn-sm"
-                onClick={refreshGrades}
-                disabled={!studentId || loadingGrades}
-                title="Refresh grades"
+            <div className="col-12 col-lg-6">
+              <label className="form-label">Grading Period</label>
+              <select
+                className="form-select"
+                value={gradingPeriod}
+                onChange={(e) => setGradingPeriod(e.target.value)}
+                disabled={!selectedStudentId}
               >
-                <FaSync className={loadingGrades ? "me-1 spin" : "me-1"} />
-                Refresh
-              </button>
+                <option value="">— Select period —</option>
+                {GRADE_PERIODS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+              <div className="form-text">
+                Choose one: 1st, 2nd, 3rd, or 4th grading.
+              </div>
             </div>
           </div>
 
-          {!selectedEnrollmentId ? (
-            <div className="text-muted small">Select an enrollment to view the student’s current grades.</div>
-          ) : loadingGrades ? (
-            <div className="text-muted small">Loading grades…</div>
-          ) : (grades?.length ?? 0) === 0 ? (
-            <div className="text-muted small">No grades found for this student.</div>
+          {selectedStudent ? (
+            <div className="mt-3 small text-muted">
+              <div>
+                <strong>Student:</strong> {selectedStudent.student_name} (LRN:{' '}
+                {selectedStudent.lrn || '—'})
+              </div>
+              <div>
+                <strong>Section:</strong>{' '}
+                {selectedStudent.section?.section_name || '—'} •{' '}
+                <strong>Grade Level:</strong>{' '}
+                {selectedStudent.grade_level?.grade_name || '—'} •{' '}
+                <strong>SY:</strong>{' '}
+                {selectedStudent.school_year?.school_year || '—'}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Subjects list with per-row grade input + save */}
+      <div className="card border-0 shadow-sm">
+        <div className="card-body">
+          <h6 className="mb-3">Subjects</h6>
+
+          {!selectedStudentId ? (
+            <div className="text-muted small">
+              Select a student to load their subjects.
+            </div>
+          ) : loadingSubjects ? (
+            <div className="text-muted small">Loading subjects…</div>
+          ) : subjects.length === 0 ? (
+            <div className="text-muted small">
+              No subjects found for this student’s grade level in the active
+              curriculum.
+            </div>
+          ) : !gradingPeriod ? (
+            <div className="text-muted small">
+              Pick a grading period to enter grades.
+            </div>
           ) : (
             <div className="table-responsive">
-              <table className="table table-sm table-striped align-middle">
+              <table className="table align-middle">
                 <thead className="table-light">
                   <tr>
-                    <th style={{width: '26%'}}>Subject</th>
-                    <th style={{width: '10%'}}>Period</th>
-                    <th style={{width: '12%'}}>Grade</th>
-                    <th style={{width: '18%'}}>Section</th>
-                    <th style={{width: '18%'}}>Grade Level</th>
-                    <th style={{width: '16%'}}>School Year</th>
+                    <th style={{ width: '40%' }}>Subject</th>
+                    <th style={{ width: '20%' }}>Code</th>
+                    <th style={{ width: '20%' }}>Grade</th>
+                    <th style={{ width: '20%' }} className="text-end">
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {grades.map((g) => (
-                    <tr key={g.grade_id}>
-                      <td>
-                        <div className="fw-semibold">{g?.subject?.subject_code ?? '—'}{g?.subject?.subject_code ? ' — ' : ''}{g?.subject?.subject_name ?? '—'}</div>
-                      </td>
-                      <td>{g?.grading_period ?? '—'}</td>
-                      <td>{fmtGrade(g?.grade)}</td>
-                      <td>{g?.section?.section_name ?? '—'}</td>
-                      <td>{g?.grade_level ?? '—'}</td>
-                      <td>{g?.school_year ?? '—'}</td>
-                    </tr>
-                  ))}
+                  {subjects.map((s) => {
+                    const key = String(s.subject_id);
+                    const saving = !!savingBySubject[key];
+                    const savedTick = savedTickBySubject[key];
+
+                    return (
+                      <tr key={s.subject_id}>
+                        <td className="fw-semibold">{s.subject_name}</td>
+                        <td>{s.subject_code || '—'}</td>
+                        <td style={{ maxWidth: 160 }}>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={100}
+                            step={1}
+                            className="form-control"
+                            placeholder="e.g., 88"
+                            value={inputsBySubject[key] ?? ""}
+                            onChange={(e) =>
+                              onChangeGradeInput(s.subject_id, e.target.value)
+                            }
+                            disabled={!gradingPeriod || saving}
+                          />
+                          <div className="form-text">
+                            0–100, whole number.
+                          </div>
+                        </td>
+                        <td className="text-end">
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => saveOne(s.subject_id)}
+                            disabled={
+                              saving ||
+                              !gradingPeriod ||
+                              !selectedStudentId ||
+                              inputsBySubject[key] == null ||
+                              String(inputsBySubject[key]).trim() === ""
+                            }
+                            title="Save grade"
+                          >
+                            <FaSave className={saving ? 'me-2 spin' : 'me-2'} />
+                            {saving ? 'Saving…' : 'Save'}
+                          </button>
+                          {savedTick ? (
+                            <div className="small text-success mt-1">Saved ✓</div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

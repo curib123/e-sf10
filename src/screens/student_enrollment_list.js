@@ -1,15 +1,41 @@
+import 'bootstrap/dist/css/bootstrap.min.css';
+
 // EnrollmentList.jsx
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import "bootstrap/dist/css/bootstrap.min.css";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import {
-  FaCheckCircle, FaTimesCircle, FaExclamationTriangle, FaInfoCircle,
-  FaPlus, FaSearch, FaChevronLeft, FaChevronRight,
-  FaSort, FaSortUp, FaSortDown, FaRedoAlt,
-  FaLayerGroup, FaCalendarAlt, FaBookOpen, FaUserGraduate, FaTag,
-  FaEdit, FaTrash,
-} from "react-icons/fa";
-import StatusModal from "../components/status_modal";
+  FaBookOpen,
+  FaCalendarAlt,
+  FaCheckCircle,
+  FaChevronLeft,
+  FaChevronRight,
+  FaEdit,
+  FaExclamationTriangle,
+  FaInfoCircle,
+  FaLayerGroup,
+  FaPlus,
+  FaRedoAlt,
+  FaSearch,
+  FaSort,
+  FaSortDown,
+  FaSortUp,
+  FaTag,
+  FaTimesCircle,
+  FaTrash,
+  FaUserGraduate,
+} from 'react-icons/fa';
+import {
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Config
@@ -246,7 +272,6 @@ const EnrollmentList = () => {
   const [page, setPage] = useState(Math.max(1, initial.page));
   const [pageSize, setPageSize] = useState(PAGE_SIZES.includes(initial.size) ? initial.size : DEFAULT_PAGE_SIZE);
   const [sort, setSort] = useState(initial.sort);
-  // Removed "gender" group — not in response data
   const [groupByKey, setGroupByKey] = useState(
     ["none", "sy", "section", "curriculum", "status", "date"].includes(initial.group) ? initial.group : "none"
   );
@@ -259,6 +284,9 @@ const EnrollmentList = () => {
   const [schoolYears, setSchoolYears] = useState([]);
   const [curricula, setCurricula] = useState([]);
   const [availableStatuses, setAvailableStatuses] = useState([]);
+
+  // Track active curriculum (for labeling & defaulting)
+  const [activeCurriculumId, setActiveCurriculumId] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [statusModal, setStatusModal] = useState({
@@ -281,31 +309,74 @@ const EnrollmentList = () => {
     setTimeout(() => navigate("/login"), 800);
   }, [navigate, showStatus]);
 
+  // Track whether we've already auto-applied the defaults (so we don't override user changes later)
+  const appliedDefaultSyRef = useRef(false);
+  const appliedDefaultCurrRef = useRef(false);
+
   // Load data
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setLoading(true);
-        const [enrRes, secRes, syRes, curAll] = await Promise.all([
+        const [enrRes, secRes, syRes, curAllRes, curActiveRes] = await Promise.all([
           api.get(`/enrollments`, token),
           api.get(`/sections`, token),
           api.get(`/school-year/all-school-years`, token),
-          api.fetchPagedAll(`/curriculum/view-all-curriculums`, token, "data"),
+          // all curricula (paged)
+          // NOTE: returns a flat array already (via fetchPagedAll)
+          Promise.resolve().then(() => api.fetchPagedAll(`/curriculum/view-all-curriculums`, token, "data")),
+          api.get(`/curriculum/active-curriculums`, token), // may fail; don't hard fail load
         ]);
+
         if (!enrRes.ok || !secRes.ok || !syRes.ok) throw new Error("Failed to load data");
         const [enr, secJs, syJs] = await Promise.all([enrRes.json(), secRes.json(), syRes.json()]);
         if (cancelled) return;
 
+        // Enrollments & sections
         setEnrollments(Array.isArray(enr?.data) ? enr.data : []);
         setSections(Array.isArray(secJs?.data) ? secJs.data : []);
-        setSchoolYears(
-          (Array.isArray(syJs?.schoolYears) ? syJs.schoolYears : []).map((sy) => ({
-            school_year_id: sy.school_year_id,
-            school_year: `${sy.start_year}-${sy.end_year}`,
-          }))
-        );
+
+        // School years (keep is_active so we can label or use it)
+        const syRaw = Array.isArray(syJs?.schoolYears) ? syJs.schoolYears : [];
+        const syMapped = syRaw.map((sy) => ({
+          school_year_id: sy.school_year_id,
+          school_year: `${sy.start_year}-${sy.end_year}`,
+          is_active: sy.is_active,
+        }));
+        setSchoolYears(syMapped);
+
+        // ✅ Default SY to ACTIVE (only once if no URL sy)
+        if (!appliedDefaultSyRef.current && (initial.sy === "all" || initial.sy == null)) {
+          const activeSY = syRaw.find((s) => s?.is_active === 1 || s?.is_active === true || String(s?.is_active) === "1");
+          if (activeSY?.school_year_id) {
+            setSchoolYearId(String(activeSY.school_year_id));
+          }
+          appliedDefaultSyRef.current = true;
+        }
+
+        // Curriculums
+        const curAll = Array.isArray(curAllRes) ? curAllRes : [];
         setCurricula(curAll);
+
+        // 🔹 Active curriculum (optional; do not break load if missing)
+        let activeCurId = null;
+        if (curActiveRes && curActiveRes.ok) {
+          try {
+            const curActiveJs = await curActiveRes.json();
+            const d = curActiveJs?.data;
+            if (d?.curriculum_id) activeCurId = String(d.curriculum_id);
+          } catch { /* ignore parse */ }
+        }
+        setActiveCurriculumId(activeCurId);
+
+        // ✅ Default Curriculum to ACTIVE (only once if no URL curriculum)
+        if (!appliedDefaultCurrRef.current && (initial.curriculum === "all" || initial.curriculum == null)) {
+          if (activeCurId) setCurriculumId(activeCurId);
+          appliedDefaultCurrRef.current = true;
+        }
+
+        // Status set (from actual data)
         setAvailableStatuses(
           Array.from(new Set((enr?.data || []).map((r) => r.status).filter(Boolean)))
         );
@@ -318,6 +389,7 @@ const EnrollmentList = () => {
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, handleUnauthorized, showStatus]);
 
   // URL sync
@@ -493,14 +565,13 @@ const EnrollmentList = () => {
             </select>
           </div>
 
-          {/* Filters (aligned center, including search dropdown) */}
+          {/* Filters */}
           <div className="d-flex flex-wrap align-items-center gap-2">
             <div className="flex-grow-1 d-flex flex-column">
               <label className="form-label small text-muted d-flex align-items-center gap-2 mb-1">
                 <FaUserGraduate /> Student
               </label>
               <StudentFilterSearch token={token} value={studentId} onPick={(id) => setStudentId(id || "all")} />
-              
             </div>
 
             <div className="flex-grow-1">
@@ -522,7 +593,9 @@ const EnrollmentList = () => {
               <select className="form-select" value={schoolYearId} onChange={(e) => setSchoolYearId(e.target.value)}>
                 <option value="all">All years</option>
                 {schoolYears.map((sy) => (
-                  <option key={sy.school_year_id} value={sy.school_year_id}>{sy.school_year}</option>
+                  <option key={sy.school_year_id} value={sy.school_year_id}>
+                    {sy.school_year}{(sy.is_active === 1 || sy.is_active === true || String(sy.is_active) === "1") ? " (Active)" : ""}
+                  </option>
                 ))}
               </select>
             </div>
@@ -534,7 +607,9 @@ const EnrollmentList = () => {
               <select className="form-select" value={curriculumId} onChange={(e) => setCurriculumId(e.target.value)}>
                 <option value="all">All curriculums</option>
                 {curricula.map((c) => (
-                  <option key={c.curriculum_id} value={c.curriculum_id}>{c.curriculum_name}</option>
+                  <option key={c.curriculum_id} value={c.curriculum_id}>
+                    {c.curriculum_name}{String(activeCurriculumId) === String(c.curriculum_id) ? " (Active)" : ""}
+                  </option>
                 ))}
               </select>
             </div>
@@ -553,7 +628,7 @@ const EnrollmentList = () => {
         </div>
       </div>
 
-      {/* Table (columns match API: date, student, section, school year, curriculum, status) */}
+      {/* Table */}
       <div className="card border-0 shadow-sm rounded-4">
         <div className="card-body p-0">
           {loading ? (
