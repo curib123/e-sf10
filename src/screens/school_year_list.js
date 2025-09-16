@@ -1,8 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import StatusModal from "../components/status_modal";
-import "bootstrap/dist/css/bootstrap.min.css";
-import { FaPlus, FaEdit, FaTrash } from "react-icons/fa";
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
+import {
+  FaEdit,
+  FaPlus,
+  FaTrash,
+} from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
@@ -18,6 +29,9 @@ const SchoolYearList = () => {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
+
+  // toggle state
+  const [togglingId, setTogglingId] = useState(null);
 
   const authHeaders = () => ({
     "Content-Type": "application/json",
@@ -81,6 +95,53 @@ const SchoolYearList = () => {
     }
   };
 
+  // ── NEW: Toggle "Active" in table (one active at a time) ─────────────────────
+  // Endpoint: PATCH /school-year/school-year/:school_year_id/set-active
+  const handleSetActive = async (id) => {
+    if (!checkToken() || togglingId) return;
+    // optimistic update
+    const prev = schoolYears.map((s) => ({ ...s }));
+    setTogglingId(id);
+    setSchoolYears((list) =>
+      list.map((s) => ({ ...s, is_active: s.school_year_id === id ? 1 : 0 }))
+    );
+
+    try {
+      const res = await fetch(`${BASE_URL}/school-year/school-year/${id}/set-active`, {
+        method: "PATCH",
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data?.success ?? true)) {
+        setStatusModal({
+          show: true,
+          title: "Updated",
+          message: data?.message || "School year set as active successfully.",
+          variant: "success",
+        });
+      } else {
+        // rollback
+        setSchoolYears(prev);
+        setStatusModal({
+          show: true,
+          title: "Failed",
+          message: data?.message || "Could not set active school year.",
+          variant: "danger",
+        });
+      }
+    } catch {
+      setSchoolYears(prev); // rollback
+      setStatusModal({
+        show: true,
+        title: "Error",
+        message: "Toggle failed due to a network or server error.",
+        variant: "danger",
+      });
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return schoolYears.filter((sy) => {
@@ -98,13 +159,11 @@ const SchoolYearList = () => {
           {/* Header */}
           <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
             <div className="row mb-0">
-  <div className="col-12">
-    <h4 className="fw-bold mb-0">School Years</h4>
-    <p className="text-muted mb-0">
-      Manage academic school years and their active status.
-    </p>
-  </div>
-</div>
+              <div className="col-12">
+                <h4 className="fw-bold mb-0">School Years</h4>
+                <p className="text-muted mb-0">Manage academic school years and their active status.</p>
+              </div>
+            </div>
 
             <div className="d-flex gap-2">
               <button
@@ -186,39 +245,66 @@ const SchoolYearList = () => {
                     <th>Start Year</th>
                     <th>End Year</th>
                     <th>Status</th>
+                    <th className="text-nowrap">Set Active</th>
                     <th className="text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((sy) => (
-                    <tr key={sy.school_year_id}>
-                      <td className="fw-medium">{sy.start_year}</td>
-                      <td>{sy.end_year}</td>
-                      <td>
-                        <span className={`badge ${sy.is_active ? "text-bg-success" : "text-bg-secondary"} px-3 py-2`}>
-                          {sy.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="text-end">
-                        <div className="d-flex justify-content-end gap-2">
-                          <button
-                            className="btn btn-sm btn-outline-primary d-flex align-items-center gap-2 px-3"
-                            onClick={() => navigate(`/school_year/edit/${sy.school_year_id}`)}
-                          >
-                            <FaEdit /> Edit
-                          </button>
-                          <button
-                            className="btn btn-sm btn-outline-danger d-flex align-items-center gap-2 px-3"
-                            onClick={() => setSelectedId(sy.school_year_id)}
-                          >
-                            <FaTrash /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filtered.map((sy) => {
+                    const isActive = !!sy.is_active;
+                    const isToggling = togglingId === sy.school_year_id;
+                    return (
+                      <tr key={sy.school_year_id}>
+                        <td className="fw-medium">{sy.start_year}</td>
+                        <td>{sy.end_year}</td>
+                        <td>
+                          <span className={`badge ${isActive ? "text-bg-success" : "text-bg-secondary"} px-3 py-2`}>
+                            {isActive ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="text-nowrap">
+                          <div className="form-check form-switch m-0">
+                            <input
+                              className="form-check-input"
+                              type="checkbox"
+                              role="switch"
+                              checked={isActive}
+                              disabled={Boolean(togglingId)} // prevent races; disable all while toggling
+                              onChange={() => handleSetActive(sy.school_year_id)}
+                              aria-label={`Set ${sy.start_year}-${sy.end_year} as active`}
+                            />
+                          </div>
+                          {isToggling && (
+                            <span className="ms-2 small text-muted">
+                              <span className="spinner-border spinner-border-sm" role="status" /> Updating…
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-end">
+                          <div className="d-flex justify-content-end gap-2">
+                            <button
+                              className="btn btn-sm btn-outline-primary d-flex align-items-center gap-2 px-3"
+                              onClick={() => navigate(`/school_year/edit/${sy.school_year_id}`)}
+                            >
+                              <FaEdit /> Edit
+                            </button>
+                            <button
+                              className="btn btn-sm btn-outline-danger d-flex align-items-center gap-2 px-3"
+                              onClick={() => setSelectedId(sy.school_year_id)}
+                              disabled={Boolean(togglingId)}
+                            >
+                              <FaTrash /> Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+              <div className="small text-muted mt-2">
+                Tip: Only one school year can be active at a time. Toggling a row sets it active and deactivates the others.
+              </div>
             </div>
           )}
         </div>
