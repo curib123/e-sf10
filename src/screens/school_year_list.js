@@ -160,7 +160,7 @@ const SchoolYearList = () => {
           <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
             <div className="row mb-0">
               <div className="col-12">
-                <h4 className="fw-bold mb-0">School Years</h4>
+                <h4 className="fw-bold mb-0">Academic Years</h4>
                 <p className="text-muted mb-0">Manage academic school years and their active status.</p>
               </div>
             </div>
@@ -234,7 +234,7 @@ const SchoolYearList = () => {
                 className="btn btn-primary d-inline-flex align-items-center gap-2 px-3"
                 onClick={() => navigate("/school_year/create")}
               >
-                <FaPlus /> Create school year
+                <FaPlus /> Create Effective Year
               </button>
             </div>
           ) : (

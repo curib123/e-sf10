@@ -642,7 +642,7 @@ const UpsertCurriculum = () => {
               />
             </div>
             <div className="col-12 col-md-4">
-              <label htmlFor="school_year_id" className="form-label fw-semibold small mb-1">School Year</label>
+              <label htmlFor="school_year_id" className="form-label fw-semibold small mb-1">Effective Year</label>
               <select
                 id="school_year_id"
                 name="school_year_id"

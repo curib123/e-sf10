@@ -674,7 +674,7 @@ const TeacherAssignmentForm = () => {
               {/* School Year (auto-populated to Active from /school-year/all-school-years) */}
               <div className="col-12 col-md-6">
                 <label className="form-label fw-semibold">
-                  School Year <span className="text-danger">*</span>
+                  Effective Year <span className="text-danger">*</span>
                 </label>
                 <select
                   className={`form-select ${invalid('school_year_id') ? 'is-invalid' : ''}`}
@@ -682,7 +682,7 @@ const TeacherAssignmentForm = () => {
                   onChange={setField('school_year_id')}
                   disabled={busy}
                 >
-                  <option value="">Select school year</option>
+                  <option value="">Select Effective Year</option>
                   {schoolYears.map((sy) => (
                     <option key={sy.school_year_id} value={sy.school_year_id}>
                       {`${sy.start_year ?? ''} - ${sy.end_year ?? ''}`}
