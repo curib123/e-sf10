@@ -27,21 +27,12 @@ function App() {
   const handleLogin = () => {
     const user_role = sessionStorage.getItem('user_role');
     setIsLoggedIn(true);
-<<<<<<< HEAD
     if(user_role === 'teacher'){
       window.location.href = '/teacher-dashboard';
     } else {
       window.location.href = '/dashboard';
     }
-=======
-
-    if(user_role == "teacher"){
-    window.location.href = '/teacher-dashboard';
-    }else{
-      window.location.href = '/dashboard';
-    }
     
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
   };
 
   const handleLogout = () => {
