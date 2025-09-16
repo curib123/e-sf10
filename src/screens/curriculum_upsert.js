@@ -27,6 +27,10 @@ import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
+/** Safe URL joiner (avoids double/missing slashes) */
+const joinUrl = (base, path) =>
+  `${(base || '').replace(/\/$/, '')}/${(path || '').replace(/^\//, '')}`;
+
 /** Busy overlay (centered) */
 const BusyOverlay = ({ show, label }) => {
   if (!show) return null;
@@ -91,7 +95,7 @@ const UpsertCurriculum = () => {
     if (!checkToken()) return;
     (async () => {
       try {
-        const res = await fetch(`${BASE_URL}/school-year/all-school-years`, { headers });
+        const res = await fetch(joinUrl(BASE_URL, 'school-year/all-school-years'), { headers });
         if (res.status === 401) return handleUnauthorized();
         const data = await res.json();
         if (data?.success) setSchoolYears(data.schoolYears || []);
@@ -107,7 +111,7 @@ const UpsertCurriculum = () => {
     if (!checkToken()) return;
     (async () => {
       try {
-        const res = await fetch(`${BASE_URL}/curriculum/view-all-curriculums`, { headers });
+        const res = await fetch(joinUrl(BASE_URL, 'curriculum/view-all-curriculums'), { headers });
         if (res.status === 401) return handleUnauthorized();
         const data = await res.json();
         if (data?.success && Array.isArray(data.data)) {
@@ -126,7 +130,7 @@ const UpsertCurriculum = () => {
     if (!isEdit || !checkToken()) return;
     (async () => {
       try {
-        const res = await fetch(`${BASE_URL}/curriculum/view-curriculum/${id}`, { headers });
+        const res = await fetch(joinUrl(BASE_URL, `curriculum/view-curriculum/${id}`), { headers });
         if (res.status === 401) return handleUnauthorized();
         const data = await res.json();
         if (!data?.success || !data?.data) throw new Error('Failed to fetch curriculum.');
@@ -164,7 +168,7 @@ const UpsertCurriculum = () => {
     if (!checkToken() || isEdit) return;
     (async () => {
       try {
-        const res = await fetch(`${BASE_URL}/grade-levels`, { headers });
+        const res = await fetch(joinUrl(BASE_URL, 'grade-levels'), { headers });
         if (res.status === 401) return handleUnauthorized();
         const data = await res.json();
         if (data?.success) setGradeLevels(data.data || []);
@@ -185,7 +189,7 @@ const UpsertCurriculum = () => {
   // -------- Load active curriculum assignments (all grades) --------
   const loadActiveAssignments = useCallback(async () => {
     try {
-      const res = await fetch(`${BASE_URL}/subjects/view-all-sub-grade-levels`, { headers });
+      const res = await fetch(joinUrl(BASE_URL, 'subjects/view-all-sub-grade-levels'), { headers });
       if (res.status === 401) return handleUnauthorized();
       const j = await res.json();
       if (!j?.success) {
@@ -266,7 +270,7 @@ const UpsertCurriculum = () => {
         }
 
         // Load all subjects and hide those already assigned in server (only when matched)
-        const r2 = await fetch(`${BASE_URL}/subjects/view-all-subjects`, { headers });
+        const r2 = await fetch(joinUrl(BASE_URL, 'subjects/view-all-subjects'), { headers });
         if (r2.status === 401) return handleUnauthorized();
         const d2 = await r2.json();
         const subjects = d2?.success
@@ -422,7 +426,7 @@ const UpsertCurriculum = () => {
   // ------------------ Save curriculum + (CREATE) assign all ------------------
   const findCurriculumIdFallback = async (payload) => {
     try {
-      const res = await fetch(`${BASE_URL}/curriculum/view-all-curriculums`, { headers });
+      const res = await fetch(joinUrl(BASE_URL, 'curriculum/view-all-curriculums'), { headers });
       if (res.status === 401) return handleUnauthorized();
       const j = await res.json();
       if (!j?.success || !Array.isArray(j.data)) return null;
@@ -452,8 +456,8 @@ const UpsertCurriculum = () => {
       throw new Error('Curriculum name and school year are required.');
     }
     const endpoint = isEdit
-      ? `${BASE_URL}/curriculum/update-curriculum/${id}`
-      : `${BASE_URL}/curriculum/create-curriculum`;
+      ? joinUrl(BASE_URL, `curriculum/update-curriculum/${id}`)
+      : joinUrl(BASE_URL, 'curriculum/create-curriculum');
     const payload = {
       curriculum_name: formData.curriculum_name.trim(),
       school_year_id: Number(formData.school_year_id),
@@ -489,63 +493,80 @@ const UpsertCurriculum = () => {
     return g ? `${g.grade_name} (${g.grade_code})` : `Grade #${gid}`;
   };
 
+  /** BULK ASSIGN — EXACT BODY SHAPE (NO curriculum_id FIELD) */
+  const URL_BULK_ASSIGN = joinUrl(BASE_URL, 'subject-grade-levels/bulk-create');
+
   const bulkAssignForGrade = useCallback(
     async (gid) => {
-      const staged = pendingByGrade[gid] || [];
-      const inline = gid === assignForm.grade_level_id ? assignForm.assignments : [];
-      const toAssign = mergeAssignments(staged, inline);
-      if (gid <= 0 || toAssign.length === 0) return { skipped: true };
+      const gradeId = Number(gid);
+      if (!gradeId || Number.isNaN(gradeId)) return { skipped: true };
 
-      // validate units
-      const invalid = toAssign.find((a) => {
-        const n = Number(a.units);
-        return !Number.isFinite(n) || n < 0;
-      });
-      if (invalid) throw new Error(`Invalid units in ${labelForGrade(gid)}.`);
+      // merge staged + inline for this grade
+      const staged = pendingByGrade[gradeId] || [];
+      const inline = gradeId === assignForm.grade_level_id ? assignForm.assignments : [];
+      const toAssignMerged = mergeAssignments(staged, inline);
 
-      const payload = {
-        assignments: toAssign.map((a) => ({
-          subject_id: a.subject_id,
-          grade_level_id: gid,
+      // normalize + validate
+      const toAssign = toAssignMerged
+        .map((a) => ({
+          subject_id: Number(a.subject_id),
+          grade_level_id: gradeId,
           is_required: !!a.is_required,
-          units: Number(a.units) || 0,
-        })),
-      };
+          units: a.units === '' || a.units == null ? 0 : Number(a.units),
+        }))
+        // remove any partial/invalid rows
+        .filter(
+          (a) =>
+            Number.isFinite(a.subject_id) &&
+            Number.isFinite(a.grade_level_id) &&
+            Number.isFinite(a.units) &&
+            a.units >= 0
+        );
+
+      if (toAssign.length === 0) return { skipped: true };
+
+      const payload = { assignments: toAssign };
 
       setLoading(true);
-      setBusyLabel(`Assigning subjects to ${labelForGrade(gid)}…`);
+      setBusyLabel(`Assigning subjects to ${labelForGrade(gradeId)}…`);
       try {
-        const res = await fetch(`${BASE_URL}/subject-grade-levels/bulk-create`, {
+        console.log('[bulk-create][REQ]', URL_BULK_ASSIGN, payload);
+        const res = await fetch(URL_BULK_ASSIGN, {
           method: 'POST',
           headers,
           body: JSON.stringify(payload),
         });
         if (res.status === 401) return handleUnauthorized();
         const data = await res.json();
-        if (!data?.success) throw new Error(data?.message || `Failed to assign for ${labelForGrade(gid)}.`);
+        console.log('[bulk-create][RES]', data);
 
-        // Clear local queue for this grade
-        setPendingByGrade((prev) => ({ ...prev, [gid]: [] }));
+        if (!data?.success) {
+          throw new Error(data?.message || `Failed to assign for ${labelForGrade(gradeId)}.`);
+        }
 
-        // If viewing this grade and inputs match active, refresh server cache
+        // Clear local queue for this grade on success
+        setPendingByGrade((prev) => ({ ...prev, [gradeId]: [] }));
+
+        // If we’re previewing the active curriculum, refresh that read-only view
         const { matches } = matchActiveByNameOrYear();
-        if (gid === assignForm.grade_level_id && matches) {
+        if (gradeId === assignForm.grade_level_id && matches) {
           await loadActiveAssignments();
           setAssignForm((p) => ({ ...p, assignments: [] }));
         }
+
         return { skipped: false, count: toAssign.length };
       } finally {
         setLoading(false);
         setBusyLabel('');
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [assignForm, pendingByGrade, headers, matchActiveByNameOrYear, loadActiveAssignments]
   );
 
   const saveAndAssignAllGrades = async () => {
     try {
-      await saveCurriculum(); // save once
+      // Optional: keep saving the curriculum first so the "Create" flow persists meta
+      await saveCurriculum();
 
       // Build list of grades to commit
       const gradesWithPending = Object.keys(pendingByGrade)
@@ -576,7 +597,7 @@ const UpsertCurriculum = () => {
         }
       }
 
-      // Refresh active curriculum cache after all assigns
+      // Refresh active curriculum cache after all assigns (read-only)
       await loadActiveAssignments();
 
       // Summary

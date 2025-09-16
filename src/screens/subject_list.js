@@ -1,19 +1,27 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import "bootstrap/dist/css/bootstrap.min.css";
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import {
+  FaBook,
   FaCheckCircle,
-  FaExclamationTriangle,
-  FaTimesCircle,
-  FaInfoCircle,
-  FaPlus,
-  FaSearch,
   FaChevronLeft,
   FaChevronRight,
   FaEdit,
-  FaBook,
-} from "react-icons/fa";
-import StatusModal from "../components/status_modal";
+  FaExclamationTriangle,
+  FaInfoCircle,
+  FaPlus,
+  FaSearch,
+  FaTimesCircle,
+} from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL; // already includes /esf10
 const PAGE_SIZES = [5, 10, 20, 50];
@@ -45,8 +53,6 @@ const SubjectList = () => {
   const [allSubjects, setAllSubjects] = useState([]); // full set from API
   const [subjects, setSubjects] = useState([]); // current page slice
   const [query, setQuery] = useState("");
-  const [gradeLevels, setGradeLevels] = useState([]);
-  const [gradeLevel, setGradeLevel] = useState(""); // selected grade_level_id
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[1]); // default 10
@@ -63,7 +69,7 @@ const SubjectList = () => {
     setTimeout(() => navigate("/login"), 800);
   };
 
-  // Accepts absolute URL or relative path. If relative, prefix with BASE_URL (which already includes /esf10).
+  // Accepts absolute URL or relative path. If relative, prefix with BASE_URL.
   const apiFetch = async (path, options = {}) => {
     const isAbsolute = /^https?:\/\//i.test(path);
     const fullUrl = isAbsolute ? path : `${BASE_URL}${path}`;
@@ -98,8 +104,8 @@ const SubjectList = () => {
     setTotalItems(total);
   };
 
-  // --- fetch subjects via SEARCH API ---
-  const fetchAndCacheSubjects = async (searchQuery = query, gl = gradeLevel) => {
+  // --- fetch subjects via SEARCH API (no grade filters) ---
+  const fetchAndCacheSubjects = async (searchQuery = query) => {
     if (!token || inFlight.current) return;
     try {
       setLoading(true);
@@ -107,7 +113,6 @@ const SubjectList = () => {
 
       const params = new URLSearchParams();
       if (searchQuery?.trim()) params.append("query", searchQuery.trim());
-      if (gl) params.append("grade_level", gl);
 
       const url = `/subjects/search-subjects${params.toString() ? `?${params.toString()}` : ""}`;
       const res = await apiFetch(url, { method: "GET" });
@@ -129,41 +134,21 @@ const SubjectList = () => {
     }
   };
 
-  // --- fetch grade levels ---
-  const fetchGradeLevels = async () => {
-    try {
-      const res = await apiFetch("/grade-levels", { method: "GET" });
-      if (!res.ok) throw new Error("Failed to fetch grade levels");
-      const data = await res.json();
-      if (data?.success) {
-        // sort by grade_order if present
-        const sorted = [...data.data].sort((a, b) => (a.grade_order ?? 0) - (b.grade_order ?? 0));
-        setGradeLevels(sorted);
-      } else {
-        setGradeLevels([]);
-      }
-    } catch (err) {
-      console.error("Error fetching grade levels:", err.message);
-      setGradeLevels([]);
-    }
-  };
-
-  // initial load: grade levels then subjects
+  // initial load: subjects only
   useEffect(() => {
-    fetchGradeLevels();
-    fetchAndCacheSubjects("", "");
+    fetchAndCacheSubjects("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // debounce search + grade level filter
+  // debounce search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      fetchAndCacheSubjects(query, gradeLevel);
+      fetchAndCacheSubjects(query);
     }, 300);
     return () => clearTimeout(debounceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, gradeLevel]);
+  }, [query]);
 
   // page size change (re-slice locally)
   useEffect(() => {
@@ -211,22 +196,6 @@ const SubjectList = () => {
               onChange={(e) => setQuery(e.target.value)}
               autoComplete="off"
             />
-          </div>
-
-          {/* Grade Level Dropdown */}
-          <div style={{ minWidth: 220 }}>
-            <select
-              className="form-select"
-              value={gradeLevel}
-              onChange={(e) => setGradeLevel(e.target.value)}
-            >
-              <option value="">All Grade Levels</option>
-              {gradeLevels.map((gl) => (
-                <option key={gl.grade_level_id} value={gl.grade_level_id}>
-                  {gl.grade_name}
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* Page size */}
@@ -348,7 +317,7 @@ const SubjectList = () => {
             </>
           )}
         </div>
-      </div> 
+      </div>
 
       <StatusModal
         {...statusModal}

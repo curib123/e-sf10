@@ -35,7 +35,7 @@ const TEACHER_ASSIGNMENTS_BY_TEACHER = (teacherId) =>
   `/teacher-assignments/teacher/${teacherId}`;
 
 // Persist selected teacher across hard reloads
-const STORAGE_KEY = "teacherAssignment.selectedTeacherId";
+const STORAGE_KEY = 'teacherAssignment.selectedTeacherId';
 
 // If you ever want old behavior, flip this back to false
 const HARD_REFRESH_ON_SAVE = true;
@@ -49,32 +49,45 @@ const icons = {
 };
 
 // ────────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Helpers — active SY must come ONLY from /school-year/all-school-years
+// ────────────────────────────────────────────────────────────────────────────────
+const isTruthyActive = (v) => {
+  if (v === true || v === 1 || v === '1') return true;
+  if (typeof v === 'string' && v.toLowerCase() === 'true') return true;
+  return false;
+};
+
+const hasActiveFlag = (sy) => {
+  const v = sy?.is_active ?? sy?.active ?? sy?.isActive ?? sy?.status;
+  return isTruthyActive(v);
+};
+
+const toYear = (v) => {
+  if (v == null) return NaN;
+  const m = String(v).match(/\d{4}/);
+  return m ? Number(m[0]) : Number.isFinite(Number(v)) ? Number(v) : NaN;
+};
+
+const getStartYear = (sy) =>
+  toYear(sy?.start_year ?? (sy?.school_year?.split?.('-')?.[0]));
+const getEndYear = (sy) =>
+  toYear(sy?.end_year ?? (sy?.school_year?.split?.('-')?.[1]));
+
+/** Prefer active-flagged row; else most recent by end_year then start_year. */
 const pickActiveSchoolYear = (list = []) => {
   if (!Array.isArray(list) || list.length === 0) return null;
 
-  // 1) Prefer explicit active flags
-  const byFlag =
-    list.find((sy) => sy.is_active === true) ||
-    list.find((sy) => sy.active === true) ||
-    list.find((sy) => sy.isActive === true) ||
-    list.find((sy) => sy.status === 1 || sy.status === "1");
-
+  const byFlag = list.find(hasActiveFlag);
   if (byFlag) return byFlag;
 
-  // 2) Otherwise, pick the most recent by end_year, then start_year, else by school_year string
-  const toNum = (v) => (v == null ? NaN : Number(String(v).match(/\d{4}/)?.[0]));
   const sorted = [...list].sort((a, b) => {
-    const ae = toNum(a.end_year);
-    const be = toNum(b.end_year);
+    const ae = getEndYear(a), be = getEndYear(b);
     if (Number.isFinite(ae) && Number.isFinite(be) && be !== ae) return be - ae;
 
-    const as = toNum(a.start_year);
-    const bs = toNum(b.start_year);
+    const as = getStartYear(a), bs = getStartYear(b);
     if (Number.isFinite(as) && Number.isFinite(bs) && bs !== as) return bs - as;
 
-    // last fallback: sort by school_year string (e.g., "2024-2025")
-    return String(b.school_year || "").localeCompare(String(a.school_year || ""));
+    return 0;
   });
   return sorted[0] || null;
 };
@@ -84,7 +97,7 @@ const pickActiveSchoolYear = (list = []) => {
 const TeacherAssignmentForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const token = useMemo(() => sessionStorage.getItem("token"), []);
+  const token = useMemo(() => sessionStorage.getItem('token'), []);
   const inFlight = useRef(false);
 
   // UI
@@ -92,9 +105,9 @@ const TeacherAssignmentForm = () => {
   const [submitted, setSubmitted] = useState(false);
   const [statusModal, setStatusModal] = useState({
     show: false,
-    title: "",
-    message: "",
-    variant: "info",
+    title: '',
+    message: '',
+    variant: 'info',
     icon: icons.info,
   });
   const showStatus = (variant, title, message) =>
@@ -108,10 +121,10 @@ const TeacherAssignmentForm = () => {
 
   // Form
   const [form, setForm] = useState({
-    teacher_id: "",
-    subject_id: "",
-    section_id: "",
-    school_year_id: "",
+    teacher_id: '',
+    subject_id: '',
+    section_id: '',
+    school_year_id: '',
   });
 
   // Current assignment (edit)
@@ -132,27 +145,23 @@ const TeacherAssignmentForm = () => {
   );
   const selectedTeacherName = useMemo(() => {
     const t = selectedTeacher;
-    return t?.full_name || t?.teacher_name || (teacherSubs[0]?.teacher_name ?? "");
+    return t?.full_name || t?.teacher_name || (teacherSubs[0]?.teacher_name ?? '');
   }, [selectedTeacher, teacherSubs]);
 
   const teacherInitials = useMemo(() => {
-    const name = selectedTeacherName || "";
+    const name = selectedTeacherName || '';
     return (
       name
         .split(/\s+/)
         .filter(Boolean)
         .slice(0, 2)
         .map((s) => s[0]?.toUpperCase())
-        .join("") || "T"
+        .join('') || 'T'
     );
   }, [selectedTeacherName]);
 
-  // Active SY (derived from options)
+  // Active SY (derived ONLY from /school-year/all-school-years)
   const activeSY = useMemo(() => pickActiveSchoolYear(schoolYears), [schoolYears]);
-  const getDefaultSyId = useMemo(
-    () => () => (activeSY?.school_year_id ? String(activeSY.school_year_id) : ""),
-    [activeSY]
-  );
 
   // ── persistence helpers ───────────────────────────────────────────────────────
   const persistSelectedTeacher = (tid) => {
@@ -173,9 +182,9 @@ const TeacherAssignmentForm = () => {
 
   // --- helpers ---
   const handleUnauthorized = () => {
-    showStatus("danger", "Unauthorized", "Please login to continue.");
-    sessionStorage.removeItem("token");
-    setTimeout(() => navigate("/login"), 800);
+    showStatus('danger', 'Unauthorized', 'Please login to continue.');
+    sessionStorage.removeItem('token');
+    setTimeout(() => navigate('/login'), 800);
   };
 
   const apiFetch = async (path, options = {}) => {
@@ -184,14 +193,14 @@ const TeacherAssignmentForm = () => {
     const res = await fetch(fullUrl, {
       ...options,
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         ...(options.headers || {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
     if (res.status === 401) {
       handleUnauthorized();
-      throw new Error("Unauthorized");
+      throw new Error('Unauthorized');
     }
     return res;
   };
@@ -199,11 +208,11 @@ const TeacherAssignmentForm = () => {
   // ---- loads ----
   const loadTeachers = async () => {
     try {
-      const res = await apiFetch(`/teachers`, { method: "GET" });
+      const res = await apiFetch(`/teachers`, { method: 'GET' });
       const data = await res.json();
       setTeachers(data?.success ? data.data || [] : []);
     } catch {
-      showStatus("danger", "Error", "Failed to load teachers.");
+      showStatus('danger', 'Error', 'Failed to load teachers.');
     }
   };
 
@@ -214,10 +223,9 @@ const TeacherAssignmentForm = () => {
       let page = 1;
       let totalPages = 1;
       do {
-        const res = await apiFetch(
-          `/subjects/view-all-subjects?page=${page}&limit=100`,
-          { method: "GET" }
-        );
+        const res = await apiFetch(`/subjects/view-all-subjects?page=${page}&limit=100`, {
+          method: 'GET',
+        });
         const data = await res.json();
         const list = data?.success ? data.data || [] : [];
         all.push(...list);
@@ -227,29 +235,29 @@ const TeacherAssignmentForm = () => {
       } while (page <= totalPages);
       setSubjects(all);
     } catch {
-      showStatus("danger", "Error", "Failed to load subjects.");
+      showStatus('danger', 'Error', 'Failed to load subjects.');
     }
   };
 
   const loadSections = async () => {
     try {
-      const res = await apiFetch(`/sections`, { method: "GET" });
+      const res = await apiFetch(`/sections`, { method: 'GET' });
       const data = await res.json();
       setSections(data?.success ? data.data || [] : []);
     } catch {
-      showStatus("danger", "Error", "Failed to load sections.");
+      showStatus('danger', 'Error', 'Failed to load sections.');
     }
   };
 
   const loadSchoolYears = async () => {
     try {
       const res = await apiFetch(`/school-year/all-school-years`, {
-        method: "GET",
+        method: 'GET',
       });
       const data = await res.json();
       setSchoolYears(data?.success ? data.schoolYears || [] : []);
     } catch {
-      showStatus("danger", "Error", "Failed to load school years.");
+      showStatus('danger', 'Error', 'Failed to load school years.');
     }
   };
 
@@ -257,23 +265,23 @@ const TeacherAssignmentForm = () => {
   const loadAssignment = async () => {
     if (!id) return;
     try {
-      const res = await apiFetch(SHOW_ENDPOINT(id), { method: "GET" });
+      const res = await apiFetch(SHOW_ENDPOINT(id), { method: 'GET' });
       const data = await res.json();
       if (!data?.success || !data.data) {
-        showStatus("warning", "Not found", "Assignment not found.");
+        showStatus('warning', 'Not found', 'Assignment not found.');
         return;
       }
       const a = data.data;
       setCurrent(a);
       setForm((f) => ({
         ...f,
-        teacher_id: a.teacher_id ?? "",
-        subject_id: a.subject_id ?? "",
-        section_id: a.section_id ?? "",
-        school_year_id: a.school_year_id ?? "",
+        teacher_id: a.teacher_id ?? '',
+        subject_id: a.subject_id ?? '',
+        section_id: a.section_id ?? '',
+        school_year_id: a.school_year_id ?? '',
       }));
     } catch {
-      showStatus("danger", "Error", "Failed to load assignment details.");
+      showStatus('danger', 'Error', 'Failed to load assignment details.');
     }
   };
 
@@ -302,8 +310,7 @@ const TeacherAssignmentForm = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, id]);
 
-  // 💡 Auto-select default School Year once options are loaded,
-  //     but only if we don't already have one (create mode or missing on edit)
+  // 💡 Auto-select default School Year once options are loaded (from /school-year/all-school-years only)
   useEffect(() => {
     if (!schoolYears.length) return;
 
@@ -311,7 +318,7 @@ const TeacherAssignmentForm = () => {
     if (id && current && current.school_year_id) return;
 
     // If user already picked something, don't override
-    if (String(form.school_year_id || "")) return;
+    if (String(form.school_year_id || '')) return;
 
     const active = pickActiveSchoolYear(schoolYears);
     if (active?.school_year_id) {
@@ -319,6 +326,18 @@ const TeacherAssignmentForm = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schoolYears, id, current]);
+
+  // Auto-fetch when teacher changes (table refresh)
+  useEffect(() => {
+    if (form.teacher_id) {
+      fetchTeacherSubjects(form.teacher_id);
+    } else {
+      setTeacherSubs([]);
+      lastTeacherFetched.current = null;
+    }
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.teacher_id]);
 
   // Fetch subjects by selected teacher (for the table below)
   const fetchTeacherSubjects = async (tid) => {
@@ -333,7 +352,7 @@ const TeacherAssignmentForm = () => {
     try {
       setTeacherSubsLoading(true);
       const res = await apiFetch(TEACHER_ASSIGNMENTS_BY_TEACHER(tid), {
-        method: "GET",
+        method: 'GET',
       });
       const data = await res.json();
       const list = data?.success ? data.data || [] : [];
@@ -341,22 +360,11 @@ const TeacherAssignmentForm = () => {
       lastTeacherFetched.current = tid;
     } catch {
       setTeacherSubs([]);
-      showStatus("danger", "Error", "Failed to load teacher's current subjects.");
+      showStatus('danger', 'Error', "Failed to load teacher's current subjects.");
     } finally {
       setTeacherSubsLoading(false);
     }
   };
-
-  // Auto-fetch when teacher changes
-  useEffect(() => {
-    if (form.teacher_id) fetchTeacherSubjects(form.teacher_id);
-    else {
-      setTeacherSubs([]);
-      lastTeacherFetched.current = null;
-    }
-    setPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.teacher_id]);
 
   // ---- form helpers ----
   const setField = (k) => (e) =>
@@ -364,8 +372,8 @@ const TeacherAssignmentForm = () => {
   const invalid = (k) => submitted && !String(form[k]).trim();
 
   const validate = () => {
-    return ["teacher_id", "subject_id", "section_id", "school_year_id"].every(
-      (k) => String(form[k]).trim()
+    return ['teacher_id', 'subject_id', 'section_id', 'school_year_id'].every((k) =>
+      String(form[k]).trim()
     );
   };
 
@@ -374,11 +382,7 @@ const TeacherAssignmentForm = () => {
     if (!token || inFlight.current) return;
     setSubmitted(true);
     if (!validate()) {
-      showStatus(
-        "warning",
-        "Missing fields",
-        "Please complete all required fields."
-      );
+      showStatus('warning', 'Missing fields', 'Please complete all required fields.');
       return;
     }
 
@@ -394,20 +398,20 @@ const TeacherAssignmentForm = () => {
       };
 
       const res = await apiFetch(id ? UPDATE_ENDPOINT(id) : CREATE_ENDPOINT, {
-        method: id ? "PUT" : "POST",
+        method: id ? 'PUT' : 'POST',
         body: JSON.stringify(payload),
       });
       const data = await res.json();
 
       if (!res.ok || data?.success === false)
-        throw new Error(data?.message || "Request failed");
+        throw new Error(data?.message || 'Request failed');
 
       showStatus(
-        "success",
-        id ? "Updated" : "Created",
+        'success',
+        id ? 'Updated' : 'Created',
         id
-          ? "Teacher assignment updated successfully."
-          : "Teacher assignment created successfully."
+          ? 'Teacher assignment updated successfully.'
+          : 'Teacher assignment created successfully.'
       );
 
       // 🚀 HARD RELOAD while preserving selected teacher
@@ -421,12 +425,12 @@ const TeacherAssignmentForm = () => {
       onReset();
       if (id) await loadAssignment();
       if (form.teacher_id) await fetchTeacherSubjects(form.teacher_id);
-      if (!id) setForm((f) => ({ ...f, subject_id: "", section_id: "" }));
+      if (!id) setForm((f) => ({ ...f, subject_id: '', section_id: '' }));
     } catch (err) {
       showStatus(
-        "danger",
-        "Error",
-        err.message || "Something went wrong while saving."
+        'danger',
+        'Error',
+        err.message || 'Something went wrong while saving.'
       );
     } finally {
       setBusy(false);
@@ -440,12 +444,14 @@ const TeacherAssignmentForm = () => {
       // editing — reload assignment (keeps its school year)
       loadAssignment();
     } else {
-      // creating — keep teacher, restore default active SY
+      // creating — keep teacher and default to Active SY from /school-year/all-school-years
       setForm((f) => ({
         teacher_id: f.teacher_id,
-        subject_id: "",
-        section_id: "",
-        school_year_id: getDefaultSyId(),
+        subject_id: '',
+        section_id: '',
+        school_year_id: activeSY?.school_year_id
+          ? String(activeSY.school_year_id)
+          : '',
       }));
     }
   };
@@ -487,9 +493,9 @@ const TeacherAssignmentForm = () => {
     const start = Math.max(2, page - showAround);
     const end = Math.min(totalPages - 1, page + showAround);
     pages.push(1);
-    if (start > 2) pages.push("…");
+    if (start > 2) pages.push('…');
     for (let i = start; i <= end; i++) pages.push(i);
-    if (end < totalPages - 1) pages.push("…");
+    if (end < totalPages - 1) pages.push('…');
     pages.push(totalPages);
     return pages;
   }, [page, totalPages]);
@@ -499,7 +505,7 @@ const TeacherAssignmentForm = () => {
     try {
       navigate(-1);
     } catch {
-      navigate("/teacher-assignments");
+      navigate('/teacher-assignments');
     }
   };
 
@@ -531,11 +537,11 @@ const TeacherAssignmentForm = () => {
         <div className="d-flex align-items-center gap-3">
           <div className="avatar">{teacherInitials}</div>
           <div>
-            <h3 className="fw-bold mb-1">{id ? "Update Assignment" : "Assign Teacher"}</h3>
+            <h3 className="fw-bold mb-1">{id ? 'Update Assignment' : 'Assign Teacher'}</h3>
             <div className="text-muted small">
               {id
-                ? "Modify the teacher–subject–section assignment for a school year."
-                : "Create a teacher–subject–section assignment for a school year."}
+                ? 'Modify the teacher–subject–section assignment for a school year.'
+                : 'Create a teacher–subject–section assignment for a school year.'}
             </div>
           </div>
         </div>
@@ -564,7 +570,7 @@ const TeacherAssignmentForm = () => {
             <div className="fw-semibold">Assignment Details</div>
             {teacherSubs.length > 0 && (
               <span className="badge rounded-pill badge-soft">
-                {teacherSubs.length} assignment{teacherSubs.length > 1 ? "s" : ""}
+                {teacherSubs.length} assignment{teacherSubs.length > 1 ? 's' : ''}
               </span>
             )}
           </div>
@@ -601,9 +607,9 @@ const TeacherAssignmentForm = () => {
                   Teacher <span className="text-danger">*</span>
                 </label>
                 <select
-                  className={`form-select ${invalid("teacher_id") ? "is-invalid" : ""}`}
+                  className={`form-select ${invalid('teacher_id') ? 'is-invalid' : ''}`}
                   value={form.teacher_id}
-                  onChange={setField("teacher_id")}
+                  onChange={setField('teacher_id')}
                   disabled={busy}
                 >
                   <option value="">Select teacher</option>
@@ -615,8 +621,8 @@ const TeacherAssignmentForm = () => {
                 </select>
                 <div className="form-text">
                   {form.teacher_id
-                    ? "Selected teacher will appear below with their current subjects."
-                    : "Choose the teacher to assign."}
+                    ? 'Selected teacher will appear below with their current subjects.'
+                    : 'Choose the teacher to assign.'}
                 </div>
                 <div className="invalid-feedback">Teacher is required.</div>
               </div>
@@ -627,9 +633,9 @@ const TeacherAssignmentForm = () => {
                   Subject <span className="text-danger">*</span>
                 </label>
                 <select
-                  className={`form-select ${invalid("subject_id") ? "is-invalid" : ""}`}
+                  className={`form-select ${invalid('subject_id') ? 'is-invalid' : ''}`}
                   value={form.subject_id}
-                  onChange={setField("subject_id")}
+                  onChange={setField('subject_id')}
                   disabled={busy}
                 >
                   <option value="">Select subject</option>
@@ -649,15 +655,15 @@ const TeacherAssignmentForm = () => {
                   Section <span className="text-danger">*</span>
                 </label>
                 <select
-                  className={`form-select ${invalid("section_id") ? "is-invalid" : ""}`}
+                  className={`form-select ${invalid('section_id') ? 'is-invalid' : ''}`}
                   value={form.section_id}
-                  onChange={setField("section_id")}
+                  onChange={setField('section_id')}
                   disabled={busy}
                 >
                   <option value="">Select section</option>
                   {sections.map((s) => (
                     <option key={s.section_id} value={s.section_id}>
-                      {s.section_name} {s.grade_name ? `— ${s.grade_name}` : ""}
+                      {s.section_name} {s.grade_name ? `— ${s.grade_name}` : ''}
                     </option>
                   ))}
                 </select>
@@ -665,29 +671,29 @@ const TeacherAssignmentForm = () => {
                 <div className="invalid-feedback">Section is required.</div>
               </div>
 
-              {/* School Year (auto-populated to active) */}
+              {/* School Year (auto-populated to Active from /school-year/all-school-years) */}
               <div className="col-12 col-md-6">
                 <label className="form-label fw-semibold">
                   School Year <span className="text-danger">*</span>
                 </label>
                 <select
-                  className={`form-select ${invalid("school_year_id") ? "is-invalid" : ""}`}
+                  className={`form-select ${invalid('school_year_id') ? 'is-invalid' : ''}`}
                   value={form.school_year_id}
-                  onChange={setField("school_year_id")}
+                  onChange={setField('school_year_id')}
                   disabled={busy}
                 >
                   <option value="">Select school year</option>
                   {schoolYears.map((sy) => (
                     <option key={sy.school_year_id} value={sy.school_year_id}>
-                      {sy.start_year} - {sy.end_year}
-                      {activeSY?.school_year_id === sy.school_year_id ? " (Active)" : ""}
+                      {`${sy.start_year ?? ''} - ${sy.end_year ?? ''}`}
+                      {hasActiveFlag(sy) ? ' (Active)' : ''}
                     </option>
                   ))}
                 </select>
                 <div className="form-text">
                   {activeSY
-                    ? `Auto-selected default: ${activeSY.start_year} - ${activeSY.end_year}`
-                    : "Choose the school year for this assignment."}
+                    ? `Auto-selected default: ${activeSY.start_year} - ${activeSY.end_year} (from /school-year/all-school-years)`
+                    : 'Choose the school year for this assignment.'}
                 </div>
                 <div className="invalid-feedback">School year is required.</div>
               </div>
@@ -699,13 +705,9 @@ const TeacherAssignmentForm = () => {
               </button>
               <button type="submit" className="btn btn-primary btn-icon" disabled={busy}>
                 {busy && (
-                  <span
-                    className="spinner-border spinner-border-sm me-2"
-                    role="status"
-                    aria-hidden="true"
-                  ></span>
+                  <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
                 )}
-                <FaSave /> {id ? "Update Assignment" : "Save Assignment"}
+                <FaSave /> {id ? 'Update Assignment' : 'Save Assignment'}
               </button>
             </div>
           </form>
@@ -720,16 +722,16 @@ const TeacherAssignmentForm = () => {
               <h6 className="mb-0 fw-semibold">
                 {selectedTeacherName
                   ? `${selectedTeacherName} — Current Subjects`
-                  : "Current Subjects"}
+                  : 'Current Subjects'}
               </h6>
               <div className="text-muted small">
                 {teacherSubsLoading
-                  ? "Loading assignments for this teacher…"
+                  ? 'Loading assignments for this teacher…'
                   : teacherSubs.length
                   ? `Showing ${rangeStart}–${rangeEnd} of ${teacherSubs.length} assignment${
-                      teacherSubs.length > 1 ? "s" : ""
+                      teacherSubs.length > 1 ? 's' : ''
                     }`
-                  : "No current subjects for this teacher."}
+                  : 'No current subjects for this teacher.'}
               </div>
             </div>
 
@@ -756,7 +758,7 @@ const TeacherAssignmentForm = () => {
               {teacherSubs.length > pageSize && (
                 <nav aria-label="Teacher subjects pagination">
                   <ul className="pagination pagination-sm mb-0">
-                    <li className={`page-item ${page === 1 ? "disabled" : ""}`}>
+                    <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
                       <button
                         className="page-link"
                         onClick={() => setPage(1)}
@@ -765,7 +767,7 @@ const TeacherAssignmentForm = () => {
                         <span aria-hidden="true">«</span>
                       </button>
                     </li>
-                    <li className={`page-item ${page === 1 ? "disabled" : ""}`}>
+                    <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
                       <button
                         className="page-link"
                         onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -775,14 +777,14 @@ const TeacherAssignmentForm = () => {
                       </button>
                     </li>
                     {buildPageList.map((p, idx) =>
-                      typeof p === "string" ? (
+                      typeof p === 'string' ? (
                         <li key={`ellipsis-${idx}`} className="page-item disabled">
                           <span className="page-link">…</span>
                         </li>
                       ) : (
                         <li
                           key={`pg-${p}`}
-                          className={`page-item ${p === page ? "active" : ""}`}
+                          className={`page-item ${p === page ? 'active' : ''}`}
                         >
                           <button className="page-link" onClick={() => setPage(p)}>
                             {p}
@@ -791,7 +793,7 @@ const TeacherAssignmentForm = () => {
                       )
                     )}
                     <li
-                      className={`page-item ${page === totalPages ? "disabled" : ""}`}
+                      className={`page-item ${page === totalPages ? 'disabled' : ''}`}
                     >
                       <button
                         className="page-link"
@@ -802,7 +804,7 @@ const TeacherAssignmentForm = () => {
                       </button>
                     </li>
                     <li
-                      className={`page-item ${page === totalPages ? "disabled" : ""}`}
+                      className={`page-item ${page === totalPages ? 'disabled' : ''}`}
                     >
                       <button
                         className="page-link"
@@ -822,7 +824,7 @@ const TeacherAssignmentForm = () => {
                 onClick={() => fetchTeacherSubjects(form.teacher_id)}
                 disabled={teacherSubsLoading}
               >
-                <FaSyncAlt /> {teacherSubsLoading ? "Refreshing…" : "Refresh"}
+                <FaSyncAlt /> {teacherSubsLoading ? 'Refreshing…' : 'Refresh'}
               </button>
             </div>
           </div>
@@ -838,7 +840,7 @@ const TeacherAssignmentForm = () => {
           ) : teacherSubs.length === 0 ? (
             <div className="p-4 text-center text-muted small">No records to display.</div>
           ) : (
-            <div className="table-responsive" style={{ maxHeight: "60vh" }}>
+            <div className="table-responsive" style={{ maxHeight: '60vh' }}>
               <table className="table table-sm align-middle mb-0 table-hover table-striped">
                 <thead className="table-light">
                   <tr>
