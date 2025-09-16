@@ -1,7 +1,8 @@
-// src/screens/grade_input_by_teacher.jsx
 import 'bootstrap/dist/css/bootstrap.min.css';
 
+// EnrollmentList.jsx
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -9,11 +10,25 @@ import React, {
 } from 'react';
 
 import {
-  FaSave,
+  FaBookOpen,
+  FaCalendarAlt,
+  FaCheckCircle,
+  FaChevronLeft,
+  FaChevronRight,
+  FaEdit,
+  FaExclamationTriangle,
+  FaInfoCircle,
+  FaLayerGroup,
+  FaPlus,
+  FaRedoAlt,
   FaSearch,
-  FaSync,
-  FaTimes,
+  FaSort,
+  FaSortDown,
+  FaSortUp,
+  FaTag,
   FaTimesCircle,
+  FaTrash,
+  FaUserGraduate,
 } from 'react-icons/fa';
 import {
   useLocation,
@@ -22,1152 +37,747 @@ import {
 
 import StatusModal from '../components/status_modal';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Config & helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────────
+// Config
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
-const joinUrl = (path = "") =>
-  `${BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+const PAGE_SIZES = [5, 10, 20, 50];
+const DEFAULT_SORT = "date:desc";
+const DEFAULT_PAGE_SIZE = PAGE_SIZES[1];
 
-const headers = (token) => ({
-  "Content-Type": "application/json",
-  ...(token ? { Authorization: `Bearer ${token}` } : {}),
-});
-
-const isAbort = (err) =>
-  err && (err.name === "AbortError" || String(err).includes("aborted"));
-
-const GRADE_PERIODS = ["1st", "2nd", "3rd", "4th"];
-
-const safeStorage = (() => {
-  try { return (window.storage || window.sessionStorage); } catch { return null; }
-})();
-
-const getTeacherId = () => {
-  try {
-    const tid = safeStorage?.getItem("teacher_id");
-    return tid ? String(tid) : "";
-  } catch { return ""; }
+// ────────────────────────────────────────────────────────────────────────────────
+// Reusable bits
+const icons = {
+  success: <FaCheckCircle size={20} />,
+  danger: <FaTimesCircle size={20} />,
+  warning: <FaExclamationTriangle size={20} />,
+  info: <FaInfoCircle size={20} />,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Reusable: SearchableSelect (same UX you already use)
-// ─────────────────────────────────────────────────────────────────────────────
-function SearchableSelect({
-  label,
-  options = [],
-  value,
-  onChange,
-  placeholder = "Search and select...",
-  disabled = false,
-  loading = false,
-}) {
-  const containerRef = useRef(null);
-  const inputRef = useRef(null);
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [activeIdx, setActiveIdx] = useState(-1);
+const fmtDate = (iso) =>
+  iso
+    ? new Date(iso).toLocaleDateString([], { year: "numeric", month: "short", day: "2-digit" })
+    : "—";
 
-  useEffect(() => {
-    const sel = options.find((o) => String(o.value) === String(value));
-    if (sel && !open) setQuery(sel.label);
-  }, [value, options, open]);
+const readQP = (s, k, f) => new URLSearchParams(s).get(k) ?? f;
+const writeQP = (navigate, location, next) => {
+  const p = new URLSearchParams(location.search);
+  Object.entries(next).forEach(([k, v]) =>
+    v === undefined || v === null || v === "" || v === "all" ? p.delete(k) : p.set(k, String(v))
+  );
+  navigate({ search: p.toString() }, { replace: true });
+};
+const useDebounced = (val, d = 300) => {
+  const [v, setV] = useState(val);
+  useEffect(() => { const t = setTimeout(() => setV(val), d); return () => clearTimeout(t); }, [val, d]);
+  return v;
+};
 
-  const filtered = useMemo(() => {
-    const q = (query || "").toLowerCase().trim();
-    if (!q) return options;
-    return options.filter((o) =>
-      [o.label, o.subtitle, o.code]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q))
-    );
-  }, [options, query]);
-
-  useEffect(() => {
-    const handle = (e) => {
-      if (!containerRef.current) return;
-      if (!containerRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, []);
-
-  const selectAt = (idx) => {
-    const opt = filtered[idx];
-    if (!opt) return;
-    onChange?.(String(opt.value));
-    setOpen(false);
-    setQuery(opt.label);
+const buildSorter = (sort, getters) => {
+  const [key, dir] = (sort || DEFAULT_SORT).split(":");
+  const asc = dir !== "desc";
+  const get = getters[key] || ((r) => r?.enrollment_date || "");
+  return (A, B) => {
+    const a = get(A), b = get(B);
+    if (a < b) return asc ? -1 : 1;
+    if (a > b) return asc ? 1 : -1;
+    return 0;
   };
+};
 
-  const onKeyDown = (e) => {
-    if (!open && (e.key === "ArrowDown" || e.key === "Enter")) {
-      setOpen(true);
-      setActiveIdx(0);
-      return;
+const groupBy = (rows, keyFn) =>
+  rows.reduce((m, r) => (m.set(keyFn(r), [...(m.get(keyFn(r)) || []), r]), m), new Map());
+
+const authHeaders = (t) => ({
+  "Content-Type": "application/json",
+  ...(t ? { Authorization: `Bearer ${t}` } : {}),
+});
+
+const api = {
+  get: (path, t) => fetch(`${BASE_URL}${path}`, { headers: authHeaders(t) }),
+  del: (path, t) => fetch(`${BASE_URL}${path}`, { method: "DELETE", headers: authHeaders(t) }),
+  fetchPagedAll: async (basePath, t, dataKey = "data", pageParam = "page", limitParam = "limit") => {
+    let page = 1, totalPages = 1;
+    const limit = 100, all = [];
+    while (page <= totalPages) {
+      const url = new URL(`${BASE_URL}${basePath}`);
+      url.searchParams.set(pageParam, String(page));
+      url.searchParams.set(limitParam, String(limit));
+      const res = await fetch(url.toString(), { headers: authHeaders(t) });
+      if (!res.ok) throw new Error(`Failed to fetch ${basePath}`);
+      const js = await res.json();
+      all.push(...(Array.isArray(js?.[dataKey]) ? js[dataKey] : []));
+      totalPages = js?.pagination?.totalPages ?? js?.totalPages ?? 1;
+      page += 1;
     }
-    if (!open) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActiveIdx((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      selectAt(activeIdx >= 0 ? activeIdx : 0);
-    } else if (e.key === "Escape") {
-      setOpen(false);
+    return all;
+  },
+};
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Async student search (filter only; keeps list scalable)
+const StudentFilterSearch = ({ token, value, onPick, className = "" }) => {
+  const [label, setLabel] = useState("");
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const abortRef = useRef(null);
+
+  useEffect(() => {
+    const q = label.trim();
+    if (!touched || q.length < 2) {
+      setItems([]); setOpen(false); return;
     }
+    const run = async () => {
+      try {
+        setLoading(true);
+        abortRef.current?.abort();
+        abortRef.current = new AbortController();
+        const res = await fetch(
+          `${BASE_URL}/students/search?query=${encodeURIComponent(q)}`,
+          { headers: authHeaders(token), signal: abortRef.current.signal }
+        );
+        if (!res.ok) throw new Error("Search failed");
+        const js = await res.json();
+        setItems(Array.isArray(js) ? js : []);
+        setOpen(true);
+      } catch {
+        /* ignore fast-typing/abort */
+      } finally {
+        setLoading(false);
+      }
+    };
+    const t = setTimeout(run, 300);
+    return () => clearTimeout(t);
+  }, [label, token, touched]);
+
+  const pick = (it) => {
+    const text = `${it.last_name}, ${it.first_name}${it.middle_name ? " " + it.middle_name : ""}`;
+    onPick(String(it.student_id), text);
+    setLabel(text);
+    setOpen(false);
+    setTouched(false);
+  };
+  const clear = () => {
+    setLabel(""); onPick("all", ""); setItems([]); setOpen(false); setTouched(true);
   };
 
   return (
-    <div ref={containerRef} className="position-relative">
-      {label ? <label className="form-label">{label}</label> : null}
+    <div className={`position-relative w-100 ${className}`}>
       <div className="input-group">
-        <span className="input-group-text"><FaSearch /></span>
         <input
-          ref={inputRef}
           type="text"
           className="form-control"
-          placeholder={placeholder}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={onKeyDown}
-          disabled={disabled}
+          style={{ height: "calc(2.25rem + 2px)" }}
+          placeholder="Search student by LRN or name…"
+          value={label}
+          onChange={(e) => { setLabel(e.target.value); setTouched(true); }}
+          onFocus={() => items.length && setOpen(true)}
+          autoComplete="off"
         />
-        {value && (
-          <button
-            type="button"
-            className="btn btn-outline-secondary"
-            onClick={() => {
-              onChange?.("");
-              setQuery("");
-              setOpen(true);
-              inputRef.current?.focus();
-            }}
-            disabled={disabled}
-            title="Clear"
-          >
-            <FaTimesCircle />
+        {label && (
+          <button className="btn btn-outline-secondary" type="button" onClick={clear}>
+            Clear
           </button>
         )}
       </div>
-
-      {open && !disabled && (
-        <div
-          className="dropdown-menu show w-100 mt-1 p-0"
-          style={{ maxHeight: 260, overflowY: "auto" }}
-        >
+      {open && (
+        <div className="dropdown-menu show w-100 mt-1 border shadow-sm" style={{ maxHeight: 280, overflowY: "auto", zIndex: 1050 }}>
           {loading ? (
-            <div className="px-3 py-2 small text-muted">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="px-3 py-2 small text-muted">No matches</div>
-          ) : (
-            filtered.slice(0, 60).map((o, idx) => (
-              <button
-                key={o.value}
-                type="button"
-                className={`dropdown-item d-flex flex-column ${idx === activeIdx ? "active" : ""}`}
-                onMouseEnter={() => setActiveIdx(idx)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => selectAt(idx)}
-              >
-                <span>{o.label}</span>
-                {o.subtitle ? (
-                  <small className="text-muted">{o.subtitle}</small>
-                ) : null}
+            <div className="dropdown-item text-muted small d-flex align-items-center gap-2">
+              <span className="spinner-border spinner-border-sm" /> Searching…
+            </div>
+          ) : items.length ? (
+            items.map((it) => (
+              <button key={it.student_id} type="button" className="dropdown-item d-flex flex-column" onClick={() => pick(it)}>
+                <div className="d-flex w-100 justify-content-between">
+                  <strong>{`${it.last_name}, ${it.first_name}${it.middle_name ? " " + it.middle_name : ""}`}</strong>
+                  {it.lrn ? <span className="text-muted">[{it.lrn}]</span> : null}
+                </div>
+                <small className="text-muted">
+                  {it.gender || "—"} • {it.date_of_birth ? new Date(it.date_of_birth).toLocaleDateString() : "—"}
+                </small>
               </button>
             ))
+          ) : (
+            <div className="dropdown-item text-muted small">No matches</div>
           )}
         </div>
       )}
-      <div className="form-text">
-        Start typing to filter, then hit Enter or click to select.
-      </div>
+      <input type="hidden" value={value} readOnly />
     </div>
   );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-<<<<<<< HEAD
-// Page: Grade entry by Teacher → Student → Period → Subjects list (per-row save)
-// ─────────────────────────────────────────────────────────────────────────────
-export default function GradeInputUpsert() {
-=======
-// Component: GradeInputByTeacher (driven by /grades/teacher/:teacher_id)
-// ─────────────────────────────────────────────────────────────────────────────
-const GRADE_PERIODS = ["1st", "2nd", "3rd", "4th"];
-
-export default function GradeInputByTeacher() {
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const token = useMemo(() => sessionStorage.getItem("token"), []);
-<<<<<<< HEAD
-  const teacherId = useMemo(() => {
-    const q = new URLSearchParams(location.search).get("teacher_id");
-    return (
-      q ||
-      sessionStorage.getItem("teacher_id") ||
-      sessionStorage.getItem("user_id") ||
-      ""
-    );
-  }, [location.search]);
-
-  // Students (for this teacher)
-  const [students, setStudents] = useState([]);
-  const [loadingStudents, setLoadingStudents] = useState(true);
-
-  // Selection
-  const [selectedStudentId, setSelectedStudentId] = useState("");
-=======
-  const teacherId = useMemo(() => getTeacherId(), []);
-
-  // Raw data from grades-by-teacher
-  const [rows, setRows] = useState([]);
-  const [loadingRows, setLoadingRows] = useState(true);
-
-  // Selections
-  const [selectedStudentId, setSelectedStudentId] = useState("");
-  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState("");
-  const [selectedSubjectId, setSelectedSubjectId] = useState("");
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-  const [gradingPeriod, setGradingPeriod] = useState("");
-
-<<<<<<< HEAD
-  // Derived from selected student
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [subjects, setSubjects] = useState([]); // subjects for that student's grade level
-  const [loadingSubjects, setLoadingSubjects] = useState(false);
-
-  // Saved grades + inputs (for selected student & period)
-  const [loadingGrades, setLoadingGrades] = useState(false);
-  const [existingGrades, setExistingGrades] = useState([]); // raw list from API
-  const [inputsBySubject, setInputsBySubject] = useState({}); // { [subject_id]: "88" }
-  const [savingBySubject, setSavingBySubject] = useState({}); // { [subject_id]: bool }
-  const [savedTickBySubject, setSavedTickBySubject] = useState({}); // { [subject_id]: timestamp }
-
-  // UI status
-  const [statusModal, setStatusModal] = useState({
-    show: false,
-    variant: "info",
-    title: "",
-    message: "",
-  });
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Fetch Teacher's Students
-  // GET /grades/students/:teacher_id
-  // ───────────────────────────────────────────────────────────────────────────
-=======
-  // UI
-  const [submitting, setSubmitting] = useState(false);
-  const [statusModal, setStatusModal] = useState({ show: false, variant: "info", title: "", message: "" });
-
-  // Load: /grades/teacher/:teacher_id
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-  useEffect(() => {
-    let mounted = true;
-    const ac = new AbortController();
-
-    async function run() {
-      if (!teacherId) {
-        setLoadingStudents(false);
-        return;
-      }
-      try {
-<<<<<<< HEAD
-        setLoadingStudents(true);
-        const res = await fetch(joinUrl(`/grades/students/${teacherId}`), {
-=======
-        if (!teacherId) {
-          setStatusModal({
-            show: true,
-            variant: "warning",
-            title: "Missing teacher id",
-            message: "No teacher_id found in storage. Make sure you call storage.setItem('teacher_id', data.user?.user_id || '').",
-          });
-          setRows([]);
-          return;
-        }
-
-        setLoadingRows(true);
-        const res = await fetch(joinUrl(`/grades/teacher/${teacherId}`), {
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-          method: "GET",
-          headers: headers(token),
-          signal: ac.signal,
-        });
-<<<<<<< HEAD
-        if (!res.ok) throw new Error(`Students load failed (${res.status})`);
-        const json = await res.json();
-        if (!mounted) return;
-
-        const list = Array.isArray(json?.data) ? json.data : [];
-        setStudents(list);
-=======
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.message || `Request failed (${res.status})`);
-        if (!mounted) return;
-
-        const list = Array.isArray(json?.data) ? json.data : [];
-        setRows(list);
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-      } catch (err) {
-        if (isAbort(err)) return;
-        console.error(err);
-        if (mounted) {
-          setStatusModal({
-            show: true,
-            variant: "danger",
-            title: "Load failed",
-            message: String(err?.message || err),
-          });
-        }
-      } finally {
-<<<<<<< HEAD
-        if (mounted) setLoadingStudents(false);
-=======
-        if (mounted) setLoadingRows(false);
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-      }
-    }
-
-<<<<<<< HEAD
-    run();
-    return () => {
-      mounted = false;
-      ac.abort();
-    };
-  }, [teacherId, token]);
-
-  // Selected student record
-  useEffect(() => {
-    const sid = Number(selectedStudentId) || null;
-    setSelectedStudent(
-      sid ? students.find((s) => Number(s.student_id) === sid) || null : null
-    );
-  }, [selectedStudentId, students]);
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // When a student changes → fetch subjects for their grade level
-  // Uses ONLY: GET /subjects/view-all-sub-grade-levels
-  // ───────────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    let mounted = true;
-    const ac = new AbortController();
-
-    async function fetchSubjectsForGradeLevel(gradeLevelId) {
-      try {
-        setLoadingSubjects(true);
-        const res = await fetch(joinUrl(`/subjects/view-all-sub-grade-levels`), {
-          method: "GET",
-          headers: headers(token),
-          signal: ac.signal,
-        });
-        if (!res.ok) throw new Error(`Subjects load failed (${res.status})`);
-        const json = await res.json();
-        if (!mounted) return;
-
-        const rows = Array.isArray(json?.data) ? json.data : [];
-        const match = rows.find(
-          (r) => Number(r.grade_level_id) === Number(gradeLevelId)
-        );
-        const subs = Array.isArray(match?.subjects) ? match.subjects : [];
-        // Normalize shape: ensure subject_id, subject_code, subject_name are present
-        const mapped = subs.map((s) => ({
-          subject_id: s.subject_id,
-          subject_code: s.subject_code || "",
-          subject_name: s.subject_name || `Subject #${s.subject_id}`,
-        }));
-        setSubjects(mapped);
-      } catch (err) {
-        if (isAbort(err)) return;
-        console.error(err);
-        if (mounted) {
-          setSubjects([]);
-          setStatusModal({
-            show: true,
-            variant: "danger",
-            title: "Subjects load failed",
-            message: String(err?.message || err),
-          });
-        }
-      } finally {
-        if (mounted) setLoadingSubjects(false);
-      }
-    }
-
-    // Reset whenever student changes
-    setSubjects([]);
-    setInputsBySubject({});
-    setSavedTickBySubject({});
-    setExistingGrades([]);
-
-    const glId =
-      selectedStudent?.grade_level?.grade_level_id ||
-      selectedStudent?.grade_level_id ||
-      null;
-
-    if (glId) fetchSubjectsForGradeLevel(glId);
-  }, [selectedStudent, token]);
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Load existing grades for this student (all periods), then prefill inputs
-  // GET /grades/student/:student_id
-  // ───────────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    let mounted = true;
-    const ac = new AbortController();
-
-    async function fetchExistingGrades(studentId) {
-      try {
-        setLoadingGrades(true);
-        const res = await fetch(joinUrl(`/grades/student/${studentId}`), {
-          method: "GET",
-          headers: headers(token),
-          signal: ac.signal,
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.message || `Grades load failed (${res.status})`);
-        if (!mounted) return;
-
-        const list = Array.isArray(json?.data) ? json.data : [];
-        setExistingGrades(list);
-      } catch (err) {
-        if (isAbort(err)) return;
-        console.error(err);
-        if (mounted) {
-          setExistingGrades([]);
-          setStatusModal({
-            show: true,
-            variant: "danger",
-            title: "Grades load failed",
-            message: String(err?.message || err),
-          });
-        }
-      } finally {
-        if (mounted) setLoadingGrades(false);
-      }
-    }
-
-    // Reset when student or period changes
-    setInputsBySubject({});
-    setSavedTickBySubject({});
-
-    const sid = Number(selectedStudentId) || null;
-    if (sid) fetchExistingGrades(sid);
-  }, [selectedStudentId, token]);
-
-  // Prefill inputs whenever (subjects OR existingGrades OR gradingPeriod) changes
-  useEffect(() => {
-    if (!gradingPeriod) {
-      setInputsBySubject({});
-      return;
-    }
-    // Build an index of saved grades for the selected period
-    const index = {};
-    for (const g of existingGrades) {
-      const sid = g.subject_id || g.subject?.subject_id;
-      if (!sid) continue;
-      const gp = g.grading_period;
-      if (gp === gradingPeriod) index[String(sid)] = g.grade ?? "";
-    }
-
-    const nextInputs = {};
-    for (const s of subjects) {
-      const key = String(s.subject_id);
-      nextInputs[key] = index[key] != null ? String(index[key]) : "";
-    }
-    setInputsBySubject(nextInputs);
-  }, [subjects, existingGrades, gradingPeriod]);
-
-  // Options for the Student selector (limited to this teacher)
-  const studentOptions = useMemo(
-    () =>
-      students.map((s) => ({
-        value: s.student_id,
-        label: `${s.student_name ?? "(Unnamed)"} • ${s.section?.section_name ?? "?"} • ${s.school_year?.school_year ?? "?"}`,
-        subtitle: `LRN: ${s.lrn ?? "—"}`,
-      })),
-    [students]
-  );
-
-  const onChangeGradeInput = (subjectId, val) => {
-    setInputsBySubject((prev) => ({ ...prev, [String(subjectId)]: val }));
-  };
-
-  const refreshGrades = async () => {
-    const sid = Number(selectedStudentId) || null;
-    if (!sid) return;
-    try {
-      setLoadingGrades(true);
-      const res = await fetch(joinUrl(`/grades/student/${sid}`), {
-=======
-    return () => { mounted = false; ac.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teacherId, token]);
-
-  // Derived: students, subjects (per student), enrollments (per student)
-  const students = useMemo(() => {
-    const map = new Map();
-    rows.forEach(r => {
-      const s = r?.student;
-      if (!s?.student_id) return;
-      if (!map.has(s.student_id)) {
-        // pick the "latest-looking" row label; keep simple
-        const sec = r?.section?.section_name ?? "";
-        const sy = r?.school_year ?? "";
-        const sub = `${sec || "—"} • ${sy || "—"}`;
-        map.set(s.student_id, {
-          value: String(s.student_id),
-          label: s.name || `${s.first_name ?? ""} ${s.last_name ?? ""}`.trim() || `Student #${s.student_id}`,
-          subtitle: sub
-        });
-      }
-    });
-    return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label)));
-  }, [rows]);
-
-  const studentEnrollments = useMemo(() => {
-    if (!selectedStudentId) return [];
-    const sid = Number(selectedStudentId);
-    const map = new Map();
-    rows.filter(r => r?.student?.student_id === sid).forEach(r => {
-      const eid = r?.enrollment_id;
-      if (!eid) return;
-      if (!map.has(eid)) {
-        const sec = r?.section?.section_name ?? "—";
-        const sy  = r?.school_year ?? "—";
-        const gl  = r?.grade_level ?? "—";
-        map.set(eid, {
-          value: String(eid),
-          label: `${sec} • ${sy}`,
-          subtitle: gl
-        });
-      }
-    });
-    return Array.from(map.values()).sort((a, b) => Number(a.value) - Number(b.value));
-  }, [rows, selectedStudentId]);
-
-  const studentSubjects = useMemo(() => {
-    if (!selectedStudentId) return [];
-    const sid = Number(selectedStudentId);
-    const map = new Map();
-    rows.filter(r => r?.student?.student_id === sid).forEach(r => {
-      const subj = r?.subject;
-      if (!subj?.subject_id) return;
-      if (!map.has(subj.subject_id)) {
-        map.set(subj.subject_id, {
-          value: String(subj.subject_id),
-          label: subj.subject_name || subj.subject_code || `Subject #${subj.subject_id}`,
-          subtitle: subj.subject_code || ""
-        });
-      }
-    });
-    return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label)));
-  }, [rows, selectedStudentId]);
-
-  // Auto-pick defaults when student changes
-  useEffect(() => {
-    setSelectedEnrollmentId("");
-    setSelectedSubjectId("");
-    setGradingPeriod("");
-    setGradeValue("");
-
-    if (!selectedStudentId) return;
-
-    // Choose the first enrollment & subject if any
-    const e0 = studentEnrollments[0]?.value;
-    const s0 = studentSubjects[0]?.value;
-    if (e0) setSelectedEnrollmentId(String(e0));
-    if (s0) setSelectedSubjectId(String(s0));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStudentId]);
-
-  // Current grades table (for selected student)
-  const currentGrades = useMemo(() => {
-    if (!selectedStudentId) return [];
-    const sid = Number(selectedStudentId);
-    return rows.filter(r => r?.student?.student_id === sid);
-  }, [rows, selectedStudentId]);
-
-  // Per-subject history (for quick reference under the subject select)
-  const subjectHistory = useMemo(() => {
-    if (!selectedStudentId || !selectedSubjectId) return [];
-    const sid = Number(selectedStudentId);
-    const subid = Number(selectedSubjectId);
-    return rows
-      .filter(r => r?.student?.student_id === sid && r?.subject?.subject_id === subid)
-      .sort((a, b) => String(a.grading_period).localeCompare(String(b.grading_period)));
-  }, [rows, selectedStudentId, selectedSubjectId]);
-
-  const fmtGrade = (g) => {
-    const n = Number(g);
-    return Number.isFinite(n) ? n.toFixed(2) : String(g ?? "—");
-  };
-
-  const refreshRows = async () => {
-    if (!teacherId) return;
-    setLoadingRows(true);
-    try {
-      const res = await fetch(joinUrl(`/grades/teacher/${teacherId}`), {
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-        method: "GET",
-        headers: headers(token),
-      });
-      const json = await res.json().catch(() => ({}));
-<<<<<<< HEAD
-      if (!res.ok) throw new Error(json?.message || `Grades refresh failed (${res.status})`);
-      const list = Array.isArray(json?.data) ? json.data : [];
-      setExistingGrades(list);
-    } catch (err) {
-      console.error(err);
-      setStatusModal({
-        show: true,
-        variant: "danger",
-        title: "Refresh failed",
-        message: String(err?.message || err),
-      });
-=======
-      if (!res.ok) throw new Error(json?.message || `Request failed (${res.status})`);
-      setRows(Array.isArray(json?.data) ? json.data : []);
-    } catch (err) {
-      console.error(err);
-      setStatusModal({ show: true, variant: "danger", title: "Refresh failed", message: String(err?.message || err) });
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-    } finally {
-      setLoadingRows(false);
-    }
-  };
-
-<<<<<<< HEAD
-  const saveOne = async (subjectId) => {
-    const sid = Number(selectedStudentId) || null;
-    const gp = gradingPeriod || "";
-    const raw = inputsBySubject[String(subjectId)];
-    const n = Number(raw);
-
-    if (!sid)
-      return setStatusModal({
-        show: true,
-        variant: "warning",
-        title: "Missing student",
-        message: "Please select a student.",
-      });
-
-    if (!gp)
-      return setStatusModal({
-        show: true,
-        variant: "warning",
-        title: "Missing grading period",
-        message: "Please choose 1st / 2nd / 3rd / 4th.",
-      });
-
-    if (!Number.isFinite(n) || n < 0 || n > 100)
-      return setStatusModal({
-        show: true,
-        variant: "warning",
-        title: "Invalid grade",
-        message: "Enter a number between 0 and 100.",
-      });
-=======
-  // Submit
-  const handleSubmit = async (e) => {
-    e?.preventDefault?.();
-
-    const eid = Number(selectedEnrollmentId) || null;
-    const sid = Number(selectedSubjectId) || null;
-    const period = gradingPeriod || "";
-    const gradeNum = Number(gradeValue);
-
-    if (!selectedStudentId) return setStatusModal({ show: true, variant: "warning", title: "Missing selection", message: "Please choose a student." });
-    if (!eid) return setStatusModal({ show: true, variant: "warning", title: "Missing selection", message: "Please choose an enrollment (Section • SY)." });
-    if (!sid) return setStatusModal({ show: true, variant: "warning", title: "Missing selection", message: "Please choose a subject." });
-    if (!period) return setStatusModal({ show: true, variant: "warning", title: "Missing selection", message: "Please choose a grading period (1st–4th)." });
-    if (!Number.isFinite(gradeNum) || gradeNum < 0 || gradeNum > 100)
-      return setStatusModal({ show: true, variant: "warning", title: "Invalid grade", message: "Enter a number between 0 and 100." });
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-
-    try {
-      setSavingBySubject((m) => ({ ...m, [String(subjectId)]: true }));
-
-      // We post by student_id (since we're not using Enrollment dropdown anymore).
-      // If your backend expects enrollment_id, adjust here accordingly.
-      const body = {
-        student_id: sid,
-        subject_id: Number(subjectId),
-        grading_period: gp,
-        grade: n,
-      };
-
-      // Extra context (optional; backend may ignore):
-      if (selectedStudent?.section?.section_id)
-        body.section_id = selectedStudent.section.section_id;
-      const glId =
-        selectedStudent?.grade_level?.grade_level_id ||
-        selectedStudent?.grade_level_id;
-      if (glId) body.grade_level_id = glId;
-      if (selectedStudent?.school_year?.school_year_id)
-        body.school_year_id = selectedStudent.school_year.school_year_id;
-
-      const res = await fetch(joinUrl(`/grades/create-or-update`), {
-        method: "POST",
-        headers: headers(token),
-        body: JSON.stringify(body),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error(json?.message || `Save failed (${res.status})`);
-
-      setSavedTickBySubject((m) => ({
-        ...m,
-        [String(subjectId)]: Date.now(),
-      }));
-
-      // Refresh saved grades then re-prefill inputs for consistency
-      await refreshGrades();
-
-      setStatusModal({
-        show: true,
-        variant: "success",
-        title: "Saved",
-        message: json?.message || "Grade saved successfully.",
-      });
-<<<<<<< HEAD
-=======
-
-      // Refresh the teacher view so the tables reflect the change
-      await refreshRows();
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-    } catch (err) {
-      if (isAbort(err)) return;
-      console.error(err);
-      setStatusModal({
-        show: true,
-        variant: "danger",
-        title: "Save failed",
-        message: String(err?.message || err),
-      });
-    } finally {
-      setSavingBySubject((m) => ({ ...m, [String(subjectId)]: false }));
-    }
-  };
-
-  const handleClose = () => navigate(-1);
-
-<<<<<<< HEAD
-=======
-  // Options for selects
-  const studentOptions = students;
-  const enrollmentOptions = studentEnrollments;
-  const subjectOptions = studentSubjects;
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // UI
-  // ───────────────────────────────────────────────────────────────────────────
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-  return (
-    <div className="container py-3">
-      <StatusModal
-        show={statusModal.show}
-        onClose={() => setStatusModal((s) => ({ ...s, show: false }))}
-        title={statusModal.title}
-        message={statusModal.message}
-        variant={statusModal.variant}
-      />
-
-      <div className="d-flex align-items-center justify-content-between mb-3">
-<<<<<<< HEAD
-        <h5 className="mb-0">Grade Entry</h5>
-=======
-        <h5 className="mb-0">Create / Update Grade (by Teacher)</h5>
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-        <div className="btn-group">
-          <button
-            className="btn btn-outline-secondary btn-sm"
-            onClick={handleClose}
-          >
-            <FaTimes className="me-1" />
-            Close
-          </button>
-          <button
-            className="btn btn-outline-primary btn-sm"
-<<<<<<< HEAD
-            onClick={refreshGrades}
-            disabled={!selectedStudentId || loadingGrades}
-            title="Refresh grades"
-          >
-            <FaSync className={loadingGrades ? "me-1 spin" : "me-1"} />
-            Refresh
-=======
-            onClick={refreshRows}
-            disabled={loadingRows}
-          >
-            <FaSync className={loadingRows ? "me-1 spin" : "me-1"} /> Refresh
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-          </button>
-        </div>
-      </div>
-
-      {/* Top controls */}
-      <div className="card border-0 shadow-sm mb-3">
-        <div className="card-body">
-          {!teacherId ? (
-<<<<<<< HEAD
-            <div className="alert alert-warning mb-3">
-              No <code>teacher_id</code> found. Provide it via query
-              <code>?teacher_id=</code> or store it in{' '}
-              <code>sessionStorage.teacher_id</code>.
+};
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Delete confirmation modal
+const DeleteConfirmModal = ({ show, item, busy, onCancel, onConfirm }) =>
+  !show ? null : (
+    <>
+      <div className="modal fade show" style={{ display: "block" }} role="dialog" aria-modal="true">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content rounded-4">
+            <div className="modal-header">
+              <h5 className="modal-title">Delete enrollment</h5>
+              <button type="button" className="btn-close" onClick={onCancel} aria-label="Close" />
             </div>
-          ) : null}
-
-          <div className="row g-3">
-            <div className="col-12 col-lg-6">
-              <SearchableSelect
-                label="Teacher’s Students"
-                options={studentOptions}
-                value={selectedStudentId}
-                onChange={(v) => {
-                  setSelectedStudentId(v);
-                  setGradingPeriod(""); // reset period when switching student
-                }}
-                placeholder="Search students…"
-                disabled={loadingStudents || !teacherId}
-                loading={loadingStudents}
-              />
-=======
-            <div className="alert alert-warning mb-0">
-              No <code>teacher_id</code> found. Make sure you’ve called:
-              <pre className="mt-2 mb-0">storage.setItem("teacher_id", data.user?.user_id || "");</pre>
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
+            <div className="modal-body">
+              <p className="mb-1">This action cannot be undone.</p>
+              <p className="mb-0">
+                Delete enrollment <strong>#{item?.enrollment_id}</strong>
+                {item?.student_name ? <> for <em>{item.student_name}</em></> : null}?
+              </p>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit}>
-              {/* Row: Student / Enrollment / Subject */}
-              <div className="row g-3">
-                <div className="col-12 col-lg-4">
-                  <SearchableSelect
-                    label="Student"
-                    options={studentOptions}
-                    value={selectedStudentId}
-                    onChange={setSelectedStudentId}
-                    placeholder="Search students…"
-                    disabled={loadingRows}
-                    loading={loadingRows}
-                  />
-                </div>
-
-<<<<<<< HEAD
-            <div className="col-12 col-lg-6">
-              <label className="form-label">Grading Period</label>
-              <select
-                className="form-select"
-                value={gradingPeriod}
-                onChange={(e) => setGradingPeriod(e.target.value)}
-                disabled={!selectedStudentId}
-              >
-                <option value="">— Select period —</option>
-                {GRADE_PERIODS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-              <div className="form-text">
-                Choose one: 1st, 2nd, 3rd, or 4th grading.
-              </div>
-            </div>
-          </div>
-
-          {selectedStudent ? (
-            <div className="mt-3 small text-muted">
-              <div>
-                <strong>Student:</strong> {selectedStudent.student_name} (LRN:{' '}
-                {selectedStudent.lrn || '—'})
-              </div>
-              <div>
-                <strong>Section:</strong>{' '}
-                {selectedStudent.section?.section_name || '—'} •{' '}
-                <strong>Grade Level:</strong>{' '}
-                {selectedStudent.grade_level?.grade_name || '—'} •{' '}
-                <strong>SY:</strong>{' '}
-                {selectedStudent.school_year?.school_year || '—'}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Subjects list with per-row grade input + save */}
-      <div className="card border-0 shadow-sm">
-        <div className="card-body">
-          <h6 className="mb-3">Subjects</h6>
-
-          {!selectedStudentId ? (
-            <div className="text-muted small">
-              Select a student to load their subjects.
-            </div>
-          ) : loadingSubjects ? (
-            <div className="text-muted small">Loading subjects…</div>
-          ) : subjects.length === 0 ? (
-            <div className="text-muted small">
-              No subjects found for this student’s grade level in the active
-              curriculum.
-            </div>
-          ) : !gradingPeriod ? (
-            <div className="text-muted small">
-              Pick a grading period to enter grades.
-            </div>
-=======
-                <div className="col-12 col-lg-4">
-                  <SearchableSelect
-                    label={<span>Enrollment <span className="text-muted">(Section • SY)</span></span>}
-                    options={enrollmentOptions}
-                    value={selectedEnrollmentId}
-                    onChange={setSelectedEnrollmentId}
-                    placeholder={selectedStudentId ? "Choose Section • SY…" : "Select a student first"}
-                    disabled={!selectedStudentId || loadingRows}
-                    loading={loadingRows}
-                  />
-                </div>
-
-                <div className="col-12 col-lg-4">
-                  <SearchableSelect
-                    label="Subject"
-                    options={subjectOptions}
-                    value={selectedSubjectId}
-                    onChange={setSelectedSubjectId}
-                    placeholder={selectedStudentId ? "Search subjects…" : "Select a student first"}
-                    disabled={!selectedStudentId || loadingRows}
-                    loading={loadingRows}
-                  />
-                </div>
-              </div>
-
-              {/* Row: Period / Grade */}
-              <div className="row g-3 mt-1">
-                <div className="col-12 col-lg-4">
-                  <label className="form-label">Grading Period</label>
-                  <select
-                    className="form-select"
-                    value={gradingPeriod}
-                    onChange={(e) => setGradingPeriod(e.target.value)}
-                    disabled={!selectedStudentId}
-                  >
-                    <option value="">— Select period —</option>
-                    {GRADE_PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <div className="form-text">Choose one of: 1st, 2nd, 3rd, or 4th grading.</div>
-                </div>
-
-                <div className="col-12 col-lg">
-                  <label className="form-label">Grade</label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    className="form-control"
-                    placeholder="e.g., 89"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={gradeValue}
-                    onChange={(e) => setGradeValue(e.target.value)}
-                    disabled={!selectedStudentId}
-                  />
-                  <div className="form-text">Enter a whole number from 0 to 100.</div>
-                </div>
-              </div>
-
-              {/* Subject history (quick glance) */}
-              {selectedStudentId && selectedSubjectId && (
-                <div className="mt-3">
-                  <div className="small text-muted mb-1">Existing grades for this subject:</div>
-                  {subjectHistory.length === 0 ? (
-                    <div className="small text-muted">No grades yet for this subject.</div>
-                  ) : (
-                    <div className="table-responsive">
-                      <table className="table table-sm align-middle mb-0">
-                        <thead className="table-light">
-                          <tr>
-                            <th style={{width: '20%'}}>Period</th>
-                            <th style={{width: '20%'}}>Grade</th>
-                            <th style={{width: '30%'}}>Section</th>
-                            <th style={{width: '30%'}}>School Year</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {subjectHistory.map((g) => (
-                            <tr key={`subhist-${g.grade_id}`}>
-                              <td>{g?.grading_period ?? '—'}</td>
-                              <td>{fmtGrade(g?.grade)}</td>
-                              <td>{g?.section?.section_name ?? '—'}</td>
-                              <td>{g?.school_year ?? '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="d-flex justify-content-end gap-2 mt-3">
-                <button type="button" className="btn btn-outline-secondary" onClick={handleCancel} disabled={submitting}>
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={
-                    submitting ||
-                    loadingRows ||
-                    !selectedStudentId ||
-                    !selectedEnrollmentId ||
-                    !selectedSubjectId ||
-                    !gradingPeriod ||
-                    gradeValue === ""
-                  }
-                >
-                  <FaSave className={submitting ? "me-2 spin" : "me-2"} />
-                  {submitting ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      </div>
-
-      {/* CURRENT GRADES TABLE (for selected student) */}
-      <div className="card shadow-sm border-0 mt-3">
-        <div className="card-body">
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h6 className="mb-0">
-              Current Grades {selectedStudentId ? <span className="text-muted">• Student #{selectedStudentId}</span> : null}
-            </h6>
-            <div className="d-flex align-items-center gap-2">
-              <span className="badge bg-light text-dark">Count: {currentGrades?.length ?? 0}</span>
-              <button
-                className="btn btn-outline-primary btn-sm"
-                onClick={refreshRows}
-                disabled={loadingRows}
-                title="Refresh grades"
-              >
-                <FaSync className={loadingRows ? "me-1 spin" : "me-1"} />
-                Refresh
+            <div className="modal-footer">
+              <button className="btn btn-light border" onClick={onCancel} disabled={busy}>Cancel</button>
+              <button className="btn btn-danger d-inline-flex align-items-center gap-2" onClick={onConfirm} disabled={busy}>
+                {busy && <span className="spinner-border spinner-border-sm" role="status" />} <FaTrash /> Delete
               </button>
             </div>
           </div>
+        </div>
+      </div>
+      <div className="modal-backdrop fade show" />
+    </>
+  );
 
-          {!selectedStudentId ? (
-            <div className="text-muted small">Select a student to view their grades.</div>
-          ) : loadingRows ? (
-            <div className="text-muted small">Loading…</div>
-          ) : (currentGrades?.length ?? 0) === 0 ? (
-            <div className="text-muted small">No grades found for this student.</div>
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-          ) : (
-            <div className="table-responsive">
-              <table className="table align-middle">
-                <thead className="table-light">
-                  <tr>
-                    <th style={{ width: '40%' }}>Subject</th>
-                    <th style={{ width: '20%' }}>Code</th>
-                    <th style={{ width: '20%' }}>Grade</th>
-                    <th style={{ width: '20%' }} className="text-end">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-<<<<<<< HEAD
-                  {subjects.map((s) => {
-                    const key = String(s.subject_id);
-                    const saving = !!savingBySubject[key];
-                    const savedTick = savedTickBySubject[key];
+// ────────────────────────────────────────────────────────────────────────────────
+// Main component (now perfectly aligned with /enrollments data)
+const EnrollmentList = () => {
+  const navigate = useNavigate(), location = useLocation();
 
-                    return (
-                      <tr key={s.subject_id}>
-                        <td className="fw-semibold">{s.subject_name}</td>
-                        <td>{s.subject_code || '—'}</td>
-                        <td style={{ maxWidth: 160 }}>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            max={100}
-                            step={1}
-                            className="form-control"
-                            placeholder="e.g., 88"
-                            value={inputsBySubject[key] ?? ""}
-                            onChange={(e) =>
-                              onChangeGradeInput(s.subject_id, e.target.value)
-                            }
-                            disabled={!gradingPeriod || saving}
-                          />
-                          <div className="form-text">
-                            0–100, whole number.
-                          </div>
-                        </td>
-                        <td className="text-end">
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => saveOne(s.subject_id)}
-                            disabled={
-                              saving ||
-                              !gradingPeriod ||
-                              !selectedStudentId ||
-                              inputsBySubject[key] == null ||
-                              String(inputsBySubject[key]).trim() === ""
-                            }
-                            title="Save grade"
-                          >
-                            <FaSave className={saving ? 'me-2 spin' : 'me-2'} />
-                            {saving ? 'Saving…' : 'Save'}
-                          </button>
-                          {savedTick ? (
-                            <div className="small text-success mt-1">Saved ✓</div>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })}
-=======
-                  {currentGrades.map((g) => (
-                    <tr key={g.grade_id}>
-                      <td>
-                        <div className="fw-semibold">
-                          {g?.subject?.subject_code ?? '—'}{g?.subject?.subject_code ? ' — ' : ''}{g?.subject?.subject_name ?? '—'}
-                        </div>
-                      </td>
-                      <td>{g?.grading_period ?? '—'}</td>
-                      <td>{fmtGrade(g?.grade)}</td>
-                      <td>{g?.section?.section_name ?? '—'}</td>
-                      <td>{g?.grade_level ?? '—'}</td>
-                      <td>{g?.school_year ?? '—'}</td>
-                    </tr>
-                  ))}
->>>>>>> 14fe1afe78912ec78d304f7b5a368cae4f172435
-                </tbody>
-              </table>
+  // URL state
+  const initial = useMemo(() => ({
+    q: readQP(location.search, "q", ""),
+    student: readQP(location.search, "student", "all"),
+    section: readQP(location.search, "section", "all"),
+    sy: readQP(location.search, "sy", "all"),
+    curriculum: readQP(location.search, "curriculum", "all"),
+    status: readQP(location.search, "status", "all"),
+    page: Number(readQP(location.search, "page", 1)) || 1,
+    size: Number(readQP(location.search, "size", DEFAULT_PAGE_SIZE)) || DEFAULT_PAGE_SIZE,
+    sort: readQP(location.search, "sort", DEFAULT_SORT),
+    group: readQP(location.search, "group", "none"),
+  }), [location.search]);
+
+  // Local state
+  const token = useMemo(() => sessionStorage.getItem("token"), []);
+  const [q, setQ] = useState(initial.q);
+  const [studentId, setStudentId] = useState(initial.student);
+  const [sectionId, setSectionId] = useState(initial.section);
+  const [schoolYearId, setSchoolYearId] = useState(initial.sy);
+  const [curriculumId, setCurriculumId] = useState(initial.curriculum);
+  const [status, setStatus] = useState(initial.status);
+
+  const [page, setPage] = useState(Math.max(1, initial.page));
+  const [pageSize, setPageSize] = useState(PAGE_SIZES.includes(initial.size) ? initial.size : DEFAULT_PAGE_SIZE);
+  const [sort, setSort] = useState(initial.sort);
+  const [groupByKey, setGroupByKey] = useState(
+    ["none", "sy", "section", "curriculum", "status", "date"].includes(initial.group) ? initial.group : "none"
+  );
+
+  const debouncedQ = useDebounced(q, 300);
+
+  // Data
+  const [enrollments, setEnrollments] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [schoolYears, setSchoolYears] = useState([]);
+  const [curricula, setCurricula] = useState([]);
+  const [availableStatuses, setAvailableStatuses] = useState([]);
+
+  // Track active curriculum (for labeling & defaulting)
+  const [activeCurriculumId, setActiveCurriculumId] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+  const [statusModal, setStatusModal] = useState({
+    show: false, title: "", message: "", variant: "info", icon: icons.info,
+  });
+
+  // Delete modal
+  const [delOpen, setDelOpen] = useState(false);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delItem, setDelItem] = useState(null);
+
+  const showStatus = useCallback(
+    (variant, title, message) => setStatusModal({ show: true, title, message, variant, icon: icons[variant] }),
+    []
+  );
+
+  const handleUnauthorized = useCallback(() => {
+    showStatus("danger", "Unauthorized", "Please login to continue.");
+    sessionStorage.removeItem("token");
+    setTimeout(() => navigate("/login"), 800);
+  }, [navigate, showStatus]);
+
+  // Track whether we've already auto-applied the defaults (so we don't override user changes later)
+  const appliedDefaultSyRef = useRef(false);
+  const appliedDefaultCurrRef = useRef(false);
+
+  // Load data
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const [enrRes, secRes, syRes, curAllRes, curActiveRes] = await Promise.all([
+          api.get(`/enrollments`, token),
+          api.get(`/sections`, token),
+          api.get(`/school-year/all-school-years`, token),
+          // all curricula (paged)
+          // NOTE: returns a flat array already (via fetchPagedAll)
+          Promise.resolve().then(() => api.fetchPagedAll(`/curriculum/view-all-curriculums`, token, "data")),
+          api.get(`/curriculum/active-curriculums`, token), // may fail; don't hard fail load
+        ]);
+
+        if (!enrRes.ok || !secRes.ok || !syRes.ok) throw new Error("Failed to load data");
+        const [enr, secJs, syJs] = await Promise.all([enrRes.json(), secRes.json(), syRes.json()]);
+        if (cancelled) return;
+
+        // Enrollments & sections
+        setEnrollments(Array.isArray(enr?.data) ? enr.data : []);
+        setSections(Array.isArray(secJs?.data) ? secJs.data : []);
+
+        // School years (keep is_active so we can label or use it)
+        const syRaw = Array.isArray(syJs?.schoolYears) ? syJs.schoolYears : [];
+        const syMapped = syRaw.map((sy) => ({
+          school_year_id: sy.school_year_id,
+          school_year: `${sy.start_year}-${sy.end_year}`,
+          is_active: sy.is_active,
+        }));
+        setSchoolYears(syMapped);
+
+        // ✅ Default SY to ACTIVE (only once if no URL sy)
+        if (!appliedDefaultSyRef.current && (initial.sy === "all" || initial.sy == null)) {
+          const activeSY = syRaw.find((s) => s?.is_active === 1 || s?.is_active === true || String(s?.is_active) === "1");
+          if (activeSY?.school_year_id) {
+            setSchoolYearId(String(activeSY.school_year_id));
+          }
+          appliedDefaultSyRef.current = true;
+        }
+
+        // Curriculums
+        const curAll = Array.isArray(curAllRes) ? curAllRes : [];
+        setCurricula(curAll);
+
+        // 🔹 Active curriculum (optional; do not break load if missing)
+        let activeCurId = null;
+        if (curActiveRes && curActiveRes.ok) {
+          try {
+            const curActiveJs = await curActiveRes.json();
+            const d = curActiveJs?.data;
+            if (d?.curriculum_id) activeCurId = String(d.curriculum_id);
+          } catch { /* ignore parse */ }
+        }
+        setActiveCurriculumId(activeCurId);
+
+        // ✅ Default Curriculum to ACTIVE (only once if no URL curriculum)
+        if (!appliedDefaultCurrRef.current && (initial.curriculum === "all" || initial.curriculum == null)) {
+          if (activeCurId) setCurriculumId(activeCurId);
+          appliedDefaultCurrRef.current = true;
+        }
+
+        // Status set (from actual data)
+        setAvailableStatuses(
+          Array.from(new Set((enr?.data || []).map((r) => r.status).filter(Boolean)))
+        );
+      } catch (err) {
+        const msg = String(err?.message || "");
+        msg.toLowerCase().includes("unauthorized") ? handleUnauthorized()
+          : showStatus("danger", "Load error", msg || "Something went wrong.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, handleUnauthorized, showStatus]);
+
+  // URL sync
+  useEffect(() => {
+    writeQP(navigate, location, {
+      q: debouncedQ || undefined,
+      student: studentId !== "all" ? studentId : undefined,
+      section: sectionId !== "all" ? sectionId : undefined,
+      sy: schoolYearId !== "all" ? schoolYearId : undefined,
+      curriculum: curriculumId !== "all" ? curriculumId : undefined,
+      status: status !== "all" ? status : undefined,
+      page, size: pageSize, sort,
+      group: groupByKey !== "none" ? groupByKey : undefined,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQ, studentId, sectionId, schoolYearId, curriculumId, status, page, pageSize, sort, groupByKey]);
+
+  // Filter/sort/page with only real fields
+  const { total, totalPages, currentPage, pageRows, grouped } = useMemo(() => {
+    const needle = (debouncedQ || "").trim().toLowerCase();
+
+    const filtered = enrollments.filter((r) => {
+      const matchesFilters =
+        (studentId === "all" || String(r.student_id) === String(studentId)) &&
+        (sectionId === "all" || String(r.section_id) === String(sectionId)) &&
+        (schoolYearId === "all" || String(r.school_year_id) === String(schoolYearId)) &&
+        (curriculumId === "all" || String(r.curriculum_id) === String(curriculumId)) &&
+        (status === "all" || String(r.status) === String(status));
+
+      if (!matchesFilters) return false;
+
+      const hay = `${r.student_name ?? ""} ${r.section_name ?? ""} ${r.school_year ?? ""} ${r.curriculum_name ?? ""} ${r.status ?? ""}`.toLowerCase();
+      return needle ? hay.includes(needle) : true;
+    });
+
+    const getters = {
+      date: (r) => r.enrollment_date || "",
+      student: (r) => (r.student_name || "").toLowerCase(),
+      section: (r) => (r.section_name || "").toLowerCase(),
+      sy: (r) => (r.school_year || "").toLowerCase(),
+      curriculum: (r) => (r.curriculum_name || "").toLowerCase(),
+      status: (r) => (r.status || "").toLowerCase(),
+    };
+
+    const sorted = [...filtered].sort(buildSorter(sort, getters));
+
+    const totalItems = sorted.length;
+    const pages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const clamped = Math.min(Math.max(1, page), pages);
+    const start = (clamped - 1) * pageSize;
+    const slice = sorted.slice(start, start + pageSize);
+
+    const keyFns = {
+      none: () => "All",
+      sy: (r) => r.school_year || "—",
+      section: (r) => r.section_name || "—",
+      curriculum: (r) => r.curriculum_name || "—",
+      status: (r) => r.status || "—",
+      date: (r) => (r.enrollment_date ? new Date(r.enrollment_date).toLocaleDateString() : "—"),
+    };
+
+    return {
+      total: totalItems,
+      totalPages: pages,
+      currentPage: clamped,
+      pageRows: slice,
+      grouped: groupByKey === "none" ? null : groupBy(slice, keyFns[groupByKey]),
+    };
+  }, [enrollments, debouncedQ, studentId, sectionId, schoolYearId, curriculumId, status, sort, page, pageSize, groupByKey]);
+
+  // Reset page when dependencies change
+  useEffect(() => { setPage(1); }, [debouncedQ, studentId, sectionId, schoolYearId, curriculumId, status, pageSize, sort, groupByKey]);
+
+  // UI helpers
+  const onClear = () => setQ("");
+  const onReload = () => window.location.reload();
+
+  const SortIcon = ({ col }) => {
+    const [k, dir] = (sort || DEFAULT_SORT).split(":");
+    if (k !== col) return <FaSort className="opacity-50" />;
+    return dir === "asc" ? <FaSortUp /> : <FaSortDown />;
+  };
+  const ThSortable = ({ col, children, width }) => (
+    <th style={width ? { width } : undefined}>
+      <button
+        type="button"
+        className="btn btn-link p-0 text-decoration-none d-inline-flex align-items-center gap-1"
+        onClick={() => {
+          const [k, dir] = (sort || DEFAULT_SORT).split(":");
+          setSort(k === col ? `${col}:${dir === "asc" ? "desc" : "asc"}` : `${col}:asc`);
+        }}
+        aria-label={`Sort by ${children}`}
+      >
+        <span className="fw-semibold text-body">{children}</span>
+        <SortIcon col={col} />
+      </button>
+    </th>
+  );
+
+  // Delete flow
+  const openDelete = useCallback((row) => { setDelItem(row); setDelOpen(true); }, []);
+  const closeDelete = useCallback(() => { setDelOpen(false); setDelItem(null); setDelBusy(false); }, []);
+  const confirmDelete = useCallback(async () => {
+    if (!delItem) return;
+    try {
+      setDelBusy(true);
+      const res = await api.del(`/enrollments/delete/${delItem.enrollment_id}`, token);
+      let js = {};
+      try { js = await res.json(); } catch {}
+      if (!res.ok || js?.success === false) throw new Error(js?.message || "Delete failed");
+
+      setEnrollments((prev) => {
+        const next = prev.filter((r) => r.enrollment_id !== delItem.enrollment_id);
+        const newPages = Math.max(1, Math.ceil(next.length / pageSize));
+        setPage((p) => Math.min(p, newPages));
+        return next;
+      });
+
+      showStatus("success", "Deleted", js?.message || "Enrollment deleted successfully.");
+      closeDelete();
+    } catch (err) {
+      showStatus("danger", "Delete error", err?.message || "Something went wrong.");
+      setDelBusy(false);
+    }
+  }, [delItem, token, pageSize, closeDelete, showStatus]);
+
+  return (
+    <div className="container-xxl py-4 py-lg-5">
+      {/* Header */}
+      <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3 mb-lg-4">
+        <div>
+          <h3 className="fw-bold mb-1">Enrollments</h3>
+          <div className="text-muted small">Filter by student (search), section, school year, curriculum, and status.</div>
+        </div>
+        <div className="d-flex flex-wrap gap-2">
+          <button className="btn btn-outline-secondary rounded-3 d-inline-flex align-items-center gap-2" onClick={onReload} title="Reload">
+            <FaRedoAlt /> Refresh
+          </button>
+          <button className="btn btn-primary rounded-3 d-inline-flex align-items-center gap-2" onClick={() => navigate("/enrollments/create")}>
+            <FaPlus /> Add Enrollment
+          </button>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="card border-0 shadow-sm rounded-4 mb-3">
+        <div className="card-body d-grid gap-2 gap-lg-3" style={{ gridTemplateColumns: "1fr" }}>
+          <div className="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center gap-2">
+            <div className="input-group">
+              <span className="input-group-text"><FaSearch /></span>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Search student, section, school year, curriculum, status…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") onClear(); }}
+                autoComplete="off"
+              />
+              {q && <button className="btn btn-outline-secondary" onClick={onClear}>Clear</button>}
             </div>
+          </div>
+
+          <div className="flex-grow-1">
+            <label className="form-label small text-muted mb-1">Group by</label>
+            <select className="form-select" value={groupByKey} onChange={(e) => setGroupByKey(e.target.value)}>
+              <option value="none">None</option>
+              <option value="sy">School Year</option>
+              <option value="section">Section</option>
+              <option value="curriculum">Curriculum</option>
+              <option value="status">Status</option>
+              <option value="date">Date</option>
+            </select>
+          </div>
+
+          {/* Filters */}
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <div className="flex-grow-1 d-flex flex-column">
+              <label className="form-label small text-muted d-flex align-items-center gap-2 mb-1">
+                <FaUserGraduate /> Student
+              </label>
+              <StudentFilterSearch token={token} value={studentId} onPick={(id) => setStudentId(id || "all")} />
+            </div>
+
+            <div className="flex-grow-1">
+              <label className="form-label small text-muted d-flex align-items-center gap-2 mb-1">
+                <FaLayerGroup /> Section
+              </label>
+              <select className="form-select" value={sectionId} onChange={(e) => setSectionId(e.target.value)}>
+                <option value="all">All sections</option>
+                {sections.map((s) => (
+                  <option key={s.section_id} value={s.section_id}>{s.section_name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-grow-1">
+              <label className="form-label small text-muted d-flex align-items-center gap-2 mb-1">
+                <FaCalendarAlt /> School Year
+              </label>
+              <select className="form-select" value={schoolYearId} onChange={(e) => setSchoolYearId(e.target.value)}>
+                <option value="all">All years</option>
+                {schoolYears.map((sy) => (
+                  <option key={sy.school_year_id} value={sy.school_year_id}>
+                    {sy.school_year}{(sy.is_active === 1 || sy.is_active === true || String(sy.is_active) === "1") ? " (Active)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-grow-1">
+              <label className="form-label small text-muted d-flex align-items-center gap-2 mb-1">
+                <FaBookOpen /> Curriculum
+              </label>
+              <select className="form-select" value={curriculumId} onChange={(e) => setCurriculumId(e.target.value)}>
+                <option value="all">All curriculums</option>
+                {curricula.map((c) => (
+                  <option key={c.curriculum_id} value={c.curriculum_id}>
+                    {c.curriculum_name}{String(activeCurriculumId) === String(c.curriculum_id) ? " (Active)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-grow-1">
+              <label className="form-label small text-muted d-flex align-items-center gap-2 mb-1">
+                <FaTag /> Status
+              </label>
+              <select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="all">All status</option>
+                {(availableStatuses.length ? availableStatuses : ["Enrolled", "Pending", "Dropped", "Completed", "Cancelled"])
+                  .map((st) => <option key={st} value={st}>{st}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card border-0 shadow-sm rounded-4">
+        <div className="card-body p-0">
+          {loading ? (
+            <div className="py-5 text-center">
+              <div className="spinner-border" role="status" />
+              <div className="mt-2 small text-muted">Loading enrollments…</div>
+            </div>
+          ) : total === 0 ? (
+            <div className="p-5 text-center">
+              <h5 className="fw-semibold mt-2 mb-1">No enrollments found</h5>
+              <p className="text-muted mb-3">Try adjusting filters or create a new enrollment.</p>
+              <button className="btn btn-primary rounded-3 d-inline-flex align-items-center gap-2" onClick={() => navigate("/enrollments/create")}>
+                <FaPlus /> Create Enrollment
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="table-responsive">
+                <table className="table table-hover align-middle mb-0">
+                  <thead className="table-light" style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                    <tr>
+                      <th style={{ width: 70 }}>#</th>
+                      <ThSortable col="date" width={140}>Enrolled</ThSortable>
+                      <ThSortable col="student">Student</ThSortable>
+                      <ThSortable col="section" width={160}>Section</ThSortable>
+                      <ThSortable col="sy" width={160}>School Year</ThSortable>
+                      <ThSortable col="curriculum">Curriculum</ThSortable>
+                      <ThSortable col="status" width={140}>Status</ThSortable>
+                      <th style={{ width: 170 }}>Action</th>
+                    </tr>
+                  </thead>
+
+                  {grouped ? (
+                    [...grouped.keys()].map((label) => (
+                      <tbody key={label}>
+                        <tr className="table-group-divider table-primary-subtle">
+                          <td colSpan={9} className="fw-semibold">{label}</td>
+                        </tr>
+                        {grouped.get(label).map((r) => (
+                          <EnrollmentRow
+                            key={r.enrollment_id}
+                            row={r}
+                            onEdit={() => navigate(`/enrollments/edit/${r.enrollment_id}`)}
+                            onDelete={() => openDelete(r)}
+                          />
+                        ))}
+                      </tbody>
+                    ))
+                  ) : (
+                    <tbody>
+                      {pageRows.map((r) => (
+                        <EnrollmentRow
+                          key={r.enrollment_id}
+                          row={r}
+                          onEdit={() => navigate(`/enrollments/edit/${r.enrollment_id}`)}
+                          onDelete={() => openDelete(r)}
+                        />
+                      ))}
+                    </tbody>
+                  )}
+                </table>
+              </div>
+
+              {/* Footer */}
+              <div className="d-flex flex-column flex-md-row align-items-center justify-content-between gap-2 p-3">
+                <div className="small text-muted">
+                  Showing{" "}
+                  <strong>
+                    {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, total)}
+                  </strong>{" "}
+                  of <strong>{total}</strong> enrollments
+                </div>
+                <div className="d-flex align-items-center gap-2">
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    disabled={currentPage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    <FaChevronLeft /> Prev
+                  </button>
+                  <span className="small text-muted">Page</span>
+                  <input
+                    type="number"
+                    className="form-control form-control-sm"
+                    style={{ width: 80 }}
+                    min={1}
+                    max={totalPages}
+                    value={currentPage}
+                    onChange={(e) => {
+                      const v = Number(e.target.value || 1);
+                      setPage(Math.min(Math.max(1, v), totalPages));
+                    }}
+                  />
+                  <span className="small text-muted">of {totalPages}</span>
+                  <select
+                    className="form-select form-select-sm"
+                    style={{ width: 120 }}
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                  >
+                    {PAGE_SIZES.map((s) => (
+                      <option key={s} value={s}>{s} / page</option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Next <FaChevronRight />
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
 
-      <style>{`
-        .spin { animation: spin 0.9s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .dropdown-item.active, .dropdown-item:active { color: #fff; }
-      `}</style>
+      <DeleteConfirmModal
+        show={delOpen}
+        item={delItem}
+        busy={delBusy}
+        onCancel={closeDelete}
+        onConfirm={confirmDelete}
+      />
+
+      <StatusModal {...statusModal} onHide={() => setStatusModal((s) => ({ ...s, show: false }))} />
     </div>
   );
-}
+};
+
+const EnrollmentRow = ({ row, onEdit, onDelete }) => (
+  <tr>
+    <td className="text-muted">#{row.enrollment_id}</td>
+    <td>{fmtDate(row.enrollment_date)}</td>
+    <td className="d-flex align-items-center gap-2"><FaUserGraduate className="opacity-50" />{row.student_name || "—"}</td>
+    <td>{row.section_name}</td>
+    <td>{row.school_year}</td>
+    <td>{row.curriculum_name}</td>
+    <td>{row.status || "—"}</td>
+    <td className="d-flex gap-1">
+      <button className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" onClick={onEdit}>
+        <FaEdit /> Update
+      </button>
+      <button className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" onClick={onDelete}>
+        <FaTrash /> Delete
+      </button>
+    </td>
+  </tr>
+);
+
+export default EnrollmentList;
