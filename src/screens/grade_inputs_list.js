@@ -426,7 +426,7 @@ export default function GradeStudentList() {
             <div>
               <h4 className="fw-bold mb-1">Student Grades</h4>
             </div>
-            <div className="d-flex gap-2">
+            <div className="d-flex gap-2"> 
               <button
                 type="button"
                 className="btn btn-outline-secondary d-flex align-items-center gap-2 px-3"

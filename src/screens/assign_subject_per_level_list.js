@@ -7,9 +7,13 @@ import React, {
 } from 'react';
 
 import {
-  FaArrowLeft,
-  FaCheck,
+  FaChevronDown,
+  FaChevronUp,
+  FaPlus,
+  FaSearch,
+  FaSync,
   FaTimes,
+  FaTrash,
 } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 
@@ -17,511 +21,386 @@ import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
-// Safe URL joiner (avoids double/missing slashes)
-const joinUrl = (base, path) =>
-  `${(base || '').replace(/\/$/, '')}/${(path || '').replace(/^\//, '')}`;
-
-const ACTIVE_CURRICULUM_ID = 1; // constant “active” per your note
-
-const AssignSubjectsForm = () => {
-  const navigate = useNavigate();
-  const token = useMemo(() => sessionStorage.getItem('token'), []);
-  const headers = useMemo(
-    () => ({
-      'Content-Type': 'application/json',
+// Minimal request helper
+const request = async (endpoint, method = "GET", token, body = null) => {
+  const res = await fetch(`${BASE_URL}/${endpoint}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    }),
-    [token]
-  );
+    },
+    body: body ? JSON.stringify(body) : null,
+  });
+  return res.json();
+};
 
+// Simple loading skeleton
+const Skeleton = () => (
+  <div className="card border-0 shadow-sm rounded-4 mb-3">
+    <div className="card-body">
+      <div className="placeholder-glow">
+        <span className="placeholder col-4 mb-2 d-block"></span>
+        <span className="placeholder col-8 d-block"></span>
+      </div>
+    </div>
+  </div>
+);
+
+export default function AssignSubjectsTable() {
+  const navigate = useNavigate();
+  const token = useMemo(() => sessionStorage.getItem("token"), []);
+
+  // Data
   const [gradeLevels, setGradeLevels] = useState([]);
-  const [gradeSubjects, setGradeSubjects] = useState([]); // bottom table (already assigned for selected grade)
-  const [assignedCodes, setAssignedCodes] = useState([]); // badge only (hidden count)
-  const [allSubjects, setAllSubjects] = useState([]); // top picker (from active curriculum, minus already assigned)
+  const [assignSubjects, setAssignSubjects] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [formData, setFormData] = useState({ grade_level_id: 0, assignments: [] });
+  // UI
+  const [selectedGradeId, setSelectedGradeId] = useState(
+    Number(sessionStorage.getItem("asg.simple.selectedGradeId") || 0)
+  );
+  const [q, setQ] = useState(sessionStorage.getItem("asg.simple.q") || "");
+  const [debouncedQ, setDebouncedQ] = useState((sessionStorage.getItem("asg.simple.q") || "").toLowerCase());
+  const [refreshing, setRefreshing] = useState(false);
+  const [expanded, setExpanded] = useState({}); // {[grade_level_id]: boolean}
 
-  const [query, setQuery] = useState('');
-  const [selectAllPage, setSelectAllPage] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [loadingAssigned, setLoadingAssigned] = useState(false);
+  // Modal
+  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
+  const [confirmDelete, setConfirmDelete] = useState(null); // {subject_id, grade_level_id}
 
-  const [modal, setModal] = useState({ show: false, title: '', message: '', variant: 'info' });
+  // Persist + debounce
+  useEffect(() => {
+    sessionStorage.setItem("asg.simple.q", q);
+    const t = setTimeout(() => setDebouncedQ(q.trim().toLowerCase()), 250);
+    return () => clearTimeout(t);
+  }, [q]);
 
-  // pagination (top picker)
-  const itemsPerPage = 10;
-  const [page, setPage] = useState(1);
+  useEffect(() => {
+    sessionStorage.setItem("asg.simple.selectedGradeId", String(selectedGradeId || 0));
+  }, [selectedGradeId]);
 
-  // fetch grade levels (once)
+  // Load grade levels
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(joinUrl(BASE_URL, '/grade-levels'), { headers });
-        const data = await res.json();
-        if (data?.success) setGradeLevels(data.data || []);
+        const resp = await request("grade-levels", "GET", token);
+        if (resp?.success) {
+          const sorted = [...(resp.data || [])].sort(
+            (a, b) => (a.grade_order ?? 0) - (b.grade_order ?? 0)
+          );
+          setGradeLevels(sorted);
+        }
       } catch {
-        setModal({ show: true, title: 'Error', message: 'Failed to load grade levels.', variant: 'danger' });
+        setModal({ show: true, title: "Error", message: "Failed to load grade levels.", variant: "danger" });
       }
     })();
-  }, [headers]);
+  }, [token]);
 
-  // helper: load assigned for grade and return {assignedList, codes}
-  const fetchAssignedForGrade = async (gid) => {
-    setLoadingAssigned(true);
+  // Load assignments
+  const fetchAssignments = async () => {
+    setLoading(true);
     try {
-      const r = await fetch(joinUrl(BASE_URL, `/subject-grade-levels/by-grade-level/${gid}`), { headers });
-      const d = await r.json();
-      const rows = d?.success ? (d.data || []) : [];
-      const assignedList = rows
-        .map((a) => ({
-          sgl_id: a.subject_grade_level_id ?? a.id ?? undefined,
-          subject_id: a.subject_id ?? a.subject?.subject_id,
-          subject_code: a.subject?.subject_code ?? a.subject_code,
-          subject_name: a.subject?.subject_name ?? a.subject_name,
-          units: Number(a.units ?? 0),
-          is_required: !!a.is_required,
-        }))
-        .filter((x) => x.subject_code);
+      const endpoint = selectedGradeId
+        ? `subject-grade-levels/by-grade-level/${selectedGradeId}`
+        : "subject-grade-levels";
+      const data = await request(endpoint, "GET", token);
 
-      const codes = new Set(assignedList.map((x) => x.subject_code));
-      setGradeSubjects(assignedList);
-      setAssignedCodes(Array.from(codes));
-      return { assignedList, codes };
-    } finally {
-      setLoadingAssigned(false);
-    }
-  };
-
-  // when grade changes: fetch assigned first, then fetch ACTIVE CURRICULUM subjects and filter via local set
-  useEffect(() => {
-    const load = async () => {
-      const gid = formData.grade_level_id;
-
-      setAssignedCodes([]);
-      setAllSubjects([]);
-      setGradeSubjects([]);
-      setSelectAllPage(false);
-      setPage(1);
-      setFormData((prev) => ({ ...prev, assignments: [] }));
-
-      if (!gid) return;
-
-      setLoading(true);
-      try {
-        // 1) assigned (local codes set)
-        const { codes: assignedCodesSet } = await fetchAssignedForGrade(gid);
-
-        // 2) subjects from ACTIVE CURRICULUM
-        const curriculumUrl = joinUrl(
-          BASE_URL,
-          `/curriculum/curriculum-subjects/active/${ACTIVE_CURRICULUM_ID}`
-        );
-        const r2 = await fetch(curriculumUrl, { headers });
-        const d2 = await r2.json();
-
-        const subjects = d2?.success
-          ? (d2.data || []).map((s) => ({
+      if (data?.success) {
+        if (selectedGradeId) {
+          const ginfo = gradeLevels.find((g) => g.grade_level_id === selectedGradeId) || {};
+          setAssignSubjects([
+            {
+              grade_level_id: selectedGradeId,
+              grade_name: ginfo?.grade_name || "",
+              grade_code: ginfo?.grade_code || "",
+              subjects: (data.data || []).map((s) => ({
+                subject_id: s.subject_id,
+                subject_code: s.subject?.subject_code,
+                subject_name: s.subject?.subject_name,
+                description: s.subject?.description,
+                is_required: s.is_required,
+                units: Number(s.units),
+              })),
+            },
+          ]);
+          setExpanded({ [selectedGradeId]: true });
+        } else {
+          const normalized = (data.data || []).map((g) => ({
+            grade_level_id: g.grade_level_id,
+            grade_name: g.grade_name,
+            grade_code: g.grade_code,
+            subjects: (g.subjects || []).map((s) => ({
               subject_id: s.subject_id,
               subject_code: s.subject_code,
               subject_name: s.subject_name,
-              is_required: false,
-              units: 0, // default input value
-            }))
-          : [];
-
-        // 3) filter strictly with the local set (hide already assigned)
-        const filtered = subjects.filter((s) => !assignedCodesSet.has(s.subject_code));
-        setAllSubjects(filtered);
-      } catch {
-        setModal({ show: true, title: 'Error', message: 'Failed to load subjects.', variant: 'danger' });
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.grade_level_id, headers]);
-
-  // filtering + pagination (top picker)
-  const filtered = useMemo(() => {
-    const t = query.trim().toLowerCase();
-    if (!t) return allSubjects;
-    return allSubjects.filter(
-      (s) =>
-        (s.subject_code || '').toLowerCase().includes(t) ||
-        (s.subject_name || '').toLowerCase().includes(t)
-    );
-  }, [allSubjects, query]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
-  const pageStart = (page - 1) * itemsPerPage;
-  const pageSlice = filtered.slice(pageStart, pageStart + itemsPerPage);
-
-  const isSelected = (id) => formData.assignments.some((a) => a.subject_id === id);
-  const selectedCount = formData.assignments.length;
-
-  const toggleRow = (row, checked) => {
-    setFormData((prev) => {
-      const cur = prev.assignments;
-      if (checked) {
-        if (cur.some((a) => a.subject_id === row.subject_id)) return prev;
-        return { ...prev, assignments: [...cur, { ...row, units: 0, is_required: false }] };
+              description: s.description,
+              is_required: s.is_required,
+              units: Number(s.units),
+            })),
+          }));
+          setAssignSubjects(normalized);
+          // expand only the first group for a simple default
+          if (normalized[0]) setExpanded({ [normalized[0].grade_level_id]: true });
+        }
       } else {
-        return { ...prev, assignments: cur.filter((a) => a.subject_id !== row.subject_id) };
-      }
-    });
-  };
-
-  const toggleSelectAllOnPage = (checked) => {
-    setSelectAllPage(checked);
-    setFormData((prev) => {
-      if (!checked) {
-        const idsOnPage = new Set(pageSlice.map((s) => s.subject_id));
-        return { ...prev, assignments: prev.assignments.filter((a) => !idsOnPage.has(a.subject_id)) };
-      }
-      const curIds = new Set(prev.assignments.map((a) => a.subject_id));
-      const toAdd = pageSlice
-        .filter((s) => !curIds.has(s.subject_id))
-        .map((s) => ({ ...s, units: 0, is_required: false }));
-      return { ...prev, assignments: [...prev.assignments, ...toAdd] };
-    });
-  };
-
-  const updateField = (subject_id, key, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      assignments: prev.assignments.map((a) =>
-        a.subject_id === subject_id ? { ...a, [key]: value } : a
-      ),
-    }));
-  };
-
-  const resetAll = () => {
-    setFormData({ grade_level_id: 0, assignments: [] });
-    setAssignedCodes([]);
-    setAllSubjects([]);
-    setGradeSubjects([]);
-    setQuery('');
-    setPage(1);
-    setSelectAllPage(false);
-  };
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!formData.grade_level_id || selectedCount === 0) {
-      setModal({
-        show: true,
-        title: 'Check fields',
-        message: 'Pick a grade and select at least one subject.',
-        variant: 'warning',
-      });
-      return;
-    }
-    const invalid = formData.assignments.find((a) => {
-      const n = Number(a.units);
-      return !Number.isFinite(n) || n < 0;
-    });
-    if (invalid) {
-      setModal({
-        show: true,
-        title: 'Units required',
-        message: 'Enter a non-negative number for all selected subjects’ units.',
-        variant: 'warning',
-      });
-      return;
-    }
-
-    try {
-      const payload = {
-        assignments: formData.assignments.map((a) => {
-          const n = Number(a.units);
-          const cleanUnits = Number.isFinite(n) && n >= 0 ? n : 0;
-          return {
-            subject_id: a.subject_id,
-            grade_level_id: formData.grade_level_id,
-            is_required: !!a.is_required,
-            units: cleanUnits,
-          };
-        }),
-      };
-
-      const res = await fetch(joinUrl(BASE_URL, '/subject-grade-levels/bulk-create'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      setModal({
-        show: true,
-        title: data?.success ? 'Success' : 'Error',
-        message: data?.message || (data?.success ? 'Saved.' : 'Failed to save.'),
-        variant: data?.success ? 'success' : 'danger',
-      });
-
-      if (data?.success) {
-        // refresh assigned (local codes) and re-filter remaining subjects
-        const { codes: assignedCodesSet } = await fetchAssignedForGrade(formData.grade_level_id);
-        setAllSubjects((prev) => prev.filter((s) => !assignedCodesSet.has(s.subject_code)));
-        setFormData((prev) => ({ ...prev, assignments: [] }));
+        setAssignSubjects([]);
       }
     } catch {
-      setModal({
-        show: true,
-        title: 'Error',
-        message: 'Error occurred while assigning subjects.',
-        variant: 'danger',
-      });
+      setModal({ show: true, title: "Error", message: "Failed to load subjects.", variant: "danger" });
+    } finally {
+      setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchAssignments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGradeId, gradeLevels]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchAssignments();
+    setRefreshing(false);
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    try {
+      const { subject_id, grade_level_id } = confirmDelete;
+      const resp = await request(
+        `subject-grade-levels/delete/${subject_id}/${grade_level_id}`,
+        "DELETE",
+        token
+      );
+      if (resp?.success) {
+        setAssignSubjects((prev) =>
+          prev.map((g) =>
+            g.grade_level_id === grade_level_id
+              ? { ...g, subjects: g.subjects.filter((s) => s.subject_id !== subject_id) }
+              : g
+          )
+        );
+        setModal({ show: true, title: "Success", message: resp.message || "Deleted.", variant: "success" });
+      } else {
+        setModal({ show: true, title: "Error", message: resp?.message || "Cannot delete subject grade level assignment as it is being used in curriculum", variant: "danger" });
+      }
+    } catch {
+      setModal({ show: true, title: "Error", message: "An error occurred while deleting.", variant: "danger" });
+    } finally {
+      setConfirmDelete(null);
+    }
+  };
+
+  // Filter (client-side, minimal)
+  const filtered = assignSubjects.map((g) => ({
+    ...g,
+    subjects: g.subjects.filter((s) => {
+      if (!debouncedQ) return true;
+      const text = `${s.subject_code ?? ""} ${s.subject_name ?? ""} ${s.description ?? ""}`.toLowerCase();
+      return text.includes(debouncedQ);
+    }),
+  }));
+
+  const toggleExpand = (id) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
+
   return (
-    <div className="container-xxl py-4">
-      <StatusModal {...modal} onHide={() => setModal((m) => ({ ...m, show: false }))} />
+    <div className="container-xxl my-4">
+      {/* Title */}
+      <div className="mb-3">
+        <h4 className="fw-bold mb-1">Assigned Subjects</h4>
+        <p className="text-muted mb-0">Minimal view to manage subjects per grade level.</p>
+      </div>
 
-      <div className="card border-0 shadow-sm rounded-4">
-        <div className="card-body p-4 p-lg-5">
-          <h3 className="fw-bold mb-4">Assign Subjects to Grade</h3>
+      {/* Toolbar (simple) */}
+      <div className="card border-0 shadow-sm rounded-4 mb-3">
+        <div className="card-body p-3 p-lg-4">
+          <div className="d-flex flex-wrap gap-2 align-items-stretch">
+            <select
+              className="form-select"
+              style={{ minWidth: 220 }}
+              value={selectedGradeId}
+              onChange={(e) => setSelectedGradeId(Number(e.target.value))}
+              disabled={gradeLevels.length === 0}
+              aria-label="Filter by grade level"
+            >
+              <option value={0}>All Grades</option>
+              {gradeLevels.map((g) => (
+                <option key={g.grade_level_id} value={g.grade_level_id}>
+                  {g.grade_name} {g.grade_code ? `(${g.grade_code})` : ""}
+                </option>
+              ))}
+            </select>
 
-          {/* Toolbar */}
-          <div className="row g-2 align-items-center mb-3">
-            <div className="col-12 col-lg-4">
-              <select
-                className="form-select"
-                value={formData.grade_level_id}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, grade_level_id: Number(e.target.value) }))
-                }
-              >
-                <option value={0}>Select grade level</option>
-                {gradeLevels.map((g) => (
-                  <option key={g.grade_level_id} value={g.grade_level_id}>
-                    {g.grade_name} ({g.grade_code})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-12 col-lg-5">
-              <div className="input-group">
-                <span className="input-group-text">Search</span>
-                <input
-                  className="form-control"
-                  placeholder="Code or name"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setPage(1);
-                  }}
-                  disabled={!formData.grade_level_id || loading}
-                />
-                {query && (
-                  <button
-                    className="btn btn-outline-secondary"
-                    onClick={() => setQuery('')}
-                    disabled={loading}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="col-12 col-lg-3 d-flex justify-content-lg-end">
-              <span className="badge text-bg-secondary d-inline-flex align-items-center gap-2 px-3">
-                Selected: <span className="fw-semibold">{selectedCount}</span>
+            <div className="input-group" style={{ flex: "1 1 300px" }}>
+              <span className="input-group-text bg-transparent">
+                <FaSearch />
               </span>
-            </div>
-          </div>
-
-          {/* Picker Table */}
-          <form onSubmit={submit} noValidate>
-            <div className="table-responsive border rounded-3">
-              {!formData.grade_level_id || loading ? (
-                <div className="text-center text-muted py-5">
-                  {loading ? 'Loading…' : 'Pick a grade level to start.'}
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="text-center text-muted py-5">No subjects available to assign.</div>
-              ) : (
-                <table className="table table-striped table-hover align-middle mb-0">
-                  <thead className="table-light position-sticky top-0" style={{ zIndex: 1 }}>
-                    <tr>
-                      <th style={{ width: 48 }}>
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          checked={pageSlice.length > 0 && pageSlice.every((s) => isSelected(s.subject_id))}
-                          onChange={(e) => toggleSelectAllOnPage(e.target.checked)}
-                        />
-                      </th>
-                      <th style={{ width: 140 }}>Code</th>
-                      <th>Name</th>
-                      <th style={{ width: 120 }}>Units</th>
-                      <th style={{ width: 120 }}>Required</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pageSlice.map((s) => {
-                      const selected = isSelected(s.subject_id);
-                      const found = formData.assignments.find((a) => a.subject_id === s.subject_id);
-                      return (
-                        <tr key={s.subject_id} className={selected ? 'table-primary' : ''}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selected}
-                              onChange={(e) => toggleRow(s, e.target.checked)}
-                            />
-                          </td>
-                          <td className="fw-medium">{s.subject_code}</td>
-                          <td>{s.subject_name}</td>
-                          <td>
-                            <input
-                              type="number"
-                              min="0"
-                              className="form-control form-control-sm"
-                              placeholder="0"
-                              value={selected ? (found?.units ?? 0) : ''}
-                              onChange={(e) => updateField(s.subject_id, 'units', e.target.value)}
-                              disabled={!selected}
-                            />
-                          </td>
-                          <td className="text-center">
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selected ? !!found?.is_required : false}
-                              onChange={(e) => updateField(s.subject_id, 'is_required', e.target.checked)}
-                              disabled={!selected}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <input
+                className="form-control"
+                placeholder="Search by code, name, or description…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+              {q && (
+                <button className="btn btn-light border" onClick={() => setQ("")} title="Clear">
+                  <FaTimes />
+                </button>
               )}
             </div>
 
-            {/* Pagination */}
-            {formData.grade_level_id !== 0 && filtered.length > itemsPerPage && (
-              <nav className="mt-3 d-flex justify-content-center">
-                <ul className="pagination mb-0">
-                  <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
-                    <button
-                      className="page-link"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setPage((p) => Math.max(1, p - 1));
-                      }}
-                    >
-                      Prev
-                    </button>
-                  </li>
-                  {Array.from({ length: totalPages }).map((_, i) => (
-                    <li key={i} className={`page-item ${page === i + 1 ? 'active' : ''}`}>
-                      <button
-                        className="page-link"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setPage(i + 1);
-                        }}
-                      >
-                        {i + 1}
-                      </button>
-                    </li>
-                  ))}
-                  <li className={`page-item ${page === totalPages ? 'disabled' : ''}`}>
-                    <button
-                      className="page-link"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setPage((p) => Math.min(totalPages, p + 1));
-                      }}
-                    >
-                      Next
-                    </button>
-                  </li>
-                </ul>
-              </nav>
-            )}
+            <button
+              className="btn btn-light border d-inline-flex align-items-center gap-2"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+            >
+              {refreshing ? (
+                <span className="spinner-border spinner-border-sm" role="status" />
+              ) : (
+                <FaSync />
+              )}
+              Refresh
+            </button>
 
-            {/* Actions */}
-            <div className="d-flex justify-content-end gap-2 mt-4">
-              <button
-                type="submit"
-                className="btn btn-success d-flex align-items-center gap-2 px-4"
-                disabled={!formData.grade_level_id || selectedCount === 0}
-              >
-                <FaCheck /> Assign Subjects
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary d-flex align-items-center gap-2 px-4"
-                onClick={resetAll}
-              >
-                <FaTimes /> Reset
-              </button>
-              <button
-                type="button"
-                className="btn btn-light border d-flex align-items-center gap-2 px-4"
-                onClick={() => navigate(-1)}
-              >
-                <FaArrowLeft /> Back
-              </button>
-            </div>
-          </form>
-
-          {/* Info */}
-          <div className="mt-3 text-muted small">
-            <span className="me-3">Already assigned subjects are hidden for the selected grade.</span>
-            {assignedCodes.length > 0 && (
-              <span className="badge text-bg-light">Hidden: {assignedCodes.length}</span>
-            )}
+            <button
+              className="btn btn-primary d-inline-flex align-items-center gap-2"
+              onClick={() => navigate(`/assign-subject-per-year-level/assign`)}
+            >
+              <FaPlus /> Assign Subject
+            </button>
           </div>
-
-          {/* Bottom table: assigned subjects */}
-          {formData.grade_level_id !== 0 && (
-            <div className="mt-5">
-              <h5 className="fw-bold mb-3">Currently Assigned Subjects for this Grade</h5>
-              <div className="table-responsive border rounded-3">
-                {loadingAssigned ? (
-                  <div className="text-center text-muted py-4">Loading assigned subjects…</div>
-                ) : gradeSubjects.length === 0 ? (
-                  <div className="text-center text-muted py-4">No subjects assigned to this grade yet.</div>
-                ) : (
-                  <table className="table table-sm table-striped align-middle mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th style={{ width: 140 }}>Code</th>
-                        <th>Name</th>
-                        <th style={{ width: 120 }}>Units</th>
-                        <th style={{ width: 120 }}>Required</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {gradeSubjects.map((r) => (
-                        <tr key={`${r.subject_id}-${r.sgl_id ?? r.subject_code}`}>
-                          <td className="fw-medium">{r.subject_code}</td>
-                          <td>{r.subject_name}</td>
-                          <td>{r.units}</td>
-                          <td>{r.is_required ? 'Yes' : 'No'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-              <div className="mt-2 small text-muted">
-                Total: <span className="fw-semibold">{gradeSubjects.length}</span>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Content */}
+      {loading ? (
+        <>
+          <Skeleton />
+          <Skeleton />
+        </>
+      ) : filtered.length === 0 ? (
+        <div className="card border-0 shadow-sm rounded-4">
+          <div className="card-body text-center p-5">
+            <div className="display-6">🗂️</div>
+            <h5 className="mt-2 mb-1">No subjects found</h5>
+            <p className="text-muted small mb-4">Try a different grade filter or search.</p>
+            <button
+              className="btn btn-primary d-inline-flex align-items-center gap-2"
+              onClick={() => navigate(`/assign-subject-per-year-level/assign`)}
+            >
+              <FaPlus /> Assign Subject
+            </button>
+          </div>
+        </div>
+      ) : (
+        filtered.map((grade) => {
+          const isOpen = !!expanded[grade.grade_level_id];
+          return (
+            <div key={grade.grade_level_id} className="card border-0 shadow-sm rounded-4 mb-3">
+              <button
+                className="card-header d-flex justify-content-between align-items-center bg-body-tertiary rounded-top-4 py-3 px-4 border-0 w-100 text-start"
+                onClick={() => toggleExpand(grade.grade_level_id)}
+                aria-expanded={isOpen}
+              >
+                <span className="fw-semibold">
+                  {grade.grade_name} {grade.grade_code ? `(${grade.grade_code})` : ""}{" "}
+                  <span className="badge text-bg-light ms-2">{grade.subjects.length}</span>
+                </span>
+                {isOpen ? <FaChevronUp /> : <FaChevronDown />}
+              </button>
+
+              {isOpen && (
+                <div className="card-body p-0">
+                  {grade.subjects.length === 0 ? (
+                    <div className="text-center text-muted py-4">No subjects in this grade.</div>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0">
+                        <thead className="table-light">
+                          <tr>
+                            <th style={{ width: 120 }} className="text-center">Code</th>
+                            <th style={{ minWidth: 240 }}>Name</th>
+                            <th>Description</th>
+                            <th style={{ width: 110 }} className="text-center">Required</th>
+                            <th style={{ width: 90 }} className="text-center">Units</th>
+                            <th style={{ width: 140 }} className="text-end">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {grade.subjects.map((s) => (
+                            <tr key={s.subject_id}>
+                              <td className="text-center">
+                                <span className="badge text-bg-secondary">{s.subject_code}</span>
+                              </td>
+                              <td className="fw-semibold">{s.subject_name}</td>
+                              <td className="text-truncate" style={{ maxWidth: 520 }}>
+                                {s.description || <span className="text-muted">—</span>}
+                              </td>
+                              <td className="text-center">
+                                <span className={`badge ${s.is_required ? "text-bg-success" : "text-bg-secondary"}`}>
+                                  {s.is_required ? "Yes" : "No"}
+                                </span>
+                              </td>
+                              <td className="text-center">
+                                <span className="badge text-bg-light">{s.units}</span>
+                              </td>
+                              <td className="text-end">
+                                <button
+                                  className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-2 px-3"
+                                  onClick={() =>
+                                    setConfirmDelete({
+                                      subject_id: s.subject_id,
+                                      grade_level_id: grade.grade_level_id,
+                                    })
+                                  }
+                                >
+                                  <FaTrash /> Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      {/* Delete confirm */}
+      {confirmDelete && (
+        <>
+          <div className="modal-backdrop fade show" style={{ zIndex: 1040 }} />
+          <div className="modal fade show d-block" tabIndex="-1" role="dialog" style={{ zIndex: 1050 }}>
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content border-0 rounded-4 shadow">
+                <div className="modal-header border-0">
+                  <h5 className="modal-title fw-semibold">Remove Subject</h5>
+                  <button type="button" className="btn-close" onClick={() => setConfirmDelete(null)} />
+                </div>
+                <div className="modal-body">
+                  <p className="mb-0 text-muted">
+                    Remove this subject from the grade? This cannot be undone.
+                  </p>
+                </div>
+                <div className="modal-footer border-0">
+                  <button type="button" className="btn btn-light" onClick={() => setConfirmDelete(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn btn-danger" onClick={handleDelete}>
+                    Yes, Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <StatusModal {...modal} onHide={() => setModal((m) => ({ ...m, show: false }))} />
     </div>
   );
-};
-
-export default AssignSubjectsForm;
+}
