@@ -1,29 +1,48 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import StatusModal from "../components/status_modal";
-import "bootstrap/dist/css/bootstrap.min.css";
-import { FaEdit, FaPlus } from "react-icons/fa";
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
+import {
+  FaEdit,
+  FaPlus,
+} from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const SectionsList = () => {
   const navigate = useNavigate();
   const token = useMemo(() => sessionStorage.getItem("token"), []);
+
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [statusModal, setStatusModal] = useState({ show: false, title: "", message: "", variant: "info" });
+  const [statusModal, setStatusModal] = useState({
+    show: false,
+    title: "",
+    message: "",
+    variant: "info",
+  });
   const [selectedId, setSelectedId] = useState(null);
 
   // Search / sort
   const [q, setQ] = useState("");
-  const [sortBy, setSortBy] = useState("name");  // name | grade | year | id
+  const [sortBy, setSortBy] = useState("name"); // name | grade | year | id
   const [sortDir, setSortDir] = useState("asc"); // asc | desc
 
   // Inline filters
   const [filterSection, setFilterSection] = useState("all");
   const [filterGrade, setFilterGrade] = useState("all");
-  const [filterYear, setFilterYear] = useState("all");
+  const [filterYear, setFilterYear] = useState("all"); // ← will be set to ACTIVE school year after fetch
+
+  // Keep a remembered default (active) school year label like "2025-2026"
+  const [activeSyLabel, setActiveSyLabel] = useState(null);
 
   // Organize table by group
   const [groupByKey, setGroupByKey] = useState("none"); // none | section | grade | year
@@ -34,7 +53,12 @@ const SectionsList = () => {
   });
 
   const handleUnauthorized = () => {
-    setStatusModal({ show: true, title: "Unauthorized", message: "Access denied. Please log in.", variant: "danger" });
+    setStatusModal({
+      show: true,
+      title: "Unauthorized",
+      message: "Access denied. Please log in.",
+      variant: "danger",
+    });
     sessionStorage.removeItem("token");
     setTimeout(() => navigate("/login"), 900);
   };
@@ -47,59 +71,144 @@ const SectionsList = () => {
     return true;
   };
 
+  // ────────────────────────────────────────────────────────────────────────────────
+  // Fetch ACTIVE school year (default filter) — GET /school-year/all-school-years
+  // ────────────────────────────────────────────────────────────────────────────────
+  const fetchActiveSchoolYear = async () => {
+    try {
+      const res = await fetch(
+        `${BASE_URL}/school-year/all-school-years`,
+        { headers: authHeaders(), method: "GET" }
+      );
+      if (res.status === 401) return handleUnauthorized();
+
+      const data = await res.json();
+      const list = data?.schoolYears || data?.data || [];
+
+      // Find active; if none, use the most recent (by end_year)
+      let active = list.find(
+        (y) => y?.is_active === 1 || y?.is_active === true
+      );
+
+      if (!active) {
+        const candidates = list.filter((y) => Number(y?.end_year) > 0);
+        if (candidates.length > 0) {
+          active = candidates.reduce((a, b) =>
+            Number(a.end_year) >= Number(b.end_year) ? a : b
+          );
+        }
+      }
+
+      if (active && Number(active.start_year) > 0 && Number(active.end_year) > 0) {
+        const label = `${active.start_year}-${active.end_year}`;
+        setActiveSyLabel(label);
+        // Pre-set the filter immediately; we'll re-affirm after sections load
+        setFilterYear(label);
+      } else {
+        setActiveSyLabel(null);
+      }
+    } catch (e) {
+      // Silent fail—keep "all" if endpoint is unreachable
+      setActiveSyLabel(null);
+    }
+  };
+
+  // ────────────────────────────────────────────────────────────────────────────────
   // Fetch sections
+  // ────────────────────────────────────────────────────────────────────────────────
   const fetchSections = async () => {
     if (!checkToken()) return;
     setLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/sections`, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
+
       const data = await res.json();
-      if (data?.success) setSections(data.data || []);
-      else {
+      if (data?.success) {
+        setSections(data.data || []);
+      } else {
         setSections([]);
-        setStatusModal({ show: true, title: "Error", message: "Failed to load sections.", variant: "danger" });
+        setStatusModal({
+          show: true,
+          title: "Error",
+          message: "Failed to load sections.",
+          variant: "danger",
+        });
       }
     } catch {
-      setStatusModal({ show: true, title: "Error", message: "Something went wrong.", variant: "danger" });
+      setStatusModal({
+        show: true,
+        title: "Error",
+        message: "Something went wrong.",
+        variant: "danger",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchSections(); /* eslint-disable-next-line */ }, []);
+  // Initial load: get active SY first, then sections
+  useEffect(() => {
+    (async () => {
+      await fetchActiveSchoolYear();
+      await fetchSections();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Refresh button
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchSections();
+    await Promise.all([fetchActiveSchoolYear(), fetchSections()]);
     setRefreshing(false);
   };
 
   // Options for filters (derived from data)
   const sectionOptions = useMemo(
-    () => Array.from(new Set(sections.map(s => s.section_name).filter(Boolean))).sort((a, b) =>
-      String(a).localeCompare(String(b), undefined, { numeric: true })
-    ),
+    () =>
+      Array.from(
+        new Set(sections.map((s) => s.section_name).filter(Boolean))
+      ).sort((a, b) =>
+        String(a).localeCompare(String(b), undefined, { numeric: true })
+      ),
     [sections]
   );
+
   const gradeOptions = useMemo(
-    () => Array.from(new Set(sections.map(s => s.grade_name).filter(Boolean))).sort((a, b) =>
-      String(a).localeCompare(String(b), undefined, { numeric: true })
-    ),
+    () =>
+      Array.from(
+        new Set(sections.map((s) => s.grade_name).filter(Boolean))
+      ).sort((a, b) =>
+        String(a).localeCompare(String(b), undefined, { numeric: true })
+      ),
     [sections]
   );
+
   const yearOptions = useMemo(
-    () => Array.from(new Set(sections.map(s => s.school_year).filter(Boolean))).sort((a, b) =>
-      String(a).localeCompare(String(b), undefined, { numeric: true })
-    ),
+    () =>
+      Array.from(
+        new Set(sections.map((s) => s.school_year).filter(Boolean))
+      ).sort((a, b) =>
+        String(a).localeCompare(String(b), undefined, { numeric: true })
+      ),
     [sections]
   );
+
+  // After sections arrive, if we have an active SY label, default to it.
+  useEffect(() => {
+    if (!activeSyLabel) return;
+    // If current filter is "all" or not present in options, set to active label.
+    if (filterYear === "all" || !yearOptions.includes(filterYear)) {
+      setFilterYear(activeSyLabel);
+    }
+  }, [yearOptions, activeSyLabel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetFilters = () => {
     setQ("");
     setFilterSection("all");
     setFilterGrade("all");
-    setFilterYear("all");
+    // Reset back to ACTIVE SY if we have it; otherwise "all"
+    setFilterYear(activeSyLabel || "all");
     setGroupByKey("none");
     setSortBy("name");
     setSortDir("asc");
@@ -164,6 +273,11 @@ const SectionsList = () => {
                 <p className="text-muted mb-0">
                   Manage class sections and link them to grade levels and school years.
                 </p>
+                {activeSyLabel && (
+                  <div className="small text-success mt-1">
+                     Active School Year <span className="fw-semibold">{activeSyLabel}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -234,7 +348,9 @@ const SectionsList = () => {
                 >
                   <option value="all">All</option>
                   {sectionOptions.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -250,7 +366,9 @@ const SectionsList = () => {
                 >
                   <option value="all">All</option>
                   {gradeOptions.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -264,9 +382,12 @@ const SectionsList = () => {
                   value={filterYear}
                   onChange={(e) => setFilterYear(e.target.value)}
                 >
+                  {/* keep "All" in case user needs to see everything */}
                   <option value="all">All</option>
                   {yearOptions.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -301,7 +422,9 @@ const SectionsList = () => {
           ) : filteredSorted.length === 0 ? (
             <div className="text-center bg-body-tertiary rounded-4 p-5">
               <div className="mb-2">No sections found</div>
-              <p className="text-muted mb-4 small">Try adjusting search or add a new section.</p>
+              <p className="text-muted mb-4 small">
+                Try adjusting search or add a new section.
+              </p>
               <button
                 className="btn btn-primary d-inline-flex align-items-center gap-2 px-3"
                 onClick={() => navigate("/sections/create")}
@@ -359,7 +482,10 @@ const SectionsList = () => {
         </div>
       </div>
 
-      <StatusModal {...statusModal} onHide={() => setStatusModal((s) => ({ ...s, show: false }))} />
+      <StatusModal
+        {...statusModal}
+        onHide={() => setStatusModal((s) => ({ ...s, show: false }))}
+      />
     </div>
   );
 };
