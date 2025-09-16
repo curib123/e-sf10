@@ -757,7 +757,7 @@ const EnrollmentList = () => {
 
       <StatusModal {...statusModal} onHide={() => setStatusModal((s) => ({ ...s, show: false }))} />
     </div>
-  );
+  ); 
 };
 
 const EnrollmentRow = ({ row, onEdit, onDelete }) => (
