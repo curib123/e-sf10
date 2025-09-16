@@ -1,3 +1,4 @@
+// src/pages/CurriculumList.jsx
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 import React, {
@@ -199,9 +200,10 @@ const CurriculumList = () => {
     if (!checkToken()) return;
     navigate(`/curriculum/edit/${id}`);
   };
+  // UPDATED: route to /curriculum_subject/:id
   const assignSubject = (id) => {
     if (!checkToken()) return;
-    navigate(`/curriculum/assign-subject/${id}`);
+    navigate(`/curriculum_subject/${id}`);
   };
 
   // --- toggle status ---
@@ -371,7 +373,7 @@ const CurriculumList = () => {
                       <th style={{ minWidth: 240 }}>Name</th>
                       <th style={{ width: 180 }}>School Year</th>
                       <th style={{ width: 180 }}>Status</th>
-                      <th className="text-end" style={{ width: 240 }}>Action</th>
+                      <th className="text-end" style={{ width: 320 }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -415,7 +417,14 @@ const CurriculumList = () => {
                             >
                               <FaEdit /> Edit
                             </button>
-                          
+                            {/* NEW: Assign Subject button */}
+                            <button
+                              className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1"
+                              onClick={() => assignSubject(curr.curriculum_id)}
+                              title="Assign subjects to this curriculum"
+                            >
+                              <FaBookOpen /> Assign Subject
+                            </button>
                           </div>
                         </td>
                       </tr>

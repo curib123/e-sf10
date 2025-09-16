@@ -14,9 +14,6 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaPlusSquare,
-  FaSave,
-  FaTimes,
-  FaTrashAlt,
 } from 'react-icons/fa';
 import {
   useNavigate,
@@ -76,22 +73,19 @@ const UpsertCurriculum = () => {
   const [usedSchoolYears, setUsedSchoolYears] = useState([]);
   const [savedCurriculumId, setSavedCurriculumId] = useState(isEdit ? Number(id) : null);
 
-  const [activeCurriculum, setActiveCurriculum] = useState(null); // { curriculum_id, curriculum_name, school_year_id }
-  const [activeByGrade, setActiveByGrade] = useState({}); // { [grade_level_id]: { grade_code, grade_name, subjects:[...] } }
-
-  const [loading, setLoading] = useState(false);
-  const [busyLabel, setBusyLabel] = useState('');
-  const [statusModal, setStatusModal] = useState({ show: false, title: '', message: '', variant: 'info' });
-
-  // Assign UI (create mode)
-  const [gradeLevels, setGradeLevels] = useState([]);
-  const [gradeSubjects, setGradeSubjects] = useState([]);
-  const [allSubjects, setAllSubjects] = useState([]);
-  const [assignForm, setAssignForm] = useState({ grade_level_id: 0, assignments: [] });
-  const [pendingByGrade, setPendingByGrade] = useState({});
+  // Subjects (create mode)
+  const [allSubjects, setAllSubjects] = useState([]); // [{subject_id, subject_code, subject_name}]
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+
+  // selection (create mode)
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // UI/Modal
+  const [loading, setLoading] = useState(false);
+  const [busyLabel, setBusyLabel] = useState('');
+  const [statusModal, setStatusModal] = useState({ show: false, title: '', message: '', variant: 'info' });
 
   // ——— Auth helpers ———————————————————————————————————————————————————
   const handleUnauthorized = () => {
@@ -138,6 +132,26 @@ const UpsertCurriculum = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, id]);
 
+  // Default Effective Year = active school year (create mode only)
+  useEffect(() => {
+    if (isEdit) return;
+    if (formData.school_year_id) return; // don't override user choice
+    if (!schoolYears.length) return;
+
+    // prefer the active one
+    const active = schoolYears.find(
+      (sy) => Number(sy?.is_active) === 1 || sy?.is_active === true
+    );
+
+    if (active) {
+      // Optional: avoid setting if that year already has a curriculum (enforces one per year)
+      const isUsed = usedSchoolYears.includes(active.school_year_id);
+      if (!isUsed) {
+        setFormData((p) => ({ ...p, school_year_id: active.school_year_id }));
+      }
+    }
+  }, [isEdit, schoolYears, usedSchoolYears, formData.school_year_id]);
+
   useEffect(() => {
     if (!isEdit || !checkToken()) return;
     (async () => {
@@ -159,243 +173,29 @@ const UpsertCurriculum = () => {
   }, [isEdit, id]);
 
   useEffect(() => {
-    if (!checkToken() || isEdit) return;
+    if (isEdit || !checkToken()) return;
     (async () => {
       try {
-        const res = await fetch(joinUrl(BASE_URL, 'grade-levels'), { headers });
+        // Pull all subjects so we can pick IDs to attach to the new curriculum
+        const res = await fetch(joinUrl(BASE_URL, 'subjects/view-all-subjects'), { headers });
         if (res.status === 401) return handleUnauthorized();
-        const data = await res.json();
-        if (data?.success) setGradeLevels(data.data || []);
-      } catch {
-        setStatusModal({ show: true, title: 'Error', message: 'Failed to load grade levels.', variant: 'danger' });
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit]);
-
-  // ——— Active curriculum & mapping —————————————————————————————————————
-  const loadActiveAssignments = useCallback(async () => {
-    try {
-      const res = await fetch(joinUrl(BASE_URL, 'subjects/view-all-sub-grade-levels'), { headers });
-      if (res.status === 401) return handleUnauthorized();
-      const j = await res.json();
-      if (!j?.success) {
-        setActiveCurriculum(null);
-        setActiveByGrade({});
-        return;
-      }
-      setActiveCurriculum(j.curriculum || null);
-      const map = {};
-      (j.data || []).forEach((g) => {
-        map[Number(g.grade_level_id)] = {
-          grade_code: g.grade_code,
-          grade_name: g.grade_name,
-          subjects: (g.subjects || []).map((s) => ({
-            subject_id: s.subject_id,
+        const j = await res.json();
+        const subjects = j?.success ? (j.data || []) : [];
+        setAllSubjects(
+          subjects.map(s => ({
+            subject_id: Number(s.subject_id),
             subject_code: s.subject_code,
             subject_name: s.subject_name,
-            units: null,
-            is_required: null,
-          })),
-        };
-      });
-      setActiveByGrade(map);
-    } catch {
-      setActiveCurriculum(null);
-      setActiveByGrade({});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [headers]);
-
-  useEffect(() => {
-    loadActiveAssignments();
-  }, [loadActiveAssignments, formData.curriculum_name, formData.school_year_id]);
-
-  const matchActiveByNameOrYear = useCallback(() => {
-    const nameInput = (formData.curriculum_name || '').trim().toLowerCase();
-    const nameActive = (activeCurriculum?.curriculum_name || '').trim().toLowerCase();
-    if (nameInput && nameActive && nameInput === nameActive) return { matches: true, reason: 'name' };
-
-    const yearInput = formData.school_year_id ? Number(formData.school_year_id) : null;
-    const yearActive = activeCurriculum ? Number(activeCurriculum.school_year_id) : null;
-    const yearMatch = !!yearInput && !!yearActive && yearInput === yearActive;
-
-    return yearMatch ? { matches: true, reason: 'year' } : { matches: false, reason: null };
-  }, [formData.curriculum_name, formData.school_year_id, activeCurriculum]);
-
-  // ——— Subject candidates refresh (create only) ——————————————————————
-  useEffect(() => {
-    if (isEdit) return;
-    (async () => {
-      const gid = assignForm.grade_level_id;
-
-      setAllSubjects([]); setGradeSubjects([]); setPage(1);
-      setAssignForm((p) => ({ ...p, assignments: [] }));
-      if (!gid) return;
-
-      try {
-        let assignedCodes = new Set();
-        const { matches } = matchActiveByNameOrYear();
-        if (matches) {
-          const gradeEntry = activeByGrade[gid];
-          const serverSubs = gradeEntry?.subjects || [];
-          setGradeSubjects(serverSubs);
-          assignedCodes = new Set(serverSubs.map((s) => s.subject_code));
-        }
-
-        const r2 = await fetch(joinUrl(BASE_URL, 'subjects/view-all-subjects'), { headers });
-        if (r2.status === 401) return handleUnauthorized();
-        const d2 = await r2.json();
-        const subjects = d2?.success
-          ? (d2.data || []).map((s) => ({
-              subject_id: s.subject_id,
-              subject_code: s.subject_code,
-              subject_name: s.subject_name,
-              is_required: false,
-              units: 0,
-            }))
-          : [];
-        const filtered = subjects.filter((s) => !assignedCodes.has(s.subject_code));
-        setAllSubjects(filtered);
+          }))
+        );
       } catch {
         setStatusModal({ show: true, title: 'Error', message: 'Failed to load subjects.', variant: 'danger' });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit, assignForm.grade_level_id, headers, activeByGrade, formData.curriculum_name, formData.school_year_id, matchActiveByNameOrYear]);
+  }, [isEdit]);
 
-  // ——— Selection & pagination ————————————————————————————————————————
-  const pendingForCurrent = pendingByGrade[assignForm.grade_level_id] || [];
-  const selectedMap = new Map(assignForm.assignments.map((a) => [a.subject_id, a]));
-
-  const filtered = useMemo(() => {
-    const t = (query || '').trim().toLowerCase();
-    const excludedIds = new Set(pendingForCurrent.map((a) => a.subject_id));
-    const base = t
-      ? allSubjects.filter(
-          (s) =>
-            (s.subject_code || '').toLowerCase().includes(t) ||
-            (s.subject_name || '').toLowerCase().includes(t)
-        )
-      : allSubjects;
-    return base
-      .filter((s) => !excludedIds.has(s.subject_id))
-      .map((s) => ({ ...s, ...(selectedMap.get(s.subject_id) || {}) }));
-  }, [allSubjects, query, pendingForCurrent, selectedMap]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-  const safePage = Math.min(page, totalPages);
-  const pageStart = (safePage - 1) * ITEMS_PER_PAGE;
-  const pageSlice = filtered.slice(pageStart, pageStart + ITEMS_PER_PAGE);
-
-  const isSelected = (id2) => assignForm.assignments.some((a) => a.subject_id === id2);
-  const selectedCount = assignForm.assignments.length;
-  const pendingCountThisGrade = pendingForCurrent.length;
-
-  const toggleRow = (row, checked) => {
-    setAssignForm((prev) => {
-      const cur = prev.assignments;
-      if (checked) {
-        if (cur.some((a) => a.subject_id === row.subject_id)) return prev;
-        return { ...prev, assignments: [...cur, { ...row, units: Number(row.units) || 0, is_required: !!row.is_required }] };
-      }
-      return { ...prev, assignments: cur.filter((a) => a.subject_id !== row.subject_id) };
-    });
-  };
-
-  const toggleSelectAllOnPage = (checked) => {
-    setAssignForm((prev) => {
-      if (!checked) {
-        const idsOnPage = new Set(pageSlice.map((s) => s.subject_id));
-        return { ...prev, assignments: prev.assignments.filter((a) => !idsOnPage.has(a.subject_id)) };
-      }
-      const curIds = new Set(prev.assignments.map((a) => a.subject_id));
-      const toAdd = pageSlice
-        .filter((s) => !curIds.has(s.subject_id))
-        .map((s) => ({ ...s, units: Number(s.units) || 0, is_required: !!s.is_required }));
-      return { ...prev, assignments: [...prev.assignments, ...toAdd] };
-    });
-  };
-
-  const selectAllFiltered = () => {
-    setAssignForm((prev) => {
-      const curIds = new Set(prev.assignments.map((a) => a.subject_id));
-      const toAdd = filtered
-        .filter((s) => !curIds.has(s.subject_id))
-        .map((s) => ({ ...s, units: Number(s.units) || 0, is_required: !!s.is_required }));
-      return { ...prev, assignments: [...prev.assignments, ...toAdd] };
-    });
-  };
-
-  const onUnitsChange = (subject_id, value) => {
-    const v = value === '' ? '' : Number(value);
-    setAssignForm((prev) => ({
-      ...prev,
-      assignments: prev.assignments
-        .map((a) => (a.subject_id === subject_id ? { ...a, units: v } : a))
-        .concat(prev.assignments.some((a) => a.subject_id === subject_id) ? [] : [{ subject_id, units: v, is_required: false }]),
-    }));
-  };
-
-  const onRequiredChange = (subject_id, value) => {
-    setAssignForm((prev) => ({
-      ...prev,
-      assignments: prev.assignments.map((a) => (a.subject_id === subject_id ? { ...a, is_required: !!value } : a)),
-    }));
-  };
-
-  // ——— Local queue ops ————————————————————————————————————————————————
-  const mergeAssignments = (base = [], extra = []) => {
-    const map = new Map(base.map((a) => [a.subject_id, { ...a }]));
-    for (const a of extra) map.set(a.subject_id, { ...(map.get(a.subject_id) || {}), ...a });
-    return Array.from(map.values());
-  };
-
-  const saveLocalForGrade = () => {
-    const gid = assignForm.grade_level_id;
-    if (!gid || selectedCount === 0) {
-      setStatusModal({ show: true, title: 'Check selection', message: 'Pick a grade and select at least one subject.', variant: 'warning' });
-      return;
-    }
-    const invalid = assignForm.assignments.find((a) => {
-      const n = Number(a.units);
-      return !Number.isFinite(n) || n < 0;
-    });
-    if (invalid) {
-      setStatusModal({ show: true, title: 'Units required', message: 'Enter a non-negative number for all selected subjects’ units.', variant: 'warning' });
-      return;
-    }
-    setPendingByGrade((prev) => ({
-      ...prev,
-      [gid]: mergeAssignments(prev[gid], assignForm.assignments),
-    }));
-    setAssignForm((p) => ({ ...p, assignments: [] }));
-    setStatusModal({ show: true, title: 'Saved locally', message: 'Assignments were added to this grade’s local queue.', variant: 'info' });
-  };
-
-  const updatePendingField = (subject_id, key, value) => {
-    const gid = assignForm.grade_level_id;
-    setPendingByGrade((prev) => ({
-      ...prev,
-      [gid]: (prev[gid] || []).map((a) => (a.subject_id === subject_id ? { ...a, [key]: key === 'units' ? Number(value) : !!value } : a)),
-    }));
-  };
-
-  const removePending = (subject_id) => {
-    const gid = assignForm.grade_level_id;
-    setPendingByGrade((prev) => ({
-      ...prev,
-      [gid]: (prev[gid] || []).filter((a) => a.subject_id !== subject_id),
-    }));
-  };
-
-  const clearPendingForGrade = () => {
-    const gid = assignForm.grade_level_id;
-    if (!gid) return;
-    setPendingByGrade((prev) => ({ ...prev, [gid]: [] }));
-  };
-
-  // ——— Save + bulk assign ——————————————————————————————————————————————
+  // ——— Helpers ————————————————————————————————————————————————————————
   const findCurriculumIdFallback = async (payload) => {
     try {
       const res = await fetch(joinUrl(BASE_URL, 'curriculum/view-all-curriculums'), { headers });
@@ -461,111 +261,117 @@ const UpsertCurriculum = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData, isEdit, id, headers]);
 
-  const labelForGrade = (gid) => {
-    const g = gradeLevels.find((x) => x.grade_level_id === Number(gid));
-    return g ? `${g.grade_name} (${g.grade_code})` : `Grade #${gid}`;
+  const postAddSubjects = async (curriculumId, subjectIds) => {
+    if (!checkToken()) throw new Error('Unauthorized.');
+    setLoading(true);
+    setBusyLabel('Adding subjects to curriculum…');
+    try {
+      const url = joinUrl(BASE_URL, `curriculum/add-subjects/${curriculumId}`);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ subject_ids: subjectIds }),
+      });
+      if (res.status === 401) return handleUnauthorized();
+      const data = await res.json();
+      if (!data?.success) throw new Error(data?.message || 'Failed to add subjects.');
+
+      const sum = data?.data?.summary || {};
+      const failed = data?.data?.failed || [];
+      const okCount = Number(sum.successful ?? 0);
+      const failCount = Number(sum.failed ?? failed.length ?? 0);
+
+      const failedLines = failed.map(
+        f => `• Subject ID ${f.subject_id}: ${f.error || 'Failed'}`
+      );
+
+      return {
+        ok: true,
+        message:
+          `Processed ${Number(sum.total ?? (okCount + failCount))} subject(s).\n` +
+          `Successful: ${okCount}\nFailed: ${failCount}` +
+          (failedLines.length ? `\n\nDetails:\n${failedLines.join('\n')}` : ''),
+      };
+    } finally {
+      setLoading(false);
+      setBusyLabel('');
+    }
   };
 
-  const URL_BULK_ASSIGN = joinUrl(BASE_URL, 'subject-grade-levels/bulk-create');
+  // ——— Subjects list (filter/paginate) ————————————————————————————————
+  const filtered = useMemo(() => {
+    const t = (query || '').trim().toLowerCase();
+    return t
+      ? allSubjects.filter(
+          (s) =>
+            (s.subject_code || '').toLowerCase().includes(t) ||
+            (s.subject_name || '').toLowerCase().includes(t)
+        )
+      : allSubjects;
+  }, [allSubjects, query]);
 
-  const bulkAssignForGrade = useCallback(
-    async (gid) => {
-      const gradeId = Number(gid);
-      if (!gradeId || Number.isNaN(gradeId)) return { skipped: true };
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * ITEMS_PER_PAGE;
+  const pageSlice = filtered.slice(pageStart, pageStart + ITEMS_PER_PAGE);
 
-      const staged = pendingByGrade[gradeId] || [];
-      const inline = gradeId === assignForm.grade_level_id ? assignForm.assignments : [];
-      const toAssignMerged = mergeAssignments(staged, inline);
-
-      const toAssign = toAssignMerged
-        .map((a) => ({
-          subject_id: Number(a.subject_id),
-          grade_level_id: gradeId,
-          is_required: !!a.is_required,
-          units: a.units === '' || a.units == null ? 0 : Number(a.units),
-        }))
-        .filter(
-          (a) =>
-            Number.isFinite(a.subject_id) &&
-            Number.isFinite(a.grade_level_id) &&
-            Number.isFinite(a.units) &&
-            a.units >= 0
-        );
-
-      if (toAssign.length === 0) return { skipped: true };
-
-      const payload = { assignments: toAssign };
-
-      setLoading(true);
-      setBusyLabel(`Assigning subjects to ${labelForGrade(gradeId)}…`);
-      try {
-        const res = await fetch(URL_BULK_ASSIGN, { method: 'POST', headers, body: JSON.stringify(payload) });
-        if (res.status === 401) return handleUnauthorized();
-        const data = await res.json();
-        if (!data?.success) throw new Error(data?.message || `Failed to assign for ${labelForGrade(gradeId)}.`);
-
-        setPendingByGrade((prev) => ({ ...prev, [gradeId]: [] }));
-
-        const { matches } = matchActiveByNameOrYear();
-        if (gradeId === assignForm.grade_level_id && matches) {
-          await loadActiveAssignments();
-          setAssignForm((p) => ({ ...p, assignments: [] }));
-        }
-        return { skipped: false, count: toAssign.length };
-      } finally {
-        setLoading(false);
-        setBusyLabel('');
+  const isSelected = (sid) => selectedIds.has(Number(sid));
+  const toggleOne = (sid, checked) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(Number(sid));
+      else next.delete(Number(sid));
+      return next;
+    });
+  };
+  const toggleSelectAllOnPage = (checked) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const r of pageSlice) next.add(r.subject_id);
+      } else {
+        for (const r of pageSlice) next.delete(r.subject_id);
       }
-    },
-    [assignForm, pendingByGrade, headers, matchActiveByNameOrYear, loadActiveAssignments]
-  );
+      return next;
+    });
+  };
 
-  const saveAndAssignAllGrades = async () => {
+  // ——— Save & add subjects (single action) ————————————————————————————
+  const saveAndAddSubjects = async () => {
     try {
-      await saveCurriculum();
+      const subjectIds = Array.from(selectedIds).map(Number);
 
-      const gradesWithPending = Object.keys(pendingByGrade)
-        .map(Number)
-        .filter((gid) => (pendingByGrade[gid] || []).length > 0);
-
-      if (
-        assignForm.grade_level_id > 0 &&
-        assignForm.assignments.length > 0 &&
-        !gradesWithPending.includes(assignForm.grade_level_id)
-      ) {
-        gradesWithPending.push(assignForm.grade_level_id);
-      }
-
-      if (gradesWithPending.length === 0) {
-        setStatusModal({ show: true, title: 'Saved', message: 'Curriculum saved. No pending assignments across grades.', variant: 'success' });
+      if (subjectIds.length === 0) {
+        // still allow saving the curriculum even if no subjects chosen
+        const cidNoSubjects = await saveCurriculum();
+        setStatusModal({
+          show: true,
+          title: 'Saved',
+          message: `Curriculum saved (ID ${cidNoSubjects}). No subjects selected.`,
+          variant: 'success',
+        });
         return;
       }
 
-      const results = [];
-      for (const gid of gradesWithPending) {
-        try {
-          const r = await bulkAssignForGrade(gid);
-          results.push({ gid, ok: true, count: r?.count || 0 });
-        } catch (err) {
-          results.push({ gid, ok: false, error: err.message || 'Failed' });
-        }
-      }
+      const cid = await saveCurriculum();
+      const result = await postAddSubjects(cid, subjectIds);
 
-      await loadActiveAssignments();
-
-      const okLines = results.filter((x) => x.ok).map((x) => `• ${labelForGrade(x.gid)} — ${x.count} subject(s)`);
-      const badLines = results.filter((x) => !x.ok).map((x) => `• ${labelForGrade(x.gid)} — ${x.error}`);
+      // Clear selection after success
+      setSelectedIds(new Set());
 
       setStatusModal({
         show: true,
-        title: badLines.length ? 'Partial Success' : 'Success',
-        message:
-          (okLines.length ? `Assigned:\n${okLines.join('\n')}` : 'No assignments saved.') +
-          (badLines.length ? `\n\nFailed:\n${badLines.join('\n')}` : ''),
-        variant: badLines.length ? 'warning' : 'success',
+        title: 'Subjects Added',
+        message: `Curriculum ID ${cid}:\n${result.message}`,
+        variant: 'success',
       });
     } catch (err) {
-      setStatusModal({ show: true, title: 'Error', message: err.message || 'Failed to save & assign all.', variant: 'danger' });
+      setStatusModal({
+        show: true,
+        title: 'Error',
+        message: err?.message || 'Failed to save & add subjects.',
+        variant: 'danger',
+      });
     }
   };
 
@@ -577,42 +383,26 @@ const UpsertCurriculum = () => {
   const selectedSYLabel = selectedSY
     ? (selectedSY.start_year && selectedSY.end_year ? `${selectedSY.start_year} - ${selectedSY.end_year}` : `SY #${selectedSY.school_year_id}`)
     : '';
-  const totalPendingAcross = Object.values(pendingByGrade).reduce((sum, arr) => sum + (arr?.length || 0), 0);
-  const hasInlineForCurrentGrade = assignForm.grade_level_id > 0 && assignForm.assignments.length > 0;
-  const matchInfo = matchActiveByNameOrYear();
-  const selectedMatchesActive = matchInfo.matches;
 
-  // ——— Render (single compact container) ——————————————————————————————
+  // ——— Render ————————————————————————————————————————————————————————————
   return (
     <div className="container-xxl my-3">
       <BusyOverlay show={loading && !!busyLabel} label={busyLabel} />
       <StatusModal {...statusModal} onHide={() => setStatusModal((s) => ({ ...s, show: false }))} />
 
       <div className="card border-0 shadow-sm rounded-4 overflow-hidden">
-        {/* Header strip */}
+        {/* Header */}
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 p-3 border-bottom bg-light">
           <div className="d-flex flex-column">
             <h5 className="fw-bold mb-0">
-              {isEdit ? 'Update Curriculum' : 'Create Curriculum & Assign Subjects'}
+              {isEdit ? 'Update Curriculum' : 'Create Curriculum & Add Subjects'}
             </h5>
             <small className="text-muted">
-              One compact screen: name + school year, then assign subjects per grade.
+              One compact screen: name + school year, then pick subjects to attach to the curriculum.
             </small>
           </div>
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            {!isEdit && <StatPill title="Total staged items across all grades">Queued: {totalPendingAcross}</StatPill>}
-            {activeCurriculum ? (
-              <StatPill variant="success" title="Active curriculum from the server">
-                Active: {activeCurriculum.curriculum_name} (SY #{activeCurriculum.school_year_id})
-              </StatPill>
-            ) : (
-              <StatPill variant="secondary">No active curriculum</StatPill>
-            )}
-            {selectedMatchesActive ? (
-              <StatPill variant="primary">Matches active by {matchInfo.reason === 'name' ? 'name' : 'year'}</StatPill>
-            ) : (
-              <StatPill variant="warning">Inputs don’t match active</StatPill>
-            )}
+            {!isEdit && <StatPill title="Selected subjects">Selected: {selectedIds.size}</StatPill>}
             <button
               type="button"
               className="btn btn-light btn-sm border d-flex align-items-center gap-2 px-3"
@@ -685,41 +475,23 @@ const UpsertCurriculum = () => {
             </div>
             <div className="col-12">
               <div className="alert alert-info py-2 small mb-0">
-                <strong>Preview:</strong> {formData.curriculum_name || '—'} • {selectedSYLabel || '—'}
+                <strong>Preview:</strong> {formData.curriculum_name || '—'} • {selectedSYLabel || '—'} {savedCurriculumId ? `• ID ${savedCurriculumId}` : ''}
               </div>
             </div>
           </div>
 
-          {/* STEP 2: Assign (create only) */}
+          {/* STEP 2: Subjects (create only) */}
           {!isEdit && (
             <>
-              {/* Sticky mini-toolbar inside card */}
-              <div
-                className="border rounded-3 mb-3 position-sticky top-0 bg-white p-2"
-                style={{ zIndex: 1 }}
-              >
+              {/* Toolbar */}
+              <div className="border rounded-3 mb-3 position-sticky top-0 bg-white p-2" style={{ zIndex: 1 }}>
                 <div className="row g-2 align-items-center">
-                  <div className="col-12 col-lg-4">
-                    <select
-                      className="form-select form-select-sm"
-                      value={assignForm.grade_level_id}
-                      onChange={(e) => { setAssignForm((p) => ({ ...p, grade_level_id: Number(e.target.value) })); setPage(1); }}
-                    >
-                      <option value={0}>Select grade level…</option>
-                      {gradeLevels.map((g) => (
-                        <option key={g.grade_level_id} value={g.grade_level_id}>
-                          {g.grade_name} ({g.grade_code})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="col-12 col-lg-5">
+                  <div className="col-12 col-lg-8">
                     <div className="input-group input-group-sm">
                       <span className="input-group-text">Search</span>
                       <input
                         className="form-control"
-                        placeholder="Find by code or name"
+                        placeholder="Find by subject code or name"
                         value={query}
                         onChange={(e) => { setQuery(e.target.value); setPage(1); }}
                         aria-label="Search subjects"
@@ -732,13 +504,16 @@ const UpsertCurriculum = () => {
                     </div>
                   </div>
 
-                  <div className="col-12 col-lg-3 d-flex gap-2 justify-content-lg-end">
-                    <StatPill variant="secondary">Selected: {selectedCount}</StatPill>
+                  <div className="col-12 col-lg-4 d-flex gap-2 justify-content-lg-end">
+                    <StatPill variant="secondary">Selected: {selectedIds.size}</StatPill>
                     <button
                       type="button"
                       className="btn btn-outline-success btn-sm d-flex align-items-center gap-2"
-                      disabled={!assignForm.grade_level_id || filtered.length === 0}
-                      onClick={selectAllFiltered}
+                      disabled={filtered.length === 0}
+                      onClick={() => {
+                        // Select all filtered (not just current page)
+                        setSelectedIds(new Set(filtered.map(s => s.subject_id)));
+                      }}
                       title="Select all filtered subjects"
                     >
                       <FaPlusSquare /> Select All
@@ -748,245 +523,91 @@ const UpsertCurriculum = () => {
 
                 <div className="mt-2 small text-muted">
                   {savedCurriculumId ? <span>Curriculum ID: {savedCurriculumId}</span> : <span>Not saved yet</span>}
-                  {' '}&middot;{' '}
-                  {selectedMatchesActive
-                    ? <span className="text-primary">Showing server assignments (matched by {matchInfo.reason === 'name' ? 'name' : 'year'})</span>
-                    : <span>No server assignments shown</span>}
+                  {' '}·{' '}
+                  <span>{filtered.length} subject(s) found</span>
                 </div>
               </div>
 
-              {/* Inline subject table */}
-              {!assignForm.grade_level_id ? (
-                <div className="text-center text-muted py-5">Pick a grade level to start assigning subjects.</div>
-              ) : (
-                <>
-                  <div className="table-responsive border rounded-3">
-                    {pageSlice.length === 0 ? (
-                      <div className="text-center text-muted py-5">No subjects available to assign.</div>
-                    ) : (
-                      <table className="table table-sm table-hover align-middle mb-0">
-                        <thead className="table-light position-sticky top-0" style={{ zIndex: 1 }}>
-                          <tr>
-                            <th style={{ width: 44 }}>
+              {/* Subjects table */}
+              <div className="table-responsive border rounded-3">
+                {filtered.length === 0 ? (
+                  <div className="text-center text-muted py-5">No subjects available.</div>
+                ) : (
+                  <table className="table table-sm table-hover align-middle mb-0">
+                    <thead className="table-light position-sticky top-0" style={{ zIndex: 1 }}>
+                      <tr>
+                        <th style={{ width: 44 }}>
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            checked={pageSlice.length > 0 && pageSlice.every((r) => selectedIds.has(Number(r.subject_id)))}
+                            onChange={(e) => toggleSelectAllOnPage(e.target.checked)}
+                            aria-label="Select all on page"
+                          />
+                        </th>
+                        <th style={{ width: 160 }}>Code</th>
+                        <th>Name</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageSlice.map((s) => {
+                        const selected = selectedIds.has(Number(s.subject_id));
+                        return (
+                          <tr
+                            key={s.subject_id}
+                            className={selected ? 'table-primary' : ''}
+                            style={selected ? { borderLeft: '4px solid var(--bs-primary)' } : undefined}
+                          >
+                            <td>
                               <input
                                 type="checkbox"
                                 className="form-check-input"
-                                checked={pageSlice.length > 0 && pageSlice.every((r) => isSelected(r.subject_id))}
-                                onChange={(e) => toggleSelectAllOnPage(e.target.checked)}
-                                aria-label="Select all on page"
+                                checked={selected}
+                                onChange={(e) => toggleOne(s.subject_id, e.target.checked)}
+                                aria-label={`Select ${s.subject_code}`}
                               />
-                            </th>
-                            <th style={{ width: 140 }}>Code</th>
-                            <th>Name</th>
-                            <th style={{ width: 140 }}>Units</th>
-                            <th style={{ width: 110 }}>Required</th>
+                            </td>
+                            <td className="fw-medium">{s.subject_code}</td>
+                            <td>{s.subject_name}</td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {pageSlice.map((s) => {
-                            const selected = isSelected(s.subject_id);
-                            return (
-                              <tr
-                                key={s.subject_id}
-                                className={selected ? 'table-primary' : ''}
-                                style={selected ? { borderLeft: '4px solid var(--bs-primary)' } : undefined}
-                              >
-                                <td>
-                                  <input
-                                    type="checkbox"
-                                    className="form-check-input"
-                                    checked={selected}
-                                    onChange={(e) => toggleRow(s, e.target.checked)}
-                                    aria-label={`Select ${s.subject_code}`}
-                                  />
-                                </td>
-                                <td className="fw-medium">{s.subject_code}</td>
-                                <td>{s.subject_name}</td>
-                                <td>
-                                  <div className="input-group input-group-sm">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      className="form-control"
-                                      placeholder="0"
-                                      value={selected ? (s.units ?? 0) : ''}
-                                      onChange={(e) => onUnitsChange(s.subject_id, e.target.value)}
-                                      disabled={!selected}
-                                      aria-label={`Units for ${s.subject_code}`}
-                                    />
-                                    <span className="input-group-text">units</span>
-                                  </div>
-                                </td>
-                                <td className="text-center">
-                                  <div className="form-check form-switch d-inline-flex">
-                                    <input
-                                      className="form-check-input"
-                                      type="checkbox"
-                                      role="switch"
-                                      checked={selected ? !!s.is_required : false}
-                                      onChange={(e) => onRequiredChange(s.subject_id, e.target.checked)}
-                                      disabled={!selected}
-                                      aria-label={`Required toggle for ${s.subject_code}`}
-                                    />
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
 
-                  {/* Pagination */}
-                  <div className="d-flex align-items-center justify-content-between mt-2">
-                    <div className="small text-muted">Page {safePage} of {totalPages}</div>
-                    <div className="btn-group btn-group-sm">
-                      <button
-                        className="btn btn-outline-secondary"
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        disabled={safePage <= 1}
-                      >
-                        <FaChevronLeft /> Prev
-                      </button>
-                      <button
-                        className="btn btn-outline-secondary"
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={safePage >= totalPages}
-                      >
-                        Next <FaChevronRight />
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Local queue (this grade) */}
-              {assignForm.grade_level_id !== 0 && pendingCountThisGrade > 0 && (
-                <div className="mt-3">
-                  <div className="border rounded-3 p-2">
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <div className="fw-semibold small mb-0">Saved Locally — not yet committed</div>
-                      <div className="d-flex align-items-center gap-2">
-                        <StatPill variant="secondary">Items: {pendingCountThisGrade}</StatPill>
-                        <button
-                          className="btn btn-outline-danger btn-sm d-inline-flex align-items-center gap-2"
-                          onClick={clearPendingForGrade}
-                        >
-                          <FaTrashAlt /> Clear All
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="table-responsive">
-                      <table className="table table-sm align-middle mb-0">
-                        <thead className="table-light">
-                          <tr>
-                            <th style={{ width: 140 }}>Code</th>
-                            <th>Name</th>
-                            <th style={{ width: 160 }}>Units</th>
-                            <th style={{ width: 120 }}>Required</th>
-                            <th style={{ width: 90 }}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pendingForCurrent.map((a) => (
-                            <tr key={a.subject_id}>
-                              <td className="fw-medium">{a.subject_code}</td>
-                              <td>{a.subject_name}</td>
-                              <td>
-                                <div className="input-group input-group-sm">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    className="form-control"
-                                    value={a.units ?? 0}
-                                    onChange={(e) => updatePendingField(a.subject_id, 'units', e.target.value)}
-                                  />
-                                  <span className="input-group-text">units</span>
-                                </div>
-                              </td>
-                              <td className="text-center">
-                                <div className="form-check form-switch d-inline-flex">
-                                  <input
-                                    className="form-check-input"
-                                    type="checkbox"
-                                    role="switch"
-                                    checked={!!a.is_required}
-                                    onChange={(e) => updatePendingField(a.subject_id, 'is_required', e.target.checked)}
-                                  />
-                                </div>
-                              </td>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-2"
-                                  onClick={() => removePending(a.subject_id)}
-                                  title="Remove from local queue"
-                                >
-                                  <FaTimes /> Remove
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+              {/* Pagination */}
+              <div className="d-flex align-items-center justify-content-between mt-2">
+                <div className="small text-muted">Page {safePage} of {totalPages}</div>
+                <div className="btn-group btn-group-sm">
+                  <button
+                    className="btn btn-outline-secondary"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                  >
+                    <FaChevronLeft /> Prev
+                  </button>
+                  <button
+                    className="btn btn-outline-secondary"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                  >
+                    Next <FaChevronRight />
+                  </button>
                 </div>
-              )}
+              </div>
 
-              {/* Server assignments (read-only) */}
-              {assignForm.grade_level_id !== 0 && selectedMatchesActive && gradeSubjects.length > 0 && (
-                <div className="mt-3">
-                  <div className="border rounded-3 p-2">
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <div className="fw-semibold small mb-0">
-                        Current Server Assignments — {labelForGrade(assignForm.grade_level_id)}
-                      </div>
-                      <StatPill variant="success">From active</StatPill>
-                    </div>
-                    <div className="table-responsive">
-                      <table className="table table-sm align-middle mb-0">
-                        <thead className="table-light">
-                          <tr>
-                            <th style={{ width: 140 }}>Code</th>
-                            <th>Name</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {gradeSubjects.map((s) => (
-                            <tr key={s.subject_id}>
-                              <td className="fw-medium">{s.subject_code}</td>
-                              <td>{s.subject_name}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Primary actions (create) */}
+              {/* Primary action (create) */}
               <div className="d-flex flex-wrap justify-content-end gap-2 mt-3">
                 <button
                   type="button"
-                  className="btn btn-outline-primary btn-sm d-flex align-items-center gap-2"
-                  onClick={saveLocalForGrade}
-                  disabled={!assignForm.grade_level_id || selectedCount === 0}
-                  title="Store the current selection in this grade's local queue (no API call)"
-                >
-                  <FaSave /> Assign (Save Locally)
-                </button>
-                <button
-                  type="button"
                   className="btn btn-dark btn-sm d-flex align-items-center gap-2"
-                  onClick={saveAndAssignAllGrades}
-                  disabled={loading || (totalPendingAcross === 0 && !hasInlineForCurrentGrade)}
-                  title="Save the curriculum then commit all queued assignments across grades"
+                  onClick={saveAndAddSubjects}
+                  disabled={loading}
+                  title="Save the curriculum then add all selected subjects"
                 >
-                  <FaCheck /> Save & Assign All Grades
+                  <FaCheck /> Save & Add Subjects
                 </button>
               </div>
             </>
