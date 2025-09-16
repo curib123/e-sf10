@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   FaChevronLeft,
@@ -16,6 +17,7 @@ import {
   FaSortUp,
   FaSync,
   FaTimes,
+  FaTrashAlt,
 } from 'react-icons/fa';
 import {
   useNavigate,
@@ -24,20 +26,23 @@ import {
 
 import StatusModal from '../components/status_modal';
 
-const BASE_URL = process.env.REACT_APP_API_BASE_URL; // In many of your screens this already includes "/esf10"
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 /** Safe URL joiner (avoids double/missing slashes) */
 const joinUrl = (base, path) =>
   `${(base || '').replace(/\/$/, '')}/${(path || '').replace(/^\//, '')}`;
 
-/** Minimal JSON request helper */
-const request = async (url, token) => {
+/** Minimal JSON request helper (supports method/body) */
+const request = async (url, token, init = {}) => {
   const res = await fetch(url, {
+    method: init.method || 'GET',
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers || {}),
     },
+    body: init.body ? JSON.stringify(init.body) : undefined,
   });
   let json;
   try { json = await res.json(); } catch { json = { success: false, message: 'Invalid server response' }; }
@@ -68,7 +73,6 @@ const buildSorter = (spec) => {
   return (a, b) => {
     const va = a?.[col];
     const vb = b?.[col];
-    // Date-safe, number-safe, string fallback
     const da = Date.parse(va);
     const db = Date.parse(vb);
     if (!Number.isNaN(da) && !Number.isNaN(db)) return (da - db) * mul;
@@ -80,12 +84,73 @@ const buildSorter = (spec) => {
     return 0;
   };
 };
-const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
 
 const PAGE_SIZES = [5, 10, 20, 50];
 
+/** ---- FIXED: Delete confirmation modal rendered via portal ---- */
+const ConfirmDeleteModal = ({ show, row, busy, onCancel, onConfirm }) => {
+  // Lock body scroll and close on ESC while open
+  useEffect(() => {
+    if (!show) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => { if (e.key === 'Escape') onCancel?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [show, onCancel]);
+
+  if (!show) return null;
+
+  return createPortal(
+    <>
+      <div
+        className="modal fade show"
+        style={{ display: 'block' }}
+        tabIndex="-1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirmDeleteTitle"
+      >
+        <div className="modal-dialog modal-dialog-centered" role="document">
+          <div className="modal-content rounded-4 shadow">
+            <div className="modal-header">
+              <h5 className="modal-title" id="confirmDeleteTitle">Remove Subject</h5>
+              <button type="button" className="btn-close" aria-label="Close" onClick={onCancel} disabled={busy} />
+            </div>
+            <div className="modal-body">
+              <p className="mb-0">
+                Are you sure you want to remove{' '}
+                <strong>{row?.subject_name}</strong>
+                {row?.subject_code ? <> (<code>{row.subject_code}</code>)</> : null}
+                {' '}from this curriculum?
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline-secondary" onClick={onCancel} disabled={busy}>
+                Cancel
+              </button>
+              <button className="btn btn-danger d-inline-flex align-items-center gap-2" onClick={onConfirm} disabled={busy}>
+                {busy ? <span className="spinner-border spinner-border-sm" role="status" /> : <FaTrashAlt />}
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* Backdrop */}
+      <div className="modal-backdrop fade show"></div>
+    </>,
+    document.body
+  );
+};
+
 export default function CurriculumSubjects() {
-  const { id } = useParams(); // route param :id => curriculum_id
+  const { id } = useParams();
   const navigate = useNavigate();
   const token = useMemo(() => sessionStorage.getItem('token'), []);
 
@@ -97,10 +162,12 @@ export default function CurriculumSubjects() {
   const [sort, setSort] = useState(sessionStorage.getItem('currsubj.sort') || 'subject_name:asc');
 
   // Data + UI
-  const [subjects, setSubjects] = useState([]); // current page data from API
+  const [subjects, setSubjects] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: pageSize, total: 0, totalPages: 1 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [removingId, setRemovingId] = useState(null);
+  const [confirm, setConfirm] = useState({ show: false, row: null });
   const [modal, setModal] = useState({ show: false, title: '', message: '', variant: 'danger' });
 
   // Persist query bits
@@ -123,13 +190,17 @@ export default function CurriculumSubjects() {
     setLoading(true);
     try {
       const qs = new URLSearchParams({ page: String(page), limit: String(pageSize) });
-      // If BASE_URL already includes /esf10, keep only the path below:
       const url = `${joinUrl(BASE_URL, `curriculum/curriculum-subjects/${id}`)}?${qs.toString()}`;
       const resp = await request(url, token);
       if (resp?.success) {
         setSubjects(resp.data || []);
         const p = resp.pagination || { page: 1, limit: pageSize, total: (resp.data || []).length, totalPages: 1 };
-        setPagination({ page: Number(p.page || 1), limit: Number(p.limit || pageSize), total: Number(p.total || 0), totalPages: Number(p.totalPages || 1) });
+        setPagination({
+          page: Number(p.page || 1),
+          limit: Number(p.limit || pageSize),
+          total: Number(p.total || 0),
+          totalPages: Number(p.totalPages || 1),
+        });
       } else {
         setSubjects([]);
         setPagination({ page: 1, limit: pageSize, total: 0, totalPages: 1 });
@@ -160,6 +231,52 @@ export default function CurriculumSubjects() {
     });
   };
 
+  // Open confirm modal
+  const askRemove = (row) => setConfirm({ show: true, row });
+  const closeConfirm = () => setConfirm({ show: false, row: null });
+
+  // Execute DELETE
+  const removeSubject = async (row) => {
+    if (!row?.subject_id) return;
+    setRemovingId(row.subject_id);
+    try {
+      const url = joinUrl(BASE_URL, `curriculum/remove-subject/${id}/${row.subject_id}`);
+      const resp = await request(url, token, { method: 'DELETE' });
+      if (resp?.success) {
+        setSubjects((prev) => prev.filter((s) => s.subject_id !== row.subject_id));
+        setPagination((p) => ({ ...p, total: Math.max(0, (p.total || 0) - 1) }));
+        setModal({
+          show: true,
+          title: 'Removed',
+          message: resp.message || 'Subject removed from curriculum successfully.',
+          variant: 'success',
+        });
+      } else {
+        setModal({
+          show: true,
+          title: 'Failed',
+          message: resp?.message || 'Could not remove subject.',
+          variant: 'danger',
+        });
+      }
+    } catch (e) {
+      setModal({
+        show: true,
+        title: 'Error',
+        message: 'Request failed while removing the subject.',
+        variant: 'danger',
+      });
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const confirmRemove = async () => {
+    const row = confirm.row;
+    closeConfirm();
+    await removeSubject(row);
+  };
+
   // Client-side filter & sort (for the current server page)
   const pageFiltered = subjects.filter((s) => {
     if (!debouncedQ) return true;
@@ -175,11 +292,10 @@ export default function CurriculumSubjects() {
         <div>
           <h4 className="fw-bold mb-1">Curriculum Subjects</h4>
           <p className="text-muted mb-0 small">
-            Curriculum ID: <span className="fw-semibold">{id}</span> • Page {pagination.page} of {pagination.totalPages} • {pagination.total} total
+            Page {pagination.page} of {pagination.totalPages} • {pagination.total} total
           </p>
         </div>
         <div className="d-flex gap-2 mt-2 mt-md-0">
-          {/* NEW: Back button */}
           <button
             className="btn btn-outline-secondary d-inline-flex align-items-center gap-2"
             onClick={() => navigate(-1)}
@@ -189,7 +305,6 @@ export default function CurriculumSubjects() {
             <span className="d-none d-sm-inline">Back</span>
           </button>
 
-          {/* Refresh */}
           <button
             className="btn btn-light border d-inline-flex align-items-center gap-2"
             onClick={handleRefresh}
@@ -277,10 +392,7 @@ export default function CurriculumSubjects() {
         <div className="card border-0 shadow-sm rounded-4">
           <div className="table-responsive" style={{ maxHeight: '65vh' }}>
             <table className="table table-hover align-middle mb-0">
-              <thead
-                className="table-light"
-                style={{ position: 'sticky', top: 0, zIndex: 1 }}
-              >
+              <thead className="table-light" style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr>
                   <th style={{ width: 140 }} className="text-center">
                     <button className="btn btn-link p-0 text-decoration-none" onClick={() => toggleSort('subject_code')}>
@@ -292,22 +404,13 @@ export default function CurriculumSubjects() {
                       Name <SortIcon field="subject_name" sort={sort} />
                     </button>
                   </th>
-                  <th style={{ width: 140 }}>
+                  <th style={{ width: 160 }}>
                     <button className="btn btn-link p-0 text-decoration-none" onClick={() => toggleSort('grade_level')}>
                       Grade Level <SortIcon field="grade_level" sort={sort} />
                     </button>
                   </th>
                   <th>Description</th>
-                  <th style={{ width: 200 }}>
-                    <button className="btn btn-link p-0 text-decoration-none" onClick={() => toggleSort('created_at')}>
-                      Created <SortIcon field="created_at" sort={sort} />
-                    </button>
-                  </th>
-                  <th style={{ width: 200 }}>
-                    <button className="btn btn-link p-0 text-decoration-none" onClick={() => toggleSort('updated_at')}>
-                      Updated <SortIcon field="updated_at" sort={sort} />
-                    </button>
-                  </th>
+                  <th style={{ width: 120 }} className="text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -321,13 +424,25 @@ export default function CurriculumSubjects() {
                     <td className="text-truncate" style={{ maxWidth: 520 }}>
                       {s.description || <span className="text-muted">—</span>}
                     </td>
-                    <td className="small text-muted">{fmtDate(s.created_at)}</td>
-                    <td className="small text-muted">{fmtDate(s.updated_at)}</td>
+                    <td className="text-center">
+                      <button
+                        className="btn btn-outline-danger btn-sm d-inline-flex align-items-center gap-2"
+                        onClick={() => askRemove(s)}
+                        disabled={removingId === s.subject_id}
+                        title="Remove subject from curriculum"
+                      >
+                        {removingId === s.subject_id
+                          ? <span className="spinner-border spinner-border-sm" role="status" />
+                          : <FaTrashAlt />}
+                        <span className="d-none d-md-inline">Remove</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
           {/* Footer meta */}
           <div className="card-footer bg-transparent d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div className="small text-muted">
@@ -374,6 +489,15 @@ export default function CurriculumSubjects() {
           </div>
         </div>
       )}
+
+      {/* Delete confirm modal (now shows via portal) */}
+      <ConfirmDeleteModal
+        show={confirm.show}
+        row={confirm.row}
+        busy={!!removingId}
+        onCancel={closeConfirm}
+        onConfirm={confirmRemove}
+      />
 
       <StatusModal {...modal} onHide={() => setModal((m) => ({ ...m, show: false }))} />
     </div>
