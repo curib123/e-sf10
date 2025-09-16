@@ -9,7 +9,6 @@ import React, {
 import {
   FaChevronDown,
   FaChevronUp,
-  FaPlus,
   FaSearch,
   FaSync,
   FaTimes,
@@ -276,12 +275,7 @@ const fetchAll = async () => {
               Refresh
             </button>
 
-            <button
-              className="btn btn-primary d-inline-flex align-items-center gap-2"
-              onClick={() => navigate(`/assign-subject-per-year-level/assign`)}
-            >
-              <FaPlus /> Assign Subject
-            </button>
+         
           </div>
         </div>
       </div>
@@ -300,12 +294,7 @@ const fetchAll = async () => {
             <p className="text-muted small mb-4">
               Try a different grade filter or search.
             </p>
-            <button
-              className="btn btn-primary d-inline-flex align-items-center gap-2"
-              onClick={() => navigate(`/assign-subject-per-year-level/assign`)}
-            >
-              <FaPlus /> Assign Subject
-            </button>
+          
           </div>
         </div>
       ) : (
