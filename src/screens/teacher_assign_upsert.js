@@ -1,4 +1,3 @@
-// src/screens/teacher_assign_upsert.js
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 import React, {
@@ -9,17 +8,10 @@ import React, {
 } from 'react';
 
 import {
-  FaCalendarCheck,
-  FaCheckCircle,
   FaChevronLeft,
   FaChevronRight,
-  FaExclamationTriangle,
-  FaInfoCircle,
-  FaLock,
   FaSave,
-  FaSearch,
   FaSyncAlt,
-  FaTimesCircle,
   FaUndo,
 } from 'react-icons/fa';
 import {
@@ -29,224 +21,72 @@ import {
 
 import StatusModal from '../components/status_modal';
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Config
-const BASE_URL = process.env.REACT_APP_API_BASE_URL; // must already include /esf10
+/**
+ * Teacher Assignment — Simplified UI (with filtering of already-assigned pairs)
+ */
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Config (BASE_URL must already include /esf10)
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 const CREATE_ENDPOINT = `/teacher-assignments/create`;
 const UPDATE_ENDPOINT = (id) => `/teacher-assignments/update/${id}`;
 const SHOW_ENDPOINT = (id) => `/teacher-assignments/${id}`;
-const TEACHER_ACTIVE_YEAR = (teacherId) =>
-  `/teacher-assignments/teacher/${teacherId}/active-year`;
+const TEACHER_ACTIVE_YEAR = (teacherId) => `/teacher-assignments/teacher/${teacherId}/active-year`;
 
-const STORAGE_KEY = 'teacherAssignment.selectedTeacherId';
-const HARD_REFRESH_ON_SAVE = true;
 const PAGE_SIZES = [5, 10, 20, 50];
 
-const icons = {
-  success: <FaCheckCircle size={18} />,
-  danger: <FaTimesCircle size={18} />,
-  warning: <FaExclamationTriangle size={18} />,
-  info: <FaInfoCircle size={18} />,
-};
-
-// ────────────────────────────────────────────────────────────────────────────────
-// Helpers (School Year)
+// ───────────────────────────────────────────────────────────────────────────────
+// Helpers — school year
 const isTruthyActive = (v) => {
   if (v === true || v === 1 || v === '1') return true;
   if (typeof v === 'string' && v.toLowerCase() === 'true') return true;
   return false;
-};
-const hasActiveFlag = (sy) => {
-  const v = sy?.is_active ?? sy?.active ?? sy?.isActive ?? sy?.status;
-  return isTruthyActive(v);
 };
 const toYear = (v) => {
   if (v == null) return NaN;
   const m = String(v).match(/\d{4}/);
   return m ? Number(m[0]) : Number.isFinite(Number(v)) ? Number(v) : NaN;
 };
-const getStartYear = (sy) =>
-  toYear(sy?.start_year ?? (sy?.school_year?.split?.('-')?.[0]));
-const getEndYear = (sy) =>
-  toYear(sy?.end_year ?? (sy?.school_year?.split?.('-')?.[1]));
 const pickActiveSchoolYear = (list = []) => {
   if (!Array.isArray(list) || list.length === 0) return null;
-  const byFlag = list.find(hasActiveFlag);
-  if (byFlag) return byFlag;
+  const flagged = list.find((sy) => isTruthyActive(sy?.is_active ?? sy?.active ?? sy?.isActive ?? sy?.status));
+  if (flagged) return flagged;
   const sorted = [...list].sort((a, b) => {
-    const ae = getEndYear(a), be = getEndYear(b);
+    const ae = toYear(a?.end_year ?? a?.school_year?.split?.('-')?.[1]);
+    const be = toYear(b?.end_year ?? b?.school_year?.split?.('-')?.[1]);
     if (Number.isFinite(ae) && Number.isFinite(be) && be !== ae) return be - ae;
-    const as = getStartYear(a), bs = getStartYear(b);
+    const as = toYear(a?.start_year ?? a?.school_year?.split?.('-')?.[0]);
+    const bs = toYear(b?.start_year ?? b?.school_year?.split?.('-')?.[0]);
     if (Number.isFinite(as) && Number.isFinite(bs) && bs !== as) return bs - as;
     return 0;
   });
   return sorted[0] || null;
 };
 
-// Name/code normalizer used for grade matching
-const norm = (s) =>
-  String(s || '')
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/-/g, '')
-    .replace(/^grade/, 'g');
+// Small helper for pair keys
+const pairKey = (sectionId, subjectId) => `${String(sectionId)}|${String(subjectId)}`;
 
-// Small helpers
-const countBy = (arr, keyFn) => {
-  const m = new Map();
-  for (const it of arr) {
-    const k = keyFn(it);
-    if (!k) continue;
-    m.set(k, (m.get(k) || 0) + 1);
+// Small helper to build a compact page list with ellipses
+function buildPageList(page, totalPages) {
+  const pages = [];
+  const maxToShow = 7;
+  if (totalPages <= maxToShow) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+    return pages;
   }
-  return m;
-};
-const sortEntriesByCountDesc = (mapObj) =>
-  [...mapObj.entries()].sort((a, b) => b[1] - a[1]);
+  const showAround = 1;
+  const start = Math.max(2, page - showAround);
+  const end = Math.min(totalPages - 1, page + showAround);
+  pages.push(1);
+  if (start > 2) pages.push('…');
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (end < totalPages - 1) pages.push('…');
+  pages.push(totalPages);
+  return pages;
+}
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Searchable dropdown (top 3 results). Filled when chosen, outlined otherwise.
-const TeacherSearchSelect = ({
-  items,
-  value,
-  onChange,
-  disabled,
-  invalid,
-  placeholder = 'Search teacher…',
-}) => {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [hoverIdx, setHoverIdx] = useState(-1);
-  const wrapRef = useRef(null);
-
-  const selected = useMemo(
-    () => items.find((t) => String(t.teacher_id) === String(value)),
-    [items, value]
-  );
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const base = q
-      ? items.filter((t) => {
-          const name =
-            t.full_name ||
-            t.teacher_name ||
-            `${t.first_name ?? ''} ${t.last_name ?? ''}`;
-          return String(name).toLowerCase().includes(q);
-        })
-      : items;
-    return base.slice(0, 3);
-  }, [items, query]);
-
-  const pick = (t) => {
-    onChange(String(t.teacher_id));
-    setQuery('');
-    setOpen(false);
-  };
-
-  useEffect(() => {
-    const onDoc = (e) => {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-
-  const onKeyDown = (e) => {
-    if (!open) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHoverIdx((i) => Math.min(filtered.length - 1, i + 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHoverIdx((i) => Math.max(0, i - 1));
-    } else if (e.key === 'Enter' && hoverIdx >= 0 && filtered[hoverIdx]) {
-      e.preventDefault();
-      pick(filtered[hoverIdx]);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setOpen(false);
-    }
-  };
-
-  const display =
-    selected?.full_name ||
-    selected?.teacher_name ||
-    (selected ? `${selected.first_name ?? ''} ${selected.last_name ?? ''}` : '');
-
-  return (
-    <div className="position-relative" ref={wrapRef}>
-      <div className={`input-group ${invalid ? 'is-invalid' : ''}`}>
-        <span className="input-group-text">
-          <FaSearch />
-        </span>
-        <input
-          className={`form-control ${invalid ? 'is-invalid' : ''}`}
-          type="text"
-          disabled={disabled}
-          placeholder={display || placeholder}
-          value={query}
-          onFocus={() => setOpen(true)}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
-          aria-label="Teacher search"
-        />
-      </div>
-      <input type="hidden" value={value} readOnly />
-
-      {open && (
-        <div
-          className="dropdown-menu show w-100 mt-1 shadow"
-          style={{ maxHeight: 240, overflowY: 'auto' }}
-        >
-          {filtered.length === 0 ? (
-            <div className="dropdown-item text-muted small">No matches</div>
-          ) : (
-            filtered.map((t, idx) => {
-              const name =
-                t.full_name ||
-                t.teacher_name ||
-                `${t.first_name ?? ''} ${t.last_name ?? ''}`;
-              const active = idx === hoverIdx;
-              return (
-                <button
-                  key={t.teacher_id}
-                  type="button"
-                  className={`dropdown-item d-flex justify-content-between ${active ? 'active' : ''}`}
-                  onMouseEnter={() => setHoverIdx(idx)}
-                  onMouseLeave={() => setHoverIdx(-1)}
-                  onClick={() => pick(t)}
-                >
-                  <span>{name}</span>
-                  <small className="text-muted">ID: {t.teacher_id}</small>
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
-      {invalid && <div className="invalid-feedback d-block">Teacher is required.</div>}
-
-      {/* Visual pill showing chosen teacher (filled) or placeholder (outline) */}
-      <div className="mt-2">
-        {selected ? (
-          <span className="sel-pill sel-pill--filled">
-            {display}
-          </span>
-        ) : (
-          <span className="sel-pill sel-pill--outline">
-            Choose a teacher to continue
-          </span>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ────────────────────────────────────────────────────────────────────────────────
-// Component
-const TeacherAssignmentForm = () => {
+// ───────────────────────────────────────────────────────────────────────────────
+export default function TeacherAssignmentForm() {
   const { id } = useParams();
   const isEditMode = Boolean(id);
   const navigate = useNavigate();
@@ -256,105 +96,122 @@ const TeacherAssignmentForm = () => {
   // UI
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [statusModal, setStatusModal] = useState({
-    show: false, title: '', message: '', variant: 'info', icon: icons.info,
-  });
-  const showStatus = (variant, title, message) =>
-    setStatusModal({ show: true, title, message, variant, icon: icons[variant] });
+  const [status, setStatus] = useState({ show: false, title: '', message: '', variant: 'info' });
+  const showStatus = (variant, title, message) => setStatus({ show: true, title, message, variant });
 
   // Data
   const [teachers, setTeachers] = useState([]);
   const [schoolYears, setSchoolYears] = useState([]);
   const [byGrade, setByGrade] = useState([]); // [{ grade_level_id, grade_name, sections[], subjects[] }]
 
-  // Form (school_year_id is hidden; auto-set to ACTIVE)
-  const [form, setForm] = useState({
-    teacher_id: '',
-    school_year_id: '',
-  });
-
-  // Single Grade dropdown (drives both sections & subjects)
-  const [selectedGradeId, setSelectedGradeId] = useState(''); // '' when none
-
-  // Multi-selects
+  // Form
+  const [form, setForm] = useState({ teacher_id: '', school_year_id: '' });
+  const [selectedGradeId, setSelectedGradeId] = useState('');
   const [selectedSectionIds, setSelectedSectionIds] = useState(new Set());
   const [selectedSubjectIds, setSelectedSubjectIds] = useState(new Set());
 
-  // Edit state
+  // Edit
   const [current, setCurrent] = useState(null);
-  const suppressAutoSelectRef = useRef(false); // used only for safe edit prefill
 
-  // Table below
+  // Table (teacher's active-year subjects)
   const [teacherSubs, setTeacherSubs] = useState([]);
   const [teacherSubsLoading, setTeacherSubsLoading] = useState(false);
-  const lastTeacherFetched = useRef(null);
-
-  // Pagination (client-side)
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // ── Recommendation state
-  const [recExpanded, setRecExpanded] = useState(true);
-  const [rec, setRec] = useState({
-    gradeId: '',
-    sectionIds: new Set(),
-    subjectIds: new Set(),
-    reasons: [],
-  });
-
-  const selectedTeacher = useMemo(
-    () => teachers.find((x) => String(x.teacher_id) === String(form.teacher_id)),
-    [teachers, form.teacher_id]
-  );
-  const selectedTeacherName = useMemo(() => {
-    const t = selectedTeacher;
-    return t?.full_name || t?.teacher_name || (teacherSubs[0]?.teacher_name ?? '');
-  }, [selectedTeacher, teacherSubs]);
-
-  const teacherInitials = useMemo(() => {
-    const name = selectedTeacherName || '';
-    return (
-      name
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((s) => s[0]?.toUpperCase())
-        .join('') || 'T'
-    );
-  }, [selectedTeacherName]);
-
+  // Derived
   const activeSY = useMemo(() => pickActiveSchoolYear(schoolYears), [schoolYears]);
   const activeSYText = useMemo(() => {
     if (!activeSY) return '';
-    const a = activeSY;
-    const s = a.start_year ?? a.school_year?.split?.('-')?.[0] ?? '';
-    const e = a.end_year ?? a.school_year?.split?.('-')?.[1] ?? '';
+    const s = activeSY.start_year ?? activeSY.school_year?.split?.('-')?.[0] ?? '';
+    const e = activeSY.end_year ?? activeSY.school_year?.split?.('-')?.[1] ?? '';
     return `${s} - ${e}`;
   }, [activeSY]);
+  const teacherChosen = Boolean(String(form.teacher_id).trim());
+  const syReady = Boolean(String(form.school_year_id).trim());
+  const lockForm = !teacherChosen;
 
-  // Persist selected teacher across hard reloads
-  const persistSelectedTeacher = (tid) => {
-    if (tid) sessionStorage.setItem(STORAGE_KEY, String(tid));
-  };
-  const restorePersistedTeacher = () => {
-    const saved = sessionStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      sessionStorage.removeItem(STORAGE_KEY);
-      return saved;
+  const selectedGrade = useMemo(() => {
+    if (!selectedGradeId) return null;
+    return byGrade.find((g) => String(g.grade_level_id) === String(selectedGradeId)) || null;
+  }, [byGrade, selectedGradeId]);
+
+  const gradeSections = selectedGrade?.sections ?? [];
+  const gradeSubjects = selectedGrade?.subjects ?? [];
+
+  // Build a fast lookup of already-assigned (section,subject) pairs for this teacher
+  const assignedPairs = useMemo(() => {
+    const s = new Set();
+    for (const a of teacherSubs || []) {
+      const secId = a?.section_id;
+      const subId = a?.subject_id;
+      if (secId != null && subId != null) s.add(pairKey(secId, subId));
     }
-    return null;
-  };
-  const hardRefreshPreserveTeacher = () => {
-    if (form.teacher_id) persistSelectedTeacher(form.teacher_id);
-    window.location.reload();
+    return s;
+  }, [teacherSubs]);
+
+  // Given a section, does it still have at least one subject not assigned to this teacher?
+  const sectionHasAnyFreeSubject = (sectionId) => {
+    for (const subj of gradeSubjects) {
+      if (!assignedPairs.has(pairKey(sectionId, subj.subject_id))) return true;
+    }
+    return false;
   };
 
+  // Sections: hide those where *all* subjects are already assigned
+  const filteredSections = useMemo(() => {
+    if (!selectedGrade) return [];
+    return gradeSections.filter((sec) => sectionHasAnyFreeSubject(sec.section_id));
+  }, [selectedGrade, gradeSections, gradeSubjects, assignedPairs]);
+
+  // Subjects: if user selected sections, show only subjects that are free in at least one selected section.
+  // If no section selected yet, show subjects that are free in at least one section of this grade.
+  const subjectIsAvailableInAnyOf = (subjectId, sectionIds) => {
+    const ids = sectionIds.length ? sectionIds : gradeSections.map((s) => String(s.section_id));
+    for (const secId of ids) {
+      if (!assignedPairs.has(pairKey(secId, subjectId))) return true;
+    }
+    return false;
+  };
+  const filteredSubjects = useMemo(() => {
+    if (!selectedGrade) return [];
+    const selectedSecs = [...selectedSectionIds];
+    return gradeSubjects.filter((subj) =>
+      subjectIsAvailableInAnyOf(String(subj.subject_id), selectedSecs)
+    );
+  }, [selectedGrade, gradeSubjects, gradeSections, selectedSectionIds, assignedPairs]);
+
+  // Optional: show how many subjects remain open in a section (tiny helper)
+  const sectionOpenCount = (sectionId) => {
+    let open = 0;
+    for (const subj of gradeSubjects) {
+      if (!assignedPairs.has(pairKey(sectionId, subj.subject_id))) open++;
+    }
+    return open;
+  };
+
+  // If filters make current selections invalid, prune them
+  useEffect(() => {
+    setSelectedSectionIds((prev) => {
+      const allowed = new Set(filteredSections.map((s) => String(s.section_id)));
+      const next = new Set([...prev].filter((id) => allowed.has(id)));
+      return next;
+    });
+  }, [filteredSections]);
+  useEffect(() => {
+    setSelectedSubjectIds((prev) => {
+      const allowed = new Set(filteredSubjects.map((s) => String(s.subject_id)));
+      const next = new Set([...prev].filter((id) => allowed.has(id)));
+      return next;
+    });
+  }, [filteredSubjects]);
+
+  // API wrapper
   const handleUnauthorized = () => {
     showStatus('danger', 'Unauthorized', 'Please login to continue.');
     sessionStorage.removeItem('token');
     setTimeout(() => navigate('/login'), 800);
   };
-
   const apiFetch = async (path, options = {}) => {
     const isAbsolute = /^https?:\/\//i.test(path);
     const fullUrl = isAbsolute ? path : `${BASE_URL}${path}`;
@@ -407,35 +264,19 @@ const TeacherAssignmentForm = () => {
     }
   };
 
-  // Helpers to resolve grade from existing assignment
-  const findGradeBySectionOrSubject = (sectionId, subjectId) => {
-    const sid = sectionId ? String(sectionId) : null;
-    const subid = subjectId ? String(subjectId) : null;
-    for (const g of byGrade) {
-      if (sid && Array.isArray(g.sections) && g.sections.some(s => String(s.section_id) === sid)) {
-        return String(g.grade_level_id);
-      }
-      if (subid && Array.isArray(g.subjects) && g.subjects.some(s => String(s.subject_id) === subid)) {
-        return String(g.grade_level_id);
-      }
+  const fetchTeacherSubjects = async (tid) => {
+    if (!tid) return setTeacherSubs([]);
+    try {
+      setTeacherSubsLoading(true);
+      const res = await apiFetch(TEACHER_ACTIVE_YEAR(tid), { method: 'GET' });
+      const data = await res.json();
+      setTeacherSubs(data?.success ? data.data || [] : []);
+    } catch {
+      setTeacherSubs([]);
+      showStatus('danger', 'Error', "Failed to load teacher's current subjects (active year).");
+    } finally {
+      setTeacherSubsLoading(false);
     }
-    return null;
-  };
-  const findGradeIdByName = (name) => {
-    if (!name) return null;
-    const target = norm(name);
-    for (const g of byGrade) {
-      const gn = norm(g.grade_name || g.grade_code || '');
-      if (gn && gn === target) return String(g.grade_level_id);
-    }
-    const num = String(name).match(/\d+/)?.[0];
-    if (num) {
-      for (const g of byGrade) {
-        const gn2 = norm(g.grade_name || g.grade_code || '');
-        if (gn2 && gn2.endsWith(num)) return String(g.grade_level_id);
-      }
-    }
-    return null;
   };
 
   const loadAssignment = async () => {
@@ -449,45 +290,20 @@ const TeacherAssignmentForm = () => {
       }
       const a = data.data;
       setCurrent(a);
-
-      // teacher is editable; school_year_id stays auto-active (hidden)
-      setForm((f) => ({
-        ...f,
-        teacher_id: a.teacher_id ?? f.teacher_id,
-      }));
-
-      // Determine the grade id from current assignment
-      const secId = a.section_id ? String(a.section_id) : '';
-      const subId = a.subject_id ? String(a.subject_id) : '';
-      let gradeId =
-        a.grade_level_id ? String(a.grade_level_id) : null;
-      if (!gradeId) {
-        gradeId =
-          findGradeBySectionOrSubject(secId, subId) ||
-          findGradeIdByName(a.grade_name);
-      }
-
-      // EDIT PREFILL: set dropdown to current grade and keep current sec/subj as selected
-      suppressAutoSelectRef.current = true;
-      setSelectedGradeId(gradeId || '');
-      setSelectedSectionIds(secId ? new Set([secId]) : new Set());
-      setSelectedSubjectIds(subId ? new Set([subId]) : new Set());
-      setTimeout(() => { suppressAutoSelectRef.current = false; }, 0);
+      setForm((f) => ({ ...f, teacher_id: a.teacher_id ?? f.teacher_id }));
+      if (a.section_id) setSelectedSectionIds(new Set([String(a.section_id)]));
+      if (a.subject_id) setSelectedSubjectIds(new Set([String(a.subject_id)]));
     } catch {
       showStatus('danger', 'Error', 'Failed to load assignment details.');
     }
   };
 
-  // Boot: load teachers FIRST, then the rest
+  // Boot
   useEffect(() => {
     if (!token) return handleUnauthorized();
     (async () => {
       setBusy(true);
-      await loadTeachers(); // populate teacher first
-      const savedTeacherId = restorePersistedTeacher();
-      if (savedTeacherId) {
-        setForm((f) => ({ ...f, teacher_id: savedTeacherId }));
-      }
+      await loadTeachers();
       await Promise.all([loadSchoolYears(), loadByGrade()]);
       if (id) await loadAssignment();
       setBusy(false);
@@ -495,103 +311,64 @@ const TeacherAssignmentForm = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, id]);
 
-  // Safety net: once byGrade arrives in edit, if grade dropdown is still empty, infer it.
+  // Whenever the teacher changes, refresh their active-year subjects
   useEffect(() => {
-    if (!isEditMode || !current || byGrade.length === 0) return;
-    if (selectedGradeId) return;
-
-    const secId = current.section_id && String(current.section_id);
-    const subId = current.subject_id && String(current.subject_id);
-    let gradeId =
-      (current.grade_level_id && String(current.grade_level_id)) ||
-      findGradeBySectionOrSubject(secId, subId) ||
-      findGradeIdByName(current.grade_name);
-
-    if (gradeId) {
-      suppressAutoSelectRef.current = true;
-      setSelectedGradeId(gradeId);
-      setTimeout(() => { suppressAutoSelectRef.current = false; }, 0);
-    }
-  }, [isEditMode, current, byGrade, selectedGradeId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Refresh table on teacher change
-  useEffect(() => {
-    if (form.teacher_id) {
-      fetchTeacherSubjects(form.teacher_id);
-    } else {
-      setTeacherSubs([]);
-      lastTeacherFetched.current = null;
-    }
+    if (form.teacher_id) fetchTeacherSubjects(form.teacher_id);
+    else setTeacherSubs([]);
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.teacher_id]);
 
-  const fetchTeacherSubjects = async (tid) => {
-    if (!tid) {
-      setTeacherSubs([]);
-      lastTeacherFetched.current = null;
-      return;
+  // If editing and byGrade has loaded, try to infer grade from section/subject/grade_name
+  useEffect(() => {
+    if (!isEditMode || !current || byGrade.length === 0 || selectedGradeId) return;
+    const secId = current.section_id && String(current.section_id);
+    const subId = current.subject_id && String(current.subject_id);
+    let found = null;
+    for (const g of byGrade) {
+      if (secId && Array.isArray(g.sections) && g.sections.some((s) => String(s.section_id) === secId)) found = g;
+      if (!found && subId && Array.isArray(g.subjects) && g.subjects.some((s) => String(s.subject_id) === subId)) found = g;
+      if (found) break;
     }
-    if (String(lastTeacherFetched.current) === String(tid) && teacherSubs.length) return;
-    try {
-      setTeacherSubsLoading(true);
-      const res = await apiFetch(TEACHER_ACTIVE_YEAR(tid), { method: 'GET' });
-      const data = await res.json();
-      const list = data?.success ? data.data || [] : [];
-      setTeacherSubs(list);
-      lastTeacherFetched.current = tid;
-    } catch {
-      setTeacherSubs([]);
-      showStatus('danger', 'Error', "Failed to load teacher's current subjects (active year).");
-    } finally {
-      setTeacherSubsLoading(false);
-    }
-  };
+    if (found) setSelectedGradeId(String(found.grade_level_id));
+  }, [isEditMode, current, byGrade, selectedGradeId]);
 
-  // Form helpers
-  const setField = (k) => (vOrEvent) => {
-    const v = vOrEvent?.target ? vOrEvent.target.value : vOrEvent;
+  // Handlers
+  const setField = (k) => (eOrValue) => {
+    const v = eOrValue?.target ? eOrValue.target.value : eOrValue;
     setForm((f) => ({ ...f, [k]: v }));
   };
-
   const toggleSet = (setter) => (id) => {
     setter((prev) => {
       const next = new Set(prev);
-      if (next.has(String(id))) next.delete(String(id));
-      else next.add(String(id));
+      const key = String(id);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   };
-
-  // When grade changes: clear BOTH sections & subjects (no auto-select in Create)
+  // Clear section/subject picks when grade changes (keeps things simple)
   useEffect(() => {
-    if (suppressAutoSelectRef.current) return;
     setSelectedSectionIds(new Set());
     setSelectedSubjectIds(new Set());
   }, [selectedGradeId]);
 
-  const teacherChosen = Boolean(String(form.teacher_id).trim());
-  const syReady = Boolean(String(form.school_year_id).trim()); // hidden active SY
-  const lockUI = !teacherChosen;
-
+  // Validation
   const validate = () => {
     if (!teacherChosen) return false;
     if (!syReady) return false;
-    if (!selectedGradeId && !isEditMode) return false; // create requires explicit grade pick
-    const hasAnySection = selectedSectionIds.size > 0 || (isEditMode && current?.section_id);
-    const hasAnySubject = selectedSubjectIds.size > 0 || (isEditMode && current?.subject_id);
-    return Boolean(hasAnySection && hasAnySubject);
+    if (!isEditMode && !selectedGradeId) return false;
+    const hasSection = selectedSectionIds.size > 0 || (isEditMode && current?.section_id);
+    const hasSubject = selectedSubjectIds.size > 0 || (isEditMode && current?.subject_id);
+    return Boolean(hasSection && hasSubject);
   };
 
+  // Submit
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!token || inFlight.current) return;
     setSubmitted(true);
-    const ok = validate();
-    if (!ok) {
-      const msg = !syReady
-        ? 'Active school year is not ready yet. Please wait a moment.'
-        : 'Please complete all required fields.';
+    if (!validate()) {
+      const msg = !syReady ? 'Active school year is still loading. Please try again shortly.' : 'Please complete the required fields.';
       showStatus('warning', 'Missing fields', msg);
       return;
     }
@@ -601,64 +378,54 @@ const TeacherAssignmentForm = () => {
       inFlight.current = true;
 
       if (id) {
-        // Use selected values, else fall back to existing assignment values
-        const pickedSubjectId =
-          selectedSubjectIds.size ? Number([...selectedSubjectIds][0]) : Number(current?.subject_id);
-        const pickedSectionId =
-          selectedSectionIds.size ? Number([...selectedSectionIds][0]) : Number(current?.section_id);
-
-        const payload = {
-          teacher_id: Number(form.teacher_id),
-          subject_id: Number(pickedSubjectId),
-          section_id: Number(pickedSectionId),
-          school_year_id: Number(form.school_year_id), // ACTIVE (hidden)
-        };
-        const res = await apiFetch(UPDATE_ENDPOINT(id), {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok || data?.success === false) throw new Error(data?.message || 'Request failed');
-
-        showStatus('success', 'Updated', 'Teacher assignment updated successfully.');
+        const pickedSubjectId = selectedSubjectIds.size ? Number([...selectedSubjectIds][0]) : Number(current?.subject_id);
+        const pickedSectionId = selectedSectionIds.size ? Number([...selectedSectionIds][0]) : Number(current?.section_id);
+        // Skip if already assigned
+        if (assignedPairs.has(pairKey(pickedSectionId, pickedSubjectId))) {
+          showStatus('info', 'No change', 'This section/subject is already assigned to the teacher.');
+        } else {
+          const payload = {
+            teacher_id: Number(form.teacher_id),
+            subject_id: Number(pickedSubjectId),
+            section_id: Number(pickedSectionId),
+            school_year_id: Number(form.school_year_id),
+          };
+          const res = await apiFetch(UPDATE_ENDPOINT(id), { method: 'PUT', body: JSON.stringify(payload) });
+          const data = await res.json();
+          if (!res.ok || data?.success === false) throw new Error(data?.message || 'Request failed');
+          showStatus('success', 'Updated', 'Teacher assignment updated successfully.');
+          await fetchTeacherSubjects(form.teacher_id);
+        }
       } else {
-        // batch create from manual picks
         const combos = [];
         selectedSectionIds.forEach((sec) => {
           selectedSubjectIds.forEach((subj) => {
-            combos.push({
-              teacher_id: Number(form.teacher_id),
-              section_id: Number(sec),
-              subject_id: Number(subj),
-              school_year_id: Number(form.school_year_id), // ACTIVE (hidden)
-            });
+            const sId = Number(sec);
+            const subId = Number(subj);
+            if (!assignedPairs.has(pairKey(sId, subId))) {
+              combos.push({
+                teacher_id: Number(form.teacher_id),
+                section_id: sId,
+                subject_id: subId,
+                school_year_id: Number(form.school_year_id),
+              });
+            }
           });
         });
-
         let okCount = 0;
         for (const payload of combos) {
-          const res = await apiFetch(CREATE_ENDPOINT, {
-            method: 'POST',
-            body: JSON.stringify(payload),
-          });
+          const res = await apiFetch(CREATE_ENDPOINT, { method: 'POST', body: JSON.stringify(payload) });
           const data = await res.json();
           if (res.ok && data?.success !== false) okCount++;
         }
-
-        showStatus(
-          'success',
-          'Created',
-          `Created ${okCount}/${combos.length} assignment${combos.length !== 1 ? 's' : ''}.`
-        );
+        const skipped = selectedSectionIds.size * selectedSubjectIds.size - combos.length;
+        const summary =
+          `Created ${okCount}/${combos.length} new ` +
+          `assignment${combos.length !== 1 ? 's' : ''}` +
+          (skipped > 0 ? ` (skipped ${skipped} already-assigned).` : '.');
+        showStatus('success', 'Created', summary);
+        await fetchTeacherSubjects(form.teacher_id);
       }
-
-      if (HARD_REFRESH_ON_SAVE) {
-        persistSelectedTeacher(form.teacher_id);
-        window.location.reload();
-        return;
-      }
-
-      if (form.teacher_id) await fetchTeacherSubjects(form.teacher_id);
     } catch (err) {
       showStatus('danger', 'Error', err.message || 'Something went wrong while saving.');
     } finally {
@@ -669,596 +436,215 @@ const TeacherAssignmentForm = () => {
 
   const onReset = () => {
     setSubmitted(false);
-    if (id) {
+    if (isEditMode) {
+      // Reload edit state
       loadAssignment();
     } else {
-      // keep teacher, keep hidden active SY, clear picks
-      setForm((f) => ({
-        teacher_id: f.teacher_id,
-        school_year_id: activeSY?.school_year_id ? String(activeSY.school_year_id) : '',
-      }));
+      // Keep teacher & active SY; clear the rest
       setSelectedGradeId('');
       setSelectedSectionIds(new Set());
       setSelectedSubjectIds(new Set());
     }
   };
 
-  // Pagination helpers
-  const totalPages = useMemo(
-    () => Math.max(1, Math.ceil(teacherSubs.length / pageSize)),
-    [teacherSubs.length, pageSize]
-  );
-  const paginatedSubs = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return teacherSubs.slice(start, start + pageSize);
-  }, [teacherSubs, page, pageSize]);
-  const rangeStart = useMemo(
-    () => (teacherSubs.length ? (page - 1) * pageSize + 1 : 0),
-    [teacherSubs.length, page, pageSize]
-  );
-  const rangeEnd = useMemo(
-    () => Math.min(teacherSubs.length, page * pageSize),
-    [teacherSubs.length, page, pageSize]
-  );
+  // Pagination derived
+  const totalPages = Math.max(1, Math.ceil(teacherSubs.length / pageSize));
+  const paginatedSubs = teacherSubs.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+  const rangeStart = teacherSubs.length ? (page - 1) * pageSize + 1 : 0;
+  const rangeEnd = Math.min(teacherSubs.length, page * pageSize);
   useEffect(() => setPage(1), [teacherSubs.length, pageSize]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [totalPages, page]);
 
-  // Derived maps/options
-  const gradeMap = useMemo(() => {
-    const m = new Map();
-    byGrade.forEach((g) => m.set(String(g.grade_level_id), g));
-    return m;
-  }, [byGrade]);
-
-  const gradeOptions = useMemo(() => {
-    return byGrade.map(g => ({
-      id: String(g.grade_level_id),
-      label: g.grade_name || g.grade_code || `Grade ${g.grade_level_id}`,
-    }));
-  }, [byGrade]);
-
-  const selectedGrade = selectedGradeId ? gradeMap.get(String(selectedGradeId)) : null;
-
-  // Subjects already assigned for chosen grade & sections (active year)
-  const assignedSubjectIdsForSelectedSections = useMemo(() => {
-    if (!selectedGrade || teacherSubs.length === 0 || selectedSectionIds.size === 0) return new Set();
-    const gname = norm(selectedGrade.grade_name || selectedGrade.grade_code || '');
-    const set = new Set();
-    teacherSubs.forEach((a) => {
-      if (!a) return;
-      const ag = norm(a.grade_name);
-      const secId = String(a.section_id);
-      if (ag && ag === gname && selectedSectionIds.has(secId)) {
-        set.add(String(a.subject_id));
-      }
-    });
-    return set;
-  }, [teacherSubs, selectedGrade, selectedSectionIds]);
-
-  const availableSubjects = useMemo(() => {
-    if (!selectedGrade) return [];
-    const all = selectedGrade.subjects || [];
-
-    // If no sections chosen yet, show everything (can’t know conflicts per section).
-    if (selectedSectionIds.size === 0) return all;
-
-    const blocked = new Set(assignedSubjectIdsForSelectedSections);
-
-    // In EDIT mode, allow keeping the current subject visible/selectable
-    if (isEditMode && current?.subject_id != null) {
-      blocked.delete(String(current.subject_id));
-    }
-
-    return all.filter(s => !blocked.has(String(s.subject_id)));
-  }, [
-    selectedGrade,
-    selectedSectionIds,
-    assignedSubjectIdsForSelectedSections,
-    isEditMode,
-    current,
-  ]);
-
-  // ───────────────────────── Recommendation Engine ─────────────────────────
-  const buildRecommendations = () => {
-    const reasons = [];
-    let recGradeId = selectedGradeId;
-
-    // 1) Recommend Grade if not selected yet: pick most-taught grade
-    if (!recGradeId && teacherSubs.length > 0) {
-      const byGradeCount = countBy(teacherSubs, (a) => norm(a.grade_name));
-      const sorted = sortEntriesByCountDesc(byGradeCount);
-      if (sorted.length > 0) {
-        const topGradeNorm = sorted[0][0];
-        const match = byGrade.find(g => norm(g.grade_name || g.grade_code) === topGradeNorm);
-        if (match) {
-          recGradeId = String(match.grade_level_id);
-          reasons.push(`Most-taught grade this year: ${match.grade_name || match.grade_code}`);
-        }
-      }
-    }
-
-    // If still empty and there are grades available, pick the first one as a fallback UI convenience
-    if (!recGradeId && byGrade.length > 0) {
-      recGradeId = String(byGrade[0].grade_level_id);
-      reasons.push('Suggested first available grade.');
-    }
-
-    // If we have a grade, compute sections & subjects recommendations
-    let sectionIds = new Set();
-    let subjectIds = new Set();
-    const gradeObj = recGradeId ? gradeMap.get(String(recGradeId)) : null;
-
-    if (gradeObj) {
-      // 2) Sections: prefer sections in the grade where the teacher has no assignment yet
-      const allSecs = (gradeObj.sections || []).map(s => String(s.section_id));
-      const assignedSecsInGrade = new Set(
-        teacherSubs
-          .filter(a => norm(a.grade_name) === norm(gradeObj.grade_name || gradeObj.grade_code))
-          .map(a => String(a.section_id))
-      );
-      const freeSecs = allSecs.filter(id => !assignedSecsInGrade.has(id));
-      if (selectedSectionIds.size > 0) {
-        // user already picked some sections → consider those "locked", but still recommend missing ones
-        sectionIds = new Set(selectedSectionIds);
-        if (freeSecs.length > 0) {
-          reasons.push(`Free sections in ${gradeObj.grade_name || gradeObj.grade_code}: ${freeSecs.length}`);
-        }
-      } else if (freeSecs.length > 0) {
-        sectionIds = new Set(freeSecs);
-        reasons.push(`No current load in these section(s); assigning here avoids conflicts.`);
-      } else {
-        // all sections already have some assignment by this teacher → suggest all, let subject filter prevent dupes
-        sectionIds = new Set(allSecs);
-        reasons.push(`All sections already have assignments; showing all for selection.`);
-      }
-
-      // 3) Subjects: prefer subjects the teacher frequently teaches overall,
-      // intersected with grade subjects and excluding already-assigned in selected sections.
-      const subjFreq = countBy(teacherSubs, (a) => String(a.subject_id));
-      const gradeSubjects = (gradeObj.subjects || []).map(s => ({ ...s, _id: String(s.subject_id) }));
-      const chosenSections = sectionIds.size > 0 ? sectionIds : selectedSectionIds;
-
-      // compute blocked subject ids for the (prospective) chosenSections
-      const blocked = new Set();
-      if (chosenSections.size > 0) {
-        teacherSubs.forEach((a) => {
-          if (norm(a.grade_name) !== norm(gradeObj.grade_name || gradeObj.grade_code)) return;
-          if (chosenSections.has(String(a.section_id))) {
-            blocked.add(String(a.subject_id));
-          }
-        });
-      }
-
-      // allow current subject in edit
-      if (isEditMode && current?.subject_id != null) {
-        blocked.delete(String(current.subject_id));
-      }
-
-      // rank candidates by frequency (desc) then by code/name
-      const candidates = gradeSubjects
-        .filter(s => !blocked.has(s._id))
-        .map(s => ({ s, score: subjFreq.get(s._id) || 0 }))
-        .sort((a, b) => (b.score - a.score) || String(a.s.subject_code || '').localeCompare(String(b.s.subject_code || '')));
-
-      if (candidates.length > 0) {
-        // pick top 3 by default
-        const top = candidates.slice(0, Math.min(3, candidates.length));
-        subjectIds = new Set(top.map(x => x.s._id));
-        const topNames = top.map(x => x.s.subject_code || x.s.subject_name).filter(Boolean).join(', ');
-        reasons.push(`Often taught by this teacher: ${topNames}`);
-      } else {
-        // nothing ranked → take any available subjects in the grade
-        subjectIds = new Set(gradeSubjects.map(s => s._id));
-        reasons.push(`All subjects available for the chosen section(s).`);
-      }
-    }
-
-    return { gradeId: recGradeId || '', sectionIds, subjectIds, reasons };
-  };
-
-  // Recompute recommendations on key changes
-  useEffect(() => {
-    if (!teacherChosen || byGrade.length === 0) {
-      setRec({ gradeId: '', sectionIds: new Set(), subjectIds: new Set(), reasons: [] });
-      return;
-    }
-    const next = buildRecommendations();
-    setRec(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    teacherChosen,
-    byGrade,
-    teacherSubs,
-    selectedGradeId,
-    // Use sizes to avoid recreating refs
-    selectedSectionIds.size,
-  ]);
-
-  // Apply recommendations (merge or replace)
-  const applyRecommendations = (mode = 'merge') => {
-    if (!rec.gradeId) return;
-
-    const doApply = () => {
-      // sections
-      setSelectedSectionIds((prev) => {
-        if (mode === 'replace') return new Set(rec.sectionIds);
-        const next = new Set(prev);
-        rec.sectionIds.forEach((id) => next.add(String(id)));
-        return next;
-      });
-      // subjects
-      setSelectedSubjectIds((prev) => {
-        if (mode === 'replace') return new Set(rec.subjectIds);
-        const next = new Set(prev);
-        rec.subjectIds.forEach((id) => next.add(String(id)));
-        return next;
-      });
-    };
-
-    if (String(selectedGradeId) !== String(rec.gradeId)) {
-      // Changing grade clears selections by design; defer applying chips
-      suppressAutoSelectRef.current = true;
-      setSelectedGradeId(String(rec.gradeId));
-      // Allow React to process the grade change & chip clearing
-      setTimeout(() => {
-        suppressAutoSelectRef.current = false;
-        doApply();
-      }, 0);
-    } else {
-      doApply();
-    }
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="container-fluid ">
-      <style>{`
-        .page-header {
-          background: linear-gradient(135deg, rgba(13,110,253,.08), rgba(25,135,84,.08));
-          border: 1px solid rgba(0,0,0,.04);
-        }
-        .avatar {
-          width: 44px; height: 44px; border-radius: 50%;
-          display: inline-flex; align-items: center; justify-content: center;
-          background: #0d6efd10; color: #0d6efd; font-weight: 700;
-        }
-        .card { border-radius: 1rem; }
-        .card-header { border-bottom: 1px solid rgba(0,0,0,.08); }
-        .table thead th { position: sticky; top: 0; z-index: 1; background: var(--bs-light,#f8f9fa); }
-        .table tbody tr { transition: background-color .15s ease; }
-        .table tbody tr:hover { background-color: rgba(13,110,253,.03); }
-        .form-select:focus, .form-control:focus { box-shadow: 0 0 0 .2rem rgba(13,110,253,.15); border-color: #86b7fe; }
-        .btn-icon { display: inline-flex; align-items: center; gap: .5rem; }
-        .badge-soft { background: rgba(13,110,253,.08); color: #0d6efd; }
-        .pagination .page-link { cursor: pointer; }
-
-        .chip {
-          display:inline-flex; align-items:center; gap:.5rem; padding:.38rem .7rem;
-          border:1px solid rgba(0,0,0,.1); border-radius:999px; background:#fff; cursor:pointer;
-          transition: all .15s ease-in-out; user-select:none;
-        }
-        .chip:hover { border-color: #0d6efd80; box-shadow: 0 0 0 .15rem rgba(13,110,253,.12); }
-        .chip input { accent-color:#0d6efd; }
-        .chip.selected {
-          border-color:#0d6efd; background:#0d6efd; color:#fff;
-        }
-        .group-title { font-weight:600; margin:.25rem 0 .5rem; }
-        .grid-2 { display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:.5rem .75rem; }
-        .small-muted { font-size:.875rem; color:#6c757d; }
-
-        .sel-pill {
-          display:inline-flex; align-items:center; padding:.3rem .6rem; border-radius:999px;
-          border:1px solid; font-size:.875rem; gap:.5rem;
-        }
-        .sel-pill--filled { background:#0d6efd; color:#fff; border-color:#0d6efd; }
-        .sel-pill--outline { background:#fff; color:#0d6efd; border-color:#0d6efd; }
-
-        .lock-wrap { position: relative; }
-        .lock-overlay {
-          position:absolute; inset:0; background:rgba(255,255,255,.7); backdrop-filter:saturate(0.8) blur(1px);
-          display:flex; align-items:center; justify-content:center; border-radius:1rem; border:1px dashed rgba(0,0,0,.1);
-        }
-        .lock-badge {
-          display:inline-flex; align-items:center; gap:.5rem; padding:.5rem .75rem; border-radius:999px;
-          background:#fff; border:1px solid rgba(13,110,253,.35); color:#0d6efd; font-weight:600;
-          box-shadow: 0 .25rem .75rem rgba(0,0,0,.05);
-        }
-
-        .year-badge {
-          display:inline-flex; align-items:center; gap:.4rem; padding:.25rem .6rem;
-          border-radius:999px; background:#19875410; color:#198754; border:1px solid #19875430; font-size:.85rem;
-        }
-
-        .rec-box {
-          border: 1px dashed rgba(13,110,253,.35);
-          background: rgba(13,110,253,.04);
-          border-radius: .75rem;
-          padding: .75rem .9rem;
-        }
-        .rec-title {
-          display:flex; align-items:center; gap:.5rem; font-weight:600;
-        }
-        .rec-actions {
-          display:flex; gap:.5rem; flex-wrap:wrap;
-        }
-        .btn-soft-primary {
-          background: rgba(13,110,253,.12); color: #0d6efd; border: 1px solid rgba(13,110,253,.25);
-        }
-        .btn-soft-primary:hover { background: rgba(13,110,253,.18); }
-      `}</style>
-
-      {/* Header */}
-      <div className="page-header rounded-4 p-3 p-md-4 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
-        <div className="d-flex align-items-center gap-3">
-          <div className="avatar">{teacherInitials}</div>
+    <div className="container-fluid">
+      {/* Page header */}
+      <div className="rounded-3 border bg-light p-3 p-md-4 mb-4">
+        <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
           <div>
-            <h3 className="fw-bold mb-1">{isEditMode ? 'Update Assignment' : 'Assign Teacher'}</h3>
+            <h4 className="mb-1 fw-bold">{isEditMode ? 'Update Assignment' : 'Assign Teacher'}</h4>
             <div className="text-muted small">
-              {isEditMode ? 'Modify the assignment (active year).' : 'Select a teacher first, then choose grade, sections, and subjects.'}
+              {isEditMode ? 'Modify the assignment for the active school year.' : 'Follow the steps below to assign a teacher.'}
             </div>
           </div>
-        </div>
-        <div className="d-flex align-items-center gap-2">
-          {activeSYText && (
-            <span className="year-badge" title="Active school year (auto-applied)">
-              <FaCalendarCheck /> Active Year: {activeSYText}
-            </span>
-          )}
-          <button type="button" className="btn btn-outline-secondary btn-icon" onClick={() => { try { navigate(-1); } catch { navigate('/teacher-assignments'); }}}>
-            <FaChevronLeft /> Back
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-icon"
-            onClick={hardRefreshPreserveTeacher}
-            aria-label="Refresh page"
-            title="Refresh page"
-          >
-            <FaSyncAlt /> Refresh
-          </button>
+          <div className="d-flex align-items-center gap-2">
+            {activeSYText && (
+              <span className="badge text-success border border-success-subtle p-2">
+                Active Year: {activeSYText}
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={() => {
+                try { navigate(-1); } catch { navigate('/teacher-assignments'); }
+              }}
+            >
+              Back
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Form card */}
       <div className="card shadow-sm mb-4">
-        <div className="card-header bg-white px-4 py-3">
-          <div className="d-flex align-items-center justify-content-between">
-            <div className="fw-semibold">Assignment Details</div>
-            {teacherSubs.length > 0 && (
-              <span className="badge rounded-pill badge-soft">
-                {teacherSubs.length} assignment{teacherSubs.length > 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-        </div>
         <div className="card-body p-4">
-          {isEditMode && (
+          <form onSubmit={onSubmit} noValidate>
+            {/* Step 1: Teacher */}
             <div className="mb-4">
-              {!current ? (
-                <div className="placeholder-glow">
-                  <p className="placeholder col-12 mb-2" style={{ height: 18 }} />
-                  <p className="placeholder col-10 mb-0" style={{ height: 18 }} />
+              <label className="form-label fw-semibold">Teacher <span className="text-danger">*</span></label>
+              <select
+                className={`form-select ${submitted && !teacherChosen ? 'is-invalid' : ''}`}
+                value={form.teacher_id}
+                onChange={setField('teacher_id')}
+                disabled={busy}
+              >
+                <option value="">— Select teacher —</option>
+                {teachers.map((t) => {
+                  const label = t.full_name || t.teacher_name || `${t.first_name ?? ''} ${t.last_name ?? ''}`;
+                  return (
+                    <option key={t.teacher_id} value={t.teacher_id}>{label}</option>
+                  );
+                })}
+              </select>
+              <div className="form-text">Choose the teacher to assign subjects/sections to.</div>
+              {submitted && !teacherChosen && (
+                <div className="invalid-feedback d-block">Teacher is required.</div>
+              )}
+            </div>
+
+            {/* Step 2: Grade (hidden until teacher chosen) */}
+            <fieldset className="mb-4" disabled={lockForm}>
+              <label className="form-label fw-semibold">Grade {!isEditMode && <span className="text-danger">*</span>}</label>
+              <select
+                className={`form-select ${submitted && !isEditMode && !selectedGradeId ? 'is-invalid' : ''}`}
+                value={selectedGradeId}
+                onChange={(e) => setSelectedGradeId(e.target.value)}
+              >
+                <option value="">— Select grade —</option>
+                {byGrade.map((g) => (
+                  <option key={g.grade_level_id} value={g.grade_level_id}>
+                    {g.grade_name || g.grade_code || `Grade ${g.grade_level_id}`}
+                  </option>
+                ))}
+              </select>
+              {!lockForm && submitted && !isEditMode && !selectedGradeId && (
+                <div className="invalid-feedback d-block">Please choose a grade.</div>
+              )}
+            </fieldset>
+
+            {/* Step 3: Sections (filtered) */}
+            <fieldset className="mb-4" disabled={lockForm || !selectedGrade}>
+              <div className="d-flex align-items-center justify-content-between">
+                <label className="form-label fw-semibold mb-0">Sections</label>
+                {selectedGrade && (
+                  <small className="text-muted">
+                    {filteredSections.length} available
+                  </small>
+                )}
+              </div>
+
+              {!selectedGrade ? (
+                <div className="text-muted small">Select a grade to see its sections.</div>
+              ) : filteredSections.length ? (
+                <div className="list-group">
+                  {filteredSections.map((s) => {
+                    const key = String(s.section_id);
+                    const checked = selectedSectionIds.has(key);
+                    const open = sectionOpenCount(s.section_id);
+                    return (
+                      <label key={key} className="list-group-item d-flex align-items-center">
+                        <input
+                          type="checkbox"
+                          className="form-check-input me-2"
+                          checked={checked}
+                          onChange={() => toggleSet(setSelectedSectionIds)(key)}
+                        />
+                        <span className="me-auto">{s.section_name}</span>
+                        <span className="badge text-bg-secondary-subtle border">
+                          {open} free
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               ) : (
-                <div className="alert alert-light border rounded-3">
-                  <div className="small text-muted mb-1">Current assignment</div>
-                  <div className="d-flex flex-wrap gap-3 small">
-                    <div><strong>Teacher:</strong> {current.teacher_name}</div>
-                    <div><strong>Subject:</strong> {current.subject_code} — {current.subject_name}</div>
-                    <div><strong>Section:</strong> {current.section_name}</div>
-                    <div><strong>Grade:</strong> {current.grade_name}</div>
-                    <div><strong>School Year:</strong> {current.school_year}</div>
-                  </div>
+                <div className="text-danger small">All sections in this grade are already fully assigned to this teacher.</div>
+              )}
+
+              {!isEditMode && submitted && !lockForm && selectedSectionIds.size === 0 && (
+                <div className="text-danger small mt-2">Pick at least one section.</div>
+              )}
+            </fieldset>
+
+            {/* Step 4: Subjects (filtered) */}
+            <fieldset className="mb-4" disabled={lockForm || !selectedGrade}>
+              <div className="d-flex align-items-center justify-content-between">
+                <label className="form-label fw-semibold mb-0">Subjects</label>
+                {selectedGrade && (
+                  <small className="text-muted">{filteredSubjects.length} available</small>
+                )}
+              </div>
+
+              {!selectedGrade ? (
+                <div className="text-muted small">Select a grade to see its subjects.</div>
+              ) : filteredSubjects.length ? (
+                <div className="list-group">
+                  {filteredSubjects.map((s) => {
+                    const key = String(s.subject_id);
+                    const checked = selectedSubjectIds.has(key);
+                    return (
+                      <label key={key} className="list-group-item d-flex align-items-center">
+                        <input
+                          type="checkbox"
+                          className="form-check-input me-2"
+                          checked={checked}
+                          onChange={() => toggleSet(setSelectedSubjectIds)(key)}
+                        />
+                        <span className="me-auto">
+                          <span className="fw-semibold">{s.subject_code}</span>
+                          <span className="text-muted"> — {s.subject_name}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-danger small">
+                  No subjects remaining for the selected sections (already assigned to this teacher).
                 </div>
               )}
-            </div>
-          )}
 
-          <form onSubmit={onSubmit} noValidate>
-            {/* Teacher first */}
-            <div className="row g-4">
-              <div className="col-12">
-                <label className="form-label fw-semibold">
-                  Teacher <span className="text-danger">*</span>
-                </label>
-                <TeacherSearchSelect
-                  items={teachers}
-                  value={form.teacher_id}
-                  onChange={setField('teacher_id')}
-                  disabled={busy}
-                  invalid={submitted && !String(form.teacher_id).trim()}
-                />
-              </div>
-            </div>
-
-            {/* Lock the rest until teacher is chosen */}
-            <div className={`row g-4 mt-1 ${lockUI ? 'lock-wrap' : ''}`}>
-              {lockUI && (
-                <div className="lock-overlay">
-                  <span className="lock-badge">
-                    <FaLock /> Select a teacher to continue
-                  </span>
-                </div>
+              {!isEditMode && submitted && !lockForm && selectedSubjectIds.size === 0 && (
+                <div className="text-danger small mt-2">Pick at least one subject.</div>
               )}
-{/* Recommendation — compact (now on top) */}
-<div className="col-12">
-  <div className="rec-strip rec-strip--compact">
-    <div className="rec-left">
-  
-      <div className="small text-truncate my-2">
-        {!rec.gradeId ? (
-          <>Recommendations appear after selecting a teacher</>
-        ) : (
-          <>
-            Suggested <span className="fw-semibold my-2">
-              {gradeOptions.find(g => String(g.id) === String(rec.gradeId))?.label || '—'}
-            </span>
-            {/* Tiny pills for counts */}
-            {rec.sectionIds.size > 0 && (
-              <span className="rec-pill ms-2">{rec.sectionIds.size} sec</span>
-            )}
-            {rec.subjectIds.size > 0 && (
-              <span className="rec-pill ms-1">{rec.subjectIds.size} subj</span>
-            )}
-            {/* one short reason if available */}
-            {rec.reasons?.[0] && (
-              <span className="text-muted ms-2 d-none d-sm-inline">
-                • {rec.reasons[0]}
-              </span>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+            </fieldset>
 
-    <div className="d-flex gap-2">
-      <button
-        type="button"
-        className="btn btn-soft-primary btn-sm"
-        onClick={() => applyRecommendations('merge')}
-        disabled={busy || lockUI || !rec.gradeId}
-        title="Apply (merge with your current selections)"
-      >
-        Apply
-      </button>
-      <button
-        type="button"
-        className="btn btn-outline-primary btn-sm"
-        onClick={() => applyRecommendations('replace')}
-        disabled={busy || lockUI || !rec.gradeId}
-        title="Replace current selections with recommendations"
-      >
-        Replace
-      </button>
-    </div>
-  </div>
-</div>
-
-{/* Grade dropdown — moved below the recommendation */}
-<div className="col-12 col-lg-6 mt-2">
-  <label className="form-label fw-semibold">
-    Grade <span className="text-danger">*</span>
-  </label>
-  <select
-    className="form-select"
-    value={selectedGradeId}
-    onChange={(e) => setSelectedGradeId(e.target.value)}
-    disabled={busy || lockUI}
-  >
-    <option value="">— Select grade —</option>
-    {gradeOptions.map(opt => (
-      <option key={opt.id} value={opt.id}>{opt.label}</option>
-    ))}
-  </select>
-  {submitted && !lockUI && !selectedGradeId && !isEditMode && (
-    <div className="text-danger small mt-1">Please choose a grade.</div>
-  )}
-</div>
-
-
-              {/* Sections (chips) */}
-              <div className="col-12 col-lg-6">
-                <div className="group-title">Sections</div>
-                {!selectedGradeId ? (
-                  <div className="small-muted">Select a grade to show sections.</div>
-                ) : !selectedGrade || !selectedGrade.sections?.length ? (
-                  <div className="small-muted">No sections for this grade.</div>
-                ) : (
-                  <div className="grid-2">
-                    {selectedGrade.sections.map((s) => {
-                      const selected = selectedSectionIds.has(String(s.section_id));
-                      return (
-                        <label
-                          key={s.section_id}
-                          className={`chip ${selected ? 'selected' : ''}`}
-                          aria-pressed={selected}
-                        >
-                          <input
-                            type="checkbox"
-                            className="form-check-input me-1"
-                            checked={selected}
-                            onChange={() => toggleSet(setSelectedSectionIds)(String(s.section_id))}
-                            disabled={busy || lockUI}
-                          />
-                          {s.section_name}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-                {submitted && !lockUI && selectedSectionIds.size === 0 && !isEditMode && (
-                  <div className="text-danger small mt-1">Pick at least one section.</div>
-                )}
-              </div>
-
-              {/* Subjects (chips) */}
-              <div className="col-12">
-                <div className="group-title">Subjects</div>
-                {!selectedGradeId ? (
-                  <div className="small-muted">Select a grade to show subjects.</div>
-                ) : !selectedGrade || !selectedGrade.subjects?.length ? (
-                  <div className="small-muted">No subjects for this grade.</div>
-                ) : availableSubjects.length === 0 ? (
-                  <div className="small-muted">
-                    All subjects are already assigned for the selected section(s) this active year.
-                  </div>
-                ) : (
-                  <div className="grid-2">
-                    {availableSubjects.map((s) => {
-                      const selected = selectedSubjectIds.has(String(s.subject_id));
-                      return (
-                        <label
-                          key={s.subject_id}
-                          className={`chip ${selected ? 'selected' : ''}`}
-                          aria-pressed={selected}
-                        >
-                          <input
-                            type="checkbox"
-                            className="form-check-input me-1"
-                            checked={selected}
-                            onChange={() => toggleSet(setSelectedSubjectIds)(String(s.subject_id))}
-                            disabled={busy || lockUI}
-                          />
-                          {s.subject_code} — {s.subject_name}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-                {submitted && !lockUI && selectedSubjectIds.size === 0 && !isEditMode && (
-                  <div className="text-danger small mt-1">Pick at least one subject.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="d-flex justify-content-end gap-2 mt-4">
-              <button type="button" className="btn btn-outline-secondary btn-icon" onClick={onReset} disabled={busy}>
-                <FaUndo /> Reset
+            {/* Actions */}
+            <div className="d-flex justify-content-end gap-2">
+              <button type="button" className="btn btn-outline-secondary" onClick={onReset} disabled={busy}>
+                <FaUndo className="me-2" /> Reset
               </button>
               <button
                 type="submit"
-                className="btn btn-primary btn-icon"
-                disabled={busy || lockUI || !syReady}
-                title={!syReady ? 'Loading active school year…' : (lockUI ? 'Select a teacher first' : 'Save')}
+                className="btn btn-primary"
+                disabled={busy || lockForm || !syReady}
+                title={!syReady ? 'Loading active school year…' : (lockForm ? 'Select a teacher first' : 'Save')}
               >
                 {busy && <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>}
-                <FaSave /> {isEditMode ? 'Update Assignment' : 'Save Assignments'}
+                <FaSave className="me-2" /> {isEditMode ? 'Update Assignment' : 'Save Assignments'}
               </button>
             </div>
           </form>
         </div>
       </div>
 
-      {/* Table — Current subjects for selected teacher (Active Year) */}
+      {/* Current subjects table */}
       {form.teacher_id && (
         <div className="card shadow-sm">
           <div className="card-header bg-white px-4 py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
             <div>
-              <h6 className="mb-0 fw-semibold">
-                {selectedTeacherName
-                  ? `${selectedTeacherName} — Current Subjects (Active Year)`
-                  : 'Current Subjects (Active Year)'}
-              </h6>
+              <h6 className="mb-0 fw-semibold">Current Subjects (Active Year)</h6>
               <div className="text-muted small">
                 {teacherSubsLoading
                   ? 'Loading assignments…'
@@ -1324,11 +710,11 @@ const TeacherAssignmentForm = () => {
               )}
 
               <button
-                className="btn btn-outline-secondary btn-sm btn-icon"
+                className="btn btn-outline-secondary btn-sm"
                 onClick={() => fetchTeacherSubjects(form.teacher_id)}
                 disabled={teacherSubsLoading}
               >
-                <FaSyncAlt /> {teacherSubsLoading ? 'Refreshing…' : 'Refresh'}
+                <FaSyncAlt className="me-1" /> {teacherSubsLoading ? 'Refreshing…' : 'Refresh'}
               </button>
             </div>
           </div>
@@ -1356,7 +742,7 @@ const TeacherAssignmentForm = () => {
                 </thead>
                 <tbody>
                   {paginatedSubs.map((a) => (
-                    <tr key={`teach-sub-${a.assignment_id}`}>
+                    <tr key={`teach-sub-${a.assignment_id || `${a.teacher_id}-${a.section_id}-${a.subject_id}`}`}>
                       <td className="text-wrap">
                         <div className="fw-medium">{a.subject_code}</div>
                         <div className="small text-muted">{a.subject_name}</div>
@@ -1373,35 +759,7 @@ const TeacherAssignmentForm = () => {
         </div>
       )}
 
-      <StatusModal
-        {...statusModal}
-        onHide={() => setStatusModal((s) => ({ ...s, show: false }))}
-      />
+      <StatusModal {...status} onHide={() => setStatus((s) => ({ ...s, show: false }))} />
     </div>
   );
-};
-
-// Small helper to build a compact page list with ellipses
-function buildPageList(page, totalPages) {
-  const pages = [];
-  const maxToShow = 7;
-
-  if (totalPages <= maxToShow) {
-    for (let i = 1; i <= totalPages; i++) pages.push(i);
-    return pages;
-  }
-
-  const showAround = 1;
-  const start = Math.max(2, page - showAround);
-  const end = Math.min(totalPages - 1, page + showAround);
-
-  pages.push(1);
-  if (start > 2) pages.push('…');
-  for (let i = start; i <= end; i++) pages.push(i);
-  if (end < totalPages - 1) pages.push('…');
-  pages.push(totalPages);
-
-  return pages;
 }
-
-export default TeacherAssignmentForm;

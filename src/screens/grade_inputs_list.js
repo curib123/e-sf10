@@ -22,7 +22,7 @@ import StatusModal from '../components/status_modal';
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 /* ────────────────────────────────────────────────────────────────────────────
-   AsyncSearchSelect (Student search; filters cached list from /grades/students/:teacher_id)
+   AsyncSearchSelect (filters over cached /grades/students/:teacher_id)
    ──────────────────────────────────────────────────────────────────────────── */
 function AsyncSearchSelect({
   label,
@@ -167,18 +167,21 @@ function AsyncSearchSelect({
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
-   Component: GradeStudentList
+   Component: GradeStudentList (now flattened from /grades/students/:teacher_id)
    ──────────────────────────────────────────────────────────────────────────── */
 export default function GradeStudentList() {
   const navigate = useNavigate();
   const token = useMemo(() => sessionStorage.getItem("token"), []);
-  // teacher_id should be stored at login: sessionStorage.setItem("teacher_id", data.user?.user_id || "")
   const teacherId = useMemo(
     () => sessionStorage.getItem("teacher_id") || sessionStorage.getItem("user_id") || "",
     []
   );
 
-  // Table state
+  // Cached teacher bundle (students with subjects+grades)
+  const teacherStudentsRef = useRef(null); // [{ student_id, ..., subjects: [{ subject_id, ..., grades: [...] }] }]
+  const [bundleLoaded, setBundleLoaded] = useState(false);
+
+  // Table-ish flattened rows for selected student
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -186,20 +189,17 @@ export default function GradeStudentList() {
 
   // Student picker
   const [studentPick, setStudentPick] = useState({ id: "", label: "" });
+  const [selectedStudent, setSelectedStudent] = useState(null);
 
   // Search/filters/sort/pagination
   const [q, setQ] = useState("");
   const [filterSubject, setFilterSubject] = useState("all");
   const [filterPeriod, setFilterPeriod] = useState("all");
-  const [filterYear, setFilterYear] = useState("all"); // will default to active SY after load
+  const [filterYear, setFilterYear] = useState("all");
   const [sortBy, setSortBy] = useState("subject");
   const [sortDir, setSortDir] = useState("asc");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(25);
-
-  // Caches
-  const teacherStudentsRef = useRef(null); // array from /grades/students/:teacher_id
-  const activeSchoolYearLabelRef = useRef(null); // "YYYY-YYYY"
 
   const authHeaders = () => ({
     "Content-Type": "application/json",
@@ -212,127 +212,117 @@ export default function GradeStudentList() {
     setTimeout(() => navigate("/login"), 900);
   };
 
-  const pickActiveSYLabel = (list = []) => {
-    const firstActive = list.find(sy => String(sy.is_active) === "1" || sy.is_active === 1 || sy.is_active === true);
-    const format = (sy) => {
-      const a = Number(sy?.start_year) || 0;
-      const b = Number(sy?.end_year) || 0;
-      return a && b ? `${a}-${b}` : null;
-    };
-    let label = firstActive ? format(firstActive) : null;
-    if (!label) {
-      // Fallback: highest end_year > 0
-      const withYears = list.filter(sy => Number(sy.end_year) > 0);
-      if (withYears.length) {
-        const best = withYears.reduce((m, x) => (Number(x.end_year) > Number(m.end_year) ? x : m), withYears[0]);
-        label = format(best);
-      }
-    }
-    return label; // may be null
+  // Load teacher bundle once (or on refresh)
+  const loadTeacherBundle = async () => {
+    if (!teacherId) return;
+    const res = await fetch(`${BASE_URL}/grades/students/${teacherId}`, { headers: authHeaders() });
+    if (res.status === 401) return handleUnauthorized();
+    const json = await res.json().catch(() => ({}));
+    teacherStudentsRef.current = Array.isArray(json?.data) ? json.data : [];
+    setBundleLoaded(true);
   };
 
-  // Load active school year ONCE and default the Year filter
   useEffect(() => {
-    if (!BASE_URL) return;
     (async () => {
       try {
-        const res = await fetch(`${BASE_URL}/school-year/all-school-years`, { headers: authHeaders() });
-        if (res?.status === 401) return handleUnauthorized();
-        const json = await res.json().catch(() => ({}));
-        const list = Array.isArray(json?.schoolYears) ? json.schoolYears : [];
-        const activeLabel = pickActiveSYLabel(list);
-        activeSchoolYearLabelRef.current = activeLabel;
-        if (activeLabel) setFilterYear(activeLabel); // default filter = active SY
+        setLoading(true);
+        await loadTeacherBundle();
       } catch {
-        // ignore; filter stays "all"
+        setStatusModal({ show: true, title: "Error", message: "Failed to load students.", variant: "danger" });
+      } finally {
+        setLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [teacherId]);
 
-  // Grades (only per-student)
-  const fetchGradesByStudent = async (studentId) => {
-    const res = await fetch(`${BASE_URL}/grades/student/${studentId}`, { headers: authHeaders() });
-    if (res.status === 401) return handleUnauthorized();
-    const json = await res.json();
-    return json?.success ? (json.data || []) : [];
-  };
-
-  // Student search source: /grades/students/:teacher_id (fetch once, filter locally)
+  // Build AsyncSearchSelect source from cached bundle
   const searchStudents = async (text) => {
     const q = (text || "").trim().toLowerCase();
     if (!q || !teacherId) return [];
     try {
-      if (!teacherStudentsRef.current) {
-        const res = await fetch(`${BASE_URL}/grades/students/${teacherId}`, { headers: authHeaders() });
-        if (res.status === 401) { handleUnauthorized(); return []; }
-        const json = await res.json().catch(() => ({}));
-        teacherStudentsRef.current = Array.isArray(json?.data) ? json.data : [];
-      }
+      if (!teacherStudentsRef.current) await loadTeacherBundle();
       const pool = teacherStudentsRef.current || [];
-      // Build display and filter client-side
       const options = pool.map((s) => {
-        const yearLabel =
-          s.school_year?.school_year ||
-          (s.school_year?.start_year && s.school_year?.end_year
-            ? `${s.school_year.start_year}-${s.school_year.end_year}`
-            : "");
+        const yearLabel = s.school_year?.school_year || "";
         return {
           value: s.student_id,
           label: `${s.student_name || "(Unnamed)"}${s.section?.section_name ? " • " + s.section.section_name : ""}${yearLabel ? " • " + yearLabel : ""}`,
           subtitle: `LRN: ${s.lrn || "—"}${s.grade_level?.grade_name ? " • " + s.grade_level.grade_name : ""}`,
           _search: [
-            s.student_name,
-            s.lrn,
-            s.section?.section_name,
-            s.grade_level?.grade_name,
-            yearLabel,
+            s.student_name, s.lrn, s.section?.section_name, s.grade_level?.grade_name, yearLabel
           ].map(x => String(x ?? "").toLowerCase()).join(" "),
         };
       });
 
-      // If there is an active SY default, lightly boost matches in that year
-      const activeLabel = activeSchoolYearLabelRef.current;
-      const filtered = options
+      return options
         .filter(o => o._search.includes(q))
-        .sort((a, b) => {
-          const aBoost = activeLabel && a.label.includes(activeLabel) ? 1 : 0;
-          const bBoost = activeLabel && b.label.includes(activeLabel) ? 1 : 0;
-          return bBoost - aBoost;
-        });
-
-      return filtered.map(({ _search, ...o }) => o).slice(0, 8);
+        .map(({ _search, ...o }) => o)
+        .slice(0, 8);
     } catch {
       return [];
     }
   };
 
-  // Auto load grades when student changes
+  // When student is picked, set selectedStudent and flatten rows from subjects[].grades[]
   useEffect(() => {
-    const run = async () => {
-      const id = studentPick.id;
-      if (!id) { setRows([]); return; }
-      setLoading(true);
-      try {
-        const list = await fetchGradesByStudent(id);
-        setRows(Array.isArray(list) ? list : []);
-        setPage(1);
-      } catch {
-        setRows([]);
-        setStatusModal({ show: true, title: "Error", message: "Failed to load grades.", variant: "danger" });
-      } finally {
-        setLoading(false);
+    const id = studentPick.id;
+    if (!id || !teacherStudentsRef.current) {
+      setSelectedStudent(null);
+      setRows([]);
+      return;
+    }
+    const stu = teacherStudentsRef.current.find(s => String(s.student_id) === String(id));
+    setSelectedStudent(stu || null);
+
+    if (!stu) { setRows([]); return; }
+
+    // Flatten: one row per subject x grading_period
+    const yearLabel = stu.school_year?.school_year || "";
+    const section = stu.section?.section_name || "";
+    const gradeLevel = stu.grade_level?.grade_name || "";
+    const studentName = stu.student_name || "";
+    const studentLrn = stu.lrn || "";
+
+    const flattened = [];
+    const subjects = Array.isArray(stu.subjects) ? stu.subjects : [];
+    for (const sub of subjects) {
+      const subjCode = sub.subject_code || "";
+      const subjName = sub.subject_name || "";
+      const grades = Array.isArray(sub.grades) ? sub.grades : [];
+      for (const g of grades) {
+        const period = g?.grading_period || "";
+        const val = g?.grade;
+        flattened.push({
+          // Synthetic id from subject + period (unique enough for table key)
+          grade_id: `S${stu.student_id}-SUB${sub.subject_id}-${period}`,
+          grade: val,
+          grading_period: period,
+          school_year: yearLabel,
+          grade_level: gradeLevel,
+          section: { section_name: section },
+          student: { name: studentName, lrn: studentLrn },
+          subject: { subject_code: subjCode, subject_name: subjName },
+        });
       }
-    };
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [studentPick.id]);
+    }
+
+    setRows(flattened);
+    setPage(1);
+  }, [studentPick.id, bundleLoaded]);
 
   const handleRefresh = async () => {
-    if (!studentPick.id) return;
+    if (!teacherId) return;
     setRefreshing(true);
     try {
-      setRows(await fetchGradesByStudent(studentPick.id));
+      await loadTeacherBundle();
+      // Re-derive rows for current pick
+      if (studentPick.id) {
+        const stu = teacherStudentsRef.current.find(s => String(s.student_id) === String(studentPick.id));
+        setSelectedStudent(stu || null);
+        // trigger rows derivation by toggling id state no-op
+        setStudentPick(s => ({ ...s }));
+      }
     } catch {
       // ignore
     } finally {
@@ -340,7 +330,7 @@ export default function GradeStudentList() {
     }
   };
 
-  // Derived filter options based on loaded rows
+  // Derived filter options based on current rows
   const subjectOptions = useMemo(() => {
     const set = new Set(rows.map(r => r?.subject?.subject_code || r?.subject?.subject_name).filter(Boolean));
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
@@ -353,9 +343,6 @@ export default function GradeStudentList() {
 
   const yearOptions = useMemo(() => {
     const set = new Set(rows.map(r => r?.school_year).filter(Boolean));
-    // If active SY exists but not present in rows (e.g., student has no grades yet this year), still show it so the default makes sense.
-    const active = activeSchoolYearLabelRef.current;
-    if (active && !set.has(active)) set.add(active);
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   }, [rows]);
 
@@ -367,7 +354,7 @@ export default function GradeStudentList() {
         r?.student?.name, r?.student?.lrn,
         r?.subject?.subject_code, r?.subject?.subject_name,
         r?.section?.section_name, r?.grade_level, r?.school_year,
-        r?.grading_period, r?.grade, r?.grade_id, r?.enrollment_id,
+        r?.grading_period, r?.grade, r?.grade_id,
       ].map(x => String(x ?? "")).join(" ").toLowerCase();
 
       const matchSearch = term === "" || txt.includes(term);
@@ -381,8 +368,8 @@ export default function GradeStudentList() {
 
     const sorted = [...list].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
-      if (sortBy === "id")    return (Number(a.grade_id) - Number(b.grade_id)) * dir;
-      if (sortBy === "grade") return ((Number(a.grade) || 0) - (Number(b.grade) || 0)) * dir;
+      if (sortBy === "id")    return (String(a.grade_id).localeCompare(String(b.grade_id), undefined, { numeric: true })) * dir;
+      if (sortBy === "grade") return (((Number(a.grade) || 0) - (Number(b.grade) || 0)) * dir);
 
       const pick = (row, key) => {
         if (key === "student") return row?.student?.name || "";
@@ -413,8 +400,9 @@ export default function GradeStudentList() {
     return code || name || "—";
   };
   const fmtGrade = (g) => {
+    if (g == null || g === "") return "—";
     const n = Number(g);
-    return Number.isFinite(n) ? n.toFixed(2) : String(g ?? "—");
+    return Number.isFinite(n) ? n.toFixed(2) : String(g);
   };
 
   return (
@@ -425,13 +413,16 @@ export default function GradeStudentList() {
           <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
             <div>
               <h4 className="fw-bold mb-1">Student Grades</h4>
+              {selectedStudent?.general_average != null && (
+                <div className="small text-muted">General Average: <strong>{fmtGrade(selectedStudent.general_average)}</strong></div>
+              )}
             </div>
-            <div className="d-flex gap-2"> 
+            <div className="d-flex gap-2">
               <button
                 type="button"
                 className="btn btn-outline-secondary d-flex align-items-center gap-2 px-3"
                 onClick={handleRefresh}
-                disabled={loading || refreshing || !studentPick.id}
+                disabled={loading || refreshing || !teacherId}
                 title="Refresh data"
               >
                 {refreshing ? <span className="spinner-border spinner-border-sm" role="status" /> : <FaSync />}
@@ -467,11 +458,6 @@ export default function GradeStudentList() {
                 {studentPick.label ? `Selected: ${studentPick.label}` : "Pick a student"}
               </span>
               {teacherId ? <span className="badge bg-light text-dark ms-2">Teacher ID: {teacherId}</span> : null}
-              {activeSchoolYearLabelRef.current ? (
-                <span className="badge bg-primary-subtle text-primary-emphasis ms-2">
-                  Active SY: {activeSchoolYearLabelRef.current}
-                </span>
-              ) : null}
             </div>
           </div>
 
@@ -497,7 +483,7 @@ export default function GradeStudentList() {
                 <option value="section">Sort by Section</option>
                 <option value="year">Sort by Year</option>
                 <option value="student">Sort by Student</option>
-                <option value="id">Sort by Grade ID</option>
+                <option value="id">Sort by Row ID</option>
               </select>
             </div>
             <div className="col-5 col-lg-2">
@@ -508,7 +494,7 @@ export default function GradeStudentList() {
             </div>
           </div>
 
-          {/* Filters (Year defaults to Active SY) */}
+          {/* Filters */}
           <div className="row g-2 mb-3">
             <div className="col-12 col-md-4">
               <div className="input-group">
@@ -582,7 +568,7 @@ export default function GradeStudentList() {
                         <td>{fmtSubject(it)}</td>
                         <td>{it?.grading_period ?? "—"}</td>
                         <td>
-                          <span className={`badge ${Number(it?.grade) < 75 ? "bg-danger" : Number(it?.grade) < 85 ? "bg-warning text-dark" : "bg-success"}`}>
+                          <span className={`badge ${it?.grade == null ? "bg-secondary" : Number(it?.grade) < 75 ? "bg-danger" : Number(it?.grade) < 85 ? "bg-warning text-dark" : "bg-success"}`}>
                             {fmtGrade(it?.grade)}
                           </span>
                         </td>

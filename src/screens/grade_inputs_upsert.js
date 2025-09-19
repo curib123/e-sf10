@@ -24,7 +24,7 @@ import StatusModal from '../components/status_modal';
 // ─────────────────────────────────────────────────────────────────────────────
 // Config & helpers
 // ─────────────────────────────────────────────────────────────────────────────
-const BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const BASE_URL = process.env.REACT_APP_API_BASE_URL; // should already include /esf10
 const joinUrl = (path = "") => `${BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 
 const headers = (token) => ({
@@ -167,7 +167,7 @@ function SearchableSelect({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Page: Grade entry (Teacher → Student → Period → Inputs → Save All)
+// Page: Grade entry — now powered solely by /grades/students/:teacher_id
 // ─────────────────────────────────────────────────────────────────────────────
 export default function GradeInputUpsert() {
   const navigate = useNavigate();
@@ -179,22 +179,19 @@ export default function GradeInputUpsert() {
     return q || sessionStorage.getItem("teacher_id") || sessionStorage.getItem("user_id") || "";
   }, [location.search]);
 
-  // Students for teacher
+  // Entire bundle from the single endpoint
   const [students, setStudents] = useState([]);
-  const [loadingStudents, setLoadingStudents] = useState(true);
+  const [loadingBundle, setLoadingBundle] = useState(true);
 
   // Selection
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [gradingPeriod, setGradingPeriod] = useState("");
 
-  // Derived student + subjects
+  // Derived student + subjects (from the bundle)
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [subjects, setSubjects] = useState([]);
-  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [subjects, setSubjects] = useState([]); // normalized from selectedStudent.subjects
 
-  // Existing grades + inputs
-  const [loadingGrades, setLoadingGrades] = useState(false);
-  const [existingGrades, setExistingGrades] = useState([]);
+  // Inputs + per-subject "Saved ✓"
   const [inputsBySubject, setInputsBySubject] = useState({}); // { [subject_id]: "88" }
   const [savedTickBySubject, setSavedTickBySubject] = useState({}); // { [subject_id]: ts }
 
@@ -204,36 +201,56 @@ export default function GradeInputUpsert() {
   // UI status
   const [statusModal, setStatusModal] = useState({ show: false, variant: "info", title: "", message: "" });
 
+  // 401 handling
+  const handleUnauthorized = () => {
+    sessionStorage.removeItem("token");
+    setStatusModal({
+      show: true,
+      variant: "warning",
+      title: "Session expired",
+      message: "Please sign in again.",
+    });
+    setTimeout(() => navigate("/login"), 600);
+  };
+
   // ───────────────────────────────────────────────────────────────────────────
-  // Load teacher's students
+  // Load teacher’s full bundle (students + subjects + grades)
   // ───────────────────────────────────────────────────────────────────────────
+  const loadTeacherBundle = async (signal) => {
+    if (!teacherId) { setLoadingBundle(false); setStudents([]); return; }
+    try {
+      setLoadingBundle(true);
+      const res = await fetch(joinUrl(`/grades/students/${teacherId}`), {
+        method: "GET",
+        headers: headers(token),
+        signal,
+      });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      if (!res.ok) throw new Error(`Load failed (${res.status})`);
+      const json = await res.json();
+      const rows = Array.isArray(json?.data) ? json.data : [];
+      setStudents(rows);
+    } catch (err) {
+      if (isAbort(err)) return;
+      console.error(err);
+      setStudents([]);
+      setStatusModal({ show: true, variant: "danger", title: "Load failed", message: String(err?.message || err) });
+    } finally {
+      setLoadingBundle(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     const ac = new AbortController();
-
     (async () => {
-      if (!teacherId) { setLoadingStudents(false); return; }
-      try {
-        setLoadingStudents(true);
-        const res = await fetch(joinUrl(`/grades/students/${teacherId}`), {
-          method: "GET",
-          headers: headers(token),
-          signal: ac.signal,
-        });
-        if (!res.ok) throw new Error(`Students load failed (${res.status})`);
-        const json = await res.json();
-        if (!mounted) return;
-        setStudents(Array.isArray(json?.data) ? json.data : []);
-      } catch (err) {
-        if (isAbort(err)) return;
-        console.error(err);
-        if (mounted) setStatusModal({ show: true, variant: "danger", title: "Load failed", message: String(err?.message || err) });
-      } finally {
-        if (mounted) setLoadingStudents(false);
-      }
-    })();
+      await loadTeacherBundle(ac.signal);
+      if (!mounted) return;
 
+      // Optional: keep a previous selection via URL or state
+    })();
     return () => { mounted = false; ac.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teacherId, token]);
 
   // Keep selected student object
@@ -242,128 +259,52 @@ export default function GradeInputUpsert() {
     setSelectedStudent(sid ? students.find((s) => Number(s.student_id) === sid) || null : null);
   }, [selectedStudentId, students]);
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // When a student changes → load subjects for their grade level
-  // Uses ONLY: GET /subjects/view-all-sub-grade-levels
-  // ───────────────────────────────────────────────────────────────────────────
+  // When selected student changes → derive subjects locally
   useEffect(() => {
-    let mounted = true;
-    const ac = new AbortController();
-
-    async function fetchSubjectsForGradeLevel(gradeLevelId) {
-      try {
-        setLoadingSubjects(true);
-        const res = await fetch(joinUrl(`/subjects/view-all-sub-grade-levels`), {
-          method: "GET",
-          headers: headers(token),
-          signal: ac.signal,
-        });
-        if (!res.ok) throw new Error(`Subjects load failed (${res.status})`);
-        const json = await res.json();
-        if (!mounted) return;
-
-        const rows = Array.isArray(json?.data) ? json.data : [];
-        const match = rows.find((r) => Number(r.grade_level_id) === Number(gradeLevelId));
-        const subs = Array.isArray(match?.subjects) ? match.subjects : [];
-        const normalized = subs.map((s) => ({
-          subject_id: s.subject_id,
-          subject_code: s.subject_code || "",
-          subject_name: s.subject_name || `Subject #${s.subject_id}`,
-        }));
-        setSubjects(normalized);
-      } catch (err) {
-        if (isAbort(err)) return;
-        console.error(err);
-        if (mounted) {
-          setSubjects([]);
-          setStatusModal({ show: true, variant: "danger", title: "Subjects load failed", message: String(err?.message || err) });
-        }
-      } finally {
-        if (mounted) setLoadingSubjects(false);
-      }
-    }
-
-    // reset when student changes
-    setSubjects([]);
     setInputsBySubject({});
     setSavedTickBySubject({});
-    setExistingGrades([]);
+    setSubjects(() => {
+      const subs = Array.isArray(selectedStudent?.subjects) ? selectedStudent.subjects : [];
+      // normalize minimal shape for table
+      return subs.map((s) => ({
+        subject_id: s.subject_id,
+        subject_code: s.subject_code || "",
+        subject_name: s.subject_name || `Subject #${s.subject_id}`,
+        grades: Array.isArray(s.grades) ? s.grades : [], // [{ grading_period, grade }]
+      }));
+    });
+  }, [selectedStudent]);
 
-    const glId = selectedStudent?.grade_level?.grade_level_id || selectedStudent?.grade_level_id || null;
-    if (glId) fetchSubjectsForGradeLevel(glId);
-
-    return () => { mounted = false; ac.abort(); };
-  }, [selectedStudent, token]);
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // Load existing grades for this student (all periods)
-  // GET /grades/student/:student_id
-  // ───────────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    let mounted = true;
-    const ac = new AbortController();
-
-    async function fetchExistingGrades(studentId) {
-      try {
-        setLoadingGrades(true);
-        const res = await fetch(joinUrl(`/grades/student/${studentId}`), {
-          method: "GET",
-          headers: headers(token),
-          signal: ac.signal,
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json?.message || `Grades load failed (${res.status})`);
-        if (!mounted) return;
-        setExistingGrades(Array.isArray(json?.data) ? json.data : []);
-      } catch (err) {
-        if (isAbort(err)) return;
-        console.error(err);
-        if (mounted) setExistingGrades([]);
-      } finally {
-        if (mounted) setLoadingGrades(false);
-      }
-    }
-
-    // reset when student or period changes
-    setInputsBySubject({});
-    setSavedTickBySubject({});
-
-    const sid = Number(selectedStudentId) || null;
-    if (sid) fetchExistingGrades(sid);
-
-    return () => { mounted = false; ac.abort(); };
-  }, [selectedStudentId, token]);
-
-  // Prefill inputs for the chosen period
+  // Prefill inputs for the chosen period from selectedStudent.subjects[].grades
   useEffect(() => {
     if (!gradingPeriod) { setInputsBySubject({}); return; }
-
-    const index = {};
-    for (const g of existingGrades) {
-      const sid = g.subject_id || g.subject?.subject_id;
-      if (!sid) continue;
-      if (g.grading_period === gradingPeriod) index[String(sid)] = g.grade ?? "";
-    }
-
     const next = {};
     for (const s of subjects) {
-      const key = String(s.subject_id);
-      next[key] = index[key] != null ? String(index[key]) : "";
+      const g = (s.grades || []).find((x) => x.grading_period === gradingPeriod);
+      next[String(s.subject_id)] = g?.grade != null ? String(g.grade) : "";
     }
     setInputsBySubject(next);
-  }, [subjects, existingGrades, gradingPeriod]);
+  }, [subjects, gradingPeriod]);
 
   // Options for student dropdown
   const studentOptions = useMemo(() =>
     students.map((s) => ({
       value: s.student_id,
       label: `${s.student_name ?? "(Unnamed)"} • ${s.section?.section_name ?? "?"} • ${s.school_year?.school_year ?? "?"}`,
-      subtitle: `LRN: ${s.lrn ?? "—"}`,
+      subtitle: `LRN: ${s.lrn ?? "—"} • Grade: ${s.grade_level?.grade_name ?? "—"}`,
     })), [students]);
 
   const onChangeGradeInput = (subjectId, val) => {
-    setInputsBySubject((prev) => ({ ...prev, [String(subjectId)]: val }));
-    // clear previous "Saved ✓" indicator if user edits again
+    const raw = val.trim();
+    if (raw === "") {
+      setInputsBySubject((prev) => ({ ...prev, [String(subjectId)]: "" }));
+    } else {
+      const n = Number(raw);
+      if (!Number.isNaN(n)) {
+        const clamped = Math.max(0, Math.min(100, Math.round(n)));
+        setInputsBySubject((prev) => ({ ...prev, [String(subjectId)]: String(clamped) }));
+      }
+    }
     setSavedTickBySubject((prev) => {
       const copy = { ...prev };
       delete copy[String(subjectId)];
@@ -371,20 +312,14 @@ export default function GradeInputUpsert() {
     });
   };
 
-  const refreshGrades = async () => {
-    const sid = Number(selectedStudentId) || null;
-    if (!sid) return;
-    try {
-      setLoadingGrades(true);
-      const res = await fetch(joinUrl(`/grades/student/${sid}`), { method: "GET", headers: headers(token) });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.message || `Grades refresh failed (${res.status})`);
-      setExistingGrades(Array.isArray(json?.data) ? json.data : []);
-    } catch (err) {
-      console.error(err);
-      setStatusModal({ show: true, variant: "danger", title: "Refresh failed", message: String(err?.message || err) });
-    } finally {
-      setLoadingGrades(false);
+  // Refresh button now re-reads the single bundle and re-derives selected student
+  const refreshBundle = async () => {
+    const prevId = selectedStudentId;
+    await loadTeacherBundle();
+    // reselect to update nested grades/subjects view
+    if (prevId) {
+      // small delay not necessary; we can just set after state updates
+      setSelectedStudentId(prevId);
     }
   };
 
@@ -414,10 +349,6 @@ export default function GradeInputUpsert() {
     }
 
     const sid = Number(selectedStudentId);
-    const glId = selectedStudent?.grade_level?.grade_level_id || selectedStudent?.grade_level_id;
-    const sectionId = selectedStudent?.section?.section_id;
-    const syId = selectedStudent?.school_year?.school_year_id;
-
     setSavingAll(true);
 
     try {
@@ -428,16 +359,14 @@ export default function GradeInputUpsert() {
           subject_id: Number(subjectId),
           grading_period: gradingPeriod,
           grade: n,
-          ...(glId ? { grade_level_id: glId } : {}),
-          ...(sectionId ? { section_id: sectionId } : {}),
-          ...(syId ? { school_year_id: syId } : {}),
-        };
+        }; // trimmed payload — extra ids removed as requested
 
         return fetch(joinUrl(`/grades/create-or-update`), {
           method: "POST",
           headers: headers(token),
           body: JSON.stringify(body),
         }).then(async (res) => {
+          if (res.status === 401) { handleUnauthorized(); return { subjectId, ok: false, unauthorized: true }; }
           const json = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(json?.message || `Save failed (${res.status})`);
           return { subjectId, ok: true };
@@ -450,11 +379,25 @@ export default function GradeInputUpsert() {
       const failedMsgs = [];
       const savedMap = {};
 
+      // Update local nested grades for instant feedback
+      const updatedSubjects = subjects.map((s) => ({ ...s, grades: Array.isArray(s.grades) ? [...s.grades] : [] }));
+
       results.forEach((r, idx) => {
         const subjectId = filledValidSubjectIds[idx];
         if (r.status === "fulfilled" && r.value?.ok) {
           ok += 1;
           savedMap[String(subjectId)] = Date.now();
+
+          // reflect change in local nested grades
+          const subj = updatedSubjects.find((x) => x.subject_id === subjectId);
+          if (subj) {
+            const g = (subj.grades || []).find((x) => x.grading_period === gradingPeriod);
+            const n = Number(inputsBySubject[String(subjectId)]);
+            if (g) g.grade = n;
+            else subj.grades = [...(subj.grades || []), { grading_period: gradingPeriod, grade: n }];
+          }
+        } else if (r.status === "fulfilled" && r.value?.unauthorized) {
+          // handled by handleUnauthorized
         } else {
           fail += 1;
           const errMsg = r.reason?.message || "Unknown error";
@@ -463,9 +406,7 @@ export default function GradeInputUpsert() {
       });
 
       setSavedTickBySubject((m) => ({ ...m, ...savedMap }));
-
-      // Refresh after batch
-      await refreshGrades();
+      setSubjects(updatedSubjects); // reflect saved grades immediately
 
       setStatusModal({
         show: true,
@@ -503,11 +444,11 @@ export default function GradeInputUpsert() {
           </button>
           <button
             className="btn btn-outline-primary btn-sm"
-            onClick={refreshGrades}
-            disabled={!selectedStudentId || loadingGrades}
-            title="Refresh grades"
+            onClick={refreshBundle}
+            disabled={!teacherId || loadingBundle}
+            title="Reload students & grades"
           >
-            <FaSync className={loadingGrades ? "me-1 spin" : "me-1"} /> Refresh
+            <FaSync className={loadingBundle ? "me-1 spin" : "me-1"} /> Refresh
           </button>
         </div>
       </div>
@@ -517,7 +458,7 @@ export default function GradeInputUpsert() {
         <div className="card-body">
           {!teacherId ? (
             <div className="alert alert-warning mb-3">
-              No <code>teacher_id</code> found. Provide it via query <code>?teacher_id=</code> or store it in <code>sessionStorage.teacher_id</code>.
+              No <code>teacher_id</code> found. Provide it via <code>?teacher_id=</code> or store it in <code>sessionStorage.teacher_id</code>.
             </div>
           ) : null}
 
@@ -532,8 +473,8 @@ export default function GradeInputUpsert() {
                   setGradingPeriod(""); // reset period when switching student
                 }}
                 placeholder="Search students…"
-                disabled={loadingStudents || !teacherId}
-                loading={loadingStudents}
+                disabled={loadingBundle || !teacherId}
+                loading={loadingBundle}
               />
             </div>
 
@@ -560,6 +501,9 @@ export default function GradeInputUpsert() {
                 <strong>Grade Level:</strong> {selectedStudent.grade_level?.grade_name || '—'} •{" "}
                 <strong>SY:</strong> {selectedStudent.school_year?.school_year || '—'}
               </div>
+              {selectedStudent.general_average != null ? (
+                <div><strong>General Average:</strong> {selectedStudent.general_average}</div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -590,10 +534,10 @@ export default function GradeInputUpsert() {
 
           {!selectedStudentId ? (
             <div className="text-muted small">Select a student to load their subjects.</div>
-          ) : loadingSubjects ? (
+          ) : loadingBundle ? (
             <div className="text-muted small">Loading subjects…</div>
           ) : subjects.length === 0 ? (
-            <div className="text-muted small">No subjects found for this student’s grade level in the active curriculum.</div>
+            <div className="text-muted small">No subjects found for this student.</div>
           ) : !gradingPeriod ? (
             <div className="text-muted small">Pick a grading period to enter grades.</div>
           ) : (
@@ -601,22 +545,25 @@ export default function GradeInputUpsert() {
               <table className="table align-middle">
                 <thead className="table-light">
                   <tr>
-                    <th style={{ width: '40%' }}>Subject</th>
-                    <th style={{ width: '20%' }}>Code</th>
-                    <th style={{ width: '20%' }}>Grade</th>
-                    <th style={{ width: '20%' }}>Status</th>
+                    <th style={{ width: '32%' }}>Subject</th>
+                    <th style={{ width: '18%' }}>Code</th>
+                    <th style={{ width: '24%' }}>Teacher</th>
+                    <th style={{ width: '14%' }}>Grade</th>
+                    <th style={{ width: '12%' }}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {subjects.map((s) => {
                     const key = String(s.subject_id);
                     const savedTick = savedTickBySubject[key];
+                    const teacherName = selectedStudent?.subjects?.find(x => x.subject_id === s.subject_id)?.teacher?.teacher_name ?? '—';
 
                     return (
                       <tr key={s.subject_id}>
                         <td className="fw-semibold">{s.subject_name}</td>
                         <td>{s.subject_code || '—'}</td>
-                        <td style={{ maxWidth: 160 }}>
+                        <td>{teacherName?.trim() || '—'}</td>
+                        <td style={{ maxWidth: 140 }}>
                           <input
                             type="number"
                             inputMode="numeric"
