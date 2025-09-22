@@ -35,8 +35,24 @@ const headers = (token) => ({
 const isAbort = (err) => err && (err.name === "AbortError" || String(err).includes("aborted"));
 const GRADE_PERIODS = ["1st", "2nd", "3rd", "4th"];
 
+// small utilities
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const serverMessage = async (res) => {
+  try { const j = await res.json(); return j?.message || j?.error || res.statusText; }
+  catch { return res.statusText; }
+};
+const currentGradeFor = (subjectId, gradingPeriod, subjects) => {
+  const subj = subjects.find((s) => s.subject_id === subjectId);
+  const g = subj?.grades?.find((x) => x.grading_period === gradingPeriod);
+  return g?.grade ?? null;
+};
+const toPosInt = (v) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Reusable: SearchableSelect
+// Reusable: SearchableSelect (hard-capped to 5 visible results)
 // ─────────────────────────────────────────────────────────────────────────────
 function SearchableSelect({
   label,
@@ -47,6 +63,8 @@ function SearchableSelect({
   disabled = false,
   loading = false,
 }) {
+  const MAX_RESULTS = 5;
+
   const containerRef = useRef(null);
   const inputRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -66,6 +84,8 @@ function SearchableSelect({
     );
   }, [options, query]);
 
+  const visible = useMemo(() => filtered.slice(0, MAX_RESULTS), [filtered]);
+
   useEffect(() => {
     const handle = (e) => {
       if (!containerRef.current) return;
@@ -76,7 +96,7 @@ function SearchableSelect({
   }, []);
 
   const selectAt = (idx) => {
-    const opt = filtered[idx];
+    const opt = visible[idx];
     if (!opt) return;
     onChange?.(String(opt.value));
     setOpen(false);
@@ -90,18 +110,10 @@ function SearchableSelect({
       return;
     }
     if (!open) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActiveIdx((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      selectAt(activeIdx >= 0 ? activeIdx : 0);
-    } else if (e.key === "Escape") {
-      setOpen(false);
-    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, visible.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); selectAt(activeIdx >= 0 ? activeIdx : 0); }
+    else if (e.key === "Escape") { setOpen(false); }
   };
 
   return (
@@ -142,10 +154,10 @@ function SearchableSelect({
         <div className="dropdown-menu show w-100 mt-1 p-0" style={{ maxHeight: 260, overflowY: "auto" }}>
           {loading ? (
             <div className="px-3 py-2 small text-muted">Loading…</div>
-          ) : filtered.length === 0 ? (
+          ) : visible.length === 0 ? (
             <div className="px-3 py-2 small text-muted">No matches</div>
           ) : (
-            filtered.slice(0, 60).map((o, idx) => (
+            visible.map((o, idx) => (
               <button
                 key={o.value}
                 type="button"
@@ -161,13 +173,13 @@ function SearchableSelect({
           )}
         </div>
       )}
-      <div className="form-text">Start typing to filter, then hit Enter or click to select.</div>
+      <div className="form-text">Showing up to 5 results. Type to filter; press Enter to select.</div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Page: Grade entry — now powered solely by /grades/students/:teacher_id
+// Page: Grade entry — powered by /grades/students/:teacher_id
 // ─────────────────────────────────────────────────────────────────────────────
 export default function GradeInputUpsert() {
   const navigate = useNavigate();
@@ -179,6 +191,14 @@ export default function GradeInputUpsert() {
     return q || sessionStorage.getItem("teacher_id") || sessionStorage.getItem("user_id") || "";
   }, [location.search]);
 
+  // Accept preselected student from state or ?student_id=
+  const preselectStudentId = useMemo(() => {
+    const qsId = new URLSearchParams(location.search).get("student_id");
+    // location.state may be null on hard refresh
+    const stId = location.state && location.state.studentId ? String(location.state.studentId) : "";
+    return String(qsId || stId || "");
+  }, [location.search, location.state]);
+
   // Entire bundle from the single endpoint
   const [students, setStudents] = useState([]);
   const [loadingBundle, setLoadingBundle] = useState(true);
@@ -189,11 +209,10 @@ export default function GradeInputUpsert() {
 
   // Derived student + subjects (from the bundle)
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [subjects, setSubjects] = useState([]); // normalized from selectedStudent.subjects
+  const [subjects, setSubjects] = useState([]);
 
-  // Inputs + per-subject "Saved ✓"
-  const [inputsBySubject, setInputsBySubject] = useState({}); // { [subject_id]: "88" }
-  const [savedTickBySubject, setSavedTickBySubject] = useState({}); // { [subject_id]: ts }
+  // Inputs
+  const [inputsBySubject, setInputsBySubject] = useState({});
 
   // Saving state
   const [savingAll, setSavingAll] = useState(false);
@@ -201,7 +220,6 @@ export default function GradeInputUpsert() {
   // UI status
   const [statusModal, setStatusModal] = useState({ show: false, variant: "info", title: "", message: "" });
 
-  // 401 handling
   const handleUnauthorized = () => {
     sessionStorage.removeItem("token");
     setStatusModal({
@@ -213,21 +231,35 @@ export default function GradeInputUpsert() {
     setTimeout(() => navigate("/login"), 600);
   };
 
-  // ───────────────────────────────────────────────────────────────────────────
   // Load teacher’s full bundle (students + subjects + grades)
-  // ───────────────────────────────────────────────────────────────────────────
   const loadTeacherBundle = async (signal) => {
     if (!teacherId) { setLoadingBundle(false); setStudents([]); return; }
     try {
       setLoadingBundle(true);
-      const res = await fetch(joinUrl(`/grades/students/${teacherId}`), {
+
+      const url = joinUrl(`/grades/students/${teacherId}`);
+      const res = await fetch(url, {
         method: "GET",
         headers: headers(token),
         signal,
       });
+
+      // Log for debugging
+      const headersObj = Object.fromEntries(res.headers.entries());
+      let body;
+      let json = null;
+      try {
+        json = await res.json();
+        body = json;
+      } catch {
+        try { body = await res.text(); } catch { body = "(no body)"; }
+      }
+      console.log("[GET grades/students/:teacher_id]", { url, status: res.status, ok: res.ok, headers: headersObj, body });
+      try { window.__lastGradesStudentsResponse = { url, status: res.status, ok: res.ok, headers: headersObj, body }; } catch {}
+
       if (res.status === 401) { handleUnauthorized(); return; }
       if (!res.ok) throw new Error(`Load failed (${res.status})`);
-      const json = await res.json();
+
       const rows = Array.isArray(json?.data) ? json.data : [];
       setStudents(rows);
     } catch (err) {
@@ -241,17 +273,26 @@ export default function GradeInputUpsert() {
   };
 
   useEffect(() => {
-    let mounted = true;
     const ac = new AbortController();
-    (async () => {
-      await loadTeacherBundle(ac.signal);
-      if (!mounted) return;
-
-      // Optional: keep a previous selection via URL or state
-    })();
-    return () => { mounted = false; ac.abort(); };
+    (async () => { await loadTeacherBundle(ac.signal); })();
+    return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teacherId, token]);
+
+  // Apply preselect after bundle loaded (only once)
+  const preselectAppliedRef = useRef(false);
+  useEffect(() => {
+    if (preselectAppliedRef.current) return;
+    const id = String(preselectStudentId || "");
+    if (!id) return;
+    if (loadingBundle) return;
+    if (!students.length) return;
+    const exists = students.some(s => String(s.student_id) === id);
+    if (exists) {
+      setSelectedStudentId(id);
+      preselectAppliedRef.current = true;
+    }
+  }, [preselectStudentId, loadingBundle, students]);
 
   // Keep selected student object
   useEffect(() => {
@@ -262,15 +303,25 @@ export default function GradeInputUpsert() {
   // When selected student changes → derive subjects locally
   useEffect(() => {
     setInputsBySubject({});
-    setSavedTickBySubject({});
     setSubjects(() => {
       const subs = Array.isArray(selectedStudent?.subjects) ? selectedStudent.subjects : [];
-      // normalize minimal shape for table
+
+      const studentLevelEnrollmentId =
+        toPosInt(selectedStudent?.enrollment_id) ||
+        toPosInt(selectedStudent?.enrollment?.enrollment_id) ||
+        toPosInt(selectedStudent?.current_enrollment_id) ||
+        null;
+
       return subs.map((s) => ({
         subject_id: s.subject_id,
         subject_code: s.subject_code || "",
         subject_name: s.subject_name || `Subject #${s.subject_id}`,
-        grades: Array.isArray(s.grades) ? s.grades : [], // [{ grading_period, grade }]
+        enrollment_id:
+          toPosInt(s?.enrollment_id) ||
+          toPosInt(s?.enrollment?.enrollment_id) ||
+          studentLevelEnrollmentId ||
+          null,
+        grades: Array.isArray(s.grades) ? s.grades : [],
       }));
     });
   }, [selectedStudent]);
@@ -287,12 +338,14 @@ export default function GradeInputUpsert() {
   }, [subjects, gradingPeriod]);
 
   // Options for student dropdown
-  const studentOptions = useMemo(() =>
-    students.map((s) => ({
+  const studentOptions = useMemo(
+    () => students.map((s) => ({
       value: s.student_id,
       label: `${s.student_name ?? "(Unnamed)"} • ${s.section?.section_name ?? "?"} • ${s.school_year?.school_year ?? "?"}`,
       subtitle: `LRN: ${s.lrn ?? "—"} • Grade: ${s.grade_level?.grade_name ?? "—"}`,
-    })), [students]);
+    })),
+    [students]
+  );
 
   const onChangeGradeInput = (subjectId, val) => {
     const raw = val.trim();
@@ -305,38 +358,39 @@ export default function GradeInputUpsert() {
         setInputsBySubject((prev) => ({ ...prev, [String(subjectId)]: String(clamped) }));
       }
     }
-    setSavedTickBySubject((prev) => {
-      const copy = { ...prev };
-      delete copy[String(subjectId)];
-      return copy;
-    });
   };
 
-  // Refresh button now re-reads the single bundle and re-derives selected student
+  // Refresh button: re-read bundle and reselect student
   const refreshBundle = async () => {
     const prevId = selectedStudentId;
     await loadTeacherBundle();
-    // reselect to update nested grades/subjects view
-    if (prevId) {
-      // small delay not necessary; we can just set after state updates
-      setSelectedStudentId(prevId);
-    }
+    if (prevId) setSelectedStudentId(prevId);
   };
 
-  // Compute which subjects have valid entries (0–100)
-  const filledValidSubjectIds = useMemo(() => {
-    const ids = [];
+  // Compute which subjects have valid entries (0–100) and changed values
+  const toSave = useMemo(() => {
+    if (!gradingPeriod) return [];
+    const list = [];
     for (const s of subjects) {
       const raw = (inputsBySubject[String(s.subject_id)] ?? "").toString().trim();
       if (raw === "") continue;
       const n = Number(raw);
-      if (Number.isFinite(n) && n >= 0 && n <= 100) ids.push(s.subject_id);
+      if (!Number.isFinite(n) || n < 0 || n > 100) continue;
+      const current = currentGradeFor(s.subject_id, gradingPeriod, subjects);
+      if (Number(current) !== n) {
+        list.push({
+          subjectId: s.subject_id,
+          newGrade: n,
+          enrollmentId: toPosInt(s.enrollment_id) || null,
+        });
+      }
     }
-    return ids;
-  }, [subjects, inputsBySubject]);
+    return list;
+  }, [subjects, inputsBySubject, gradingPeriod]);
 
-  const canSaveAll = !!selectedStudentId && !!gradingPeriod && filledValidSubjectIds.length > 0 && !savingAll;
+  const canSaveAll = !!selectedStudentId && !!gradingPeriod && toSave.length > 0 && !savingAll;
 
+  // SAVE ALL
   const saveAll = async () => {
     if (!selectedStudentId) {
       return setStatusModal({ show: true, variant: "warning", title: "Missing student", message: "Please select a student." });
@@ -344,83 +398,129 @@ export default function GradeInputUpsert() {
     if (!gradingPeriod) {
       return setStatusModal({ show: true, variant: "warning", title: "Missing grading period", message: "Please choose 1st / 2nd / 3rd / 4th." });
     }
-    if (filledValidSubjectIds.length === 0) {
-      return setStatusModal({ show: true, variant: "warning", title: "No grades to save", message: "Enter at least one valid grade (0–100)." });
+    if (toSave.length === 0) {
+      return setStatusModal({ show: true, variant: "info", title: "Nothing to save", message: "No changes detected." });
+    }
+
+    const missing = toSave.filter(x => !toPosInt(x.enrollmentId));
+    if (missing.length) {
+      const names = missing.map(m => subjects.find(s => s.subject_id === m.subjectId)?.subject_name || `Subject #${m.subjectId}`);
+      return setStatusModal({
+        show: true,
+        variant: "warning",
+        title: "Missing enrollment ID",
+        message: `These subject(s) have no enrollment_id and cannot be saved:\n• ${names.join("\n• ")}\n\nCheck the bundle payload for an 'enrollment_id' per subject or a student-level enrollment.`,
+      });
     }
 
     const sid = Number(selectedStudentId);
+
+    const gradeLevelId =
+      toPosInt(selectedStudent?.grade_level_id) ||
+      toPosInt(selectedStudent?.grade_level?.grade_level_id) ||
+      null;
+    const sectionId =
+      toPosInt(selectedStudent?.section_id) ||
+      toPosInt(selectedStudent?.section?.section_id) ||
+      null;
+    const schoolYearId =
+      toPosInt(selectedStudent?.school_year_id) ||
+      toPosInt(selectedStudent?.school_year?.school_year_id) ||
+      null;
+
     setSavingAll(true);
+    const successes = [];
+    const failures = [];
 
     try {
-      const tasks = filledValidSubjectIds.map((subjectId) => {
-        const n = Number(inputsBySubject[String(subjectId)]);
-        const body = {
+      for (const item of toSave) {
+        const payload = {
           student_id: sid,
-          subject_id: Number(subjectId),
+          subject_id: Number(item.subjectId),
           grading_period: gradingPeriod,
-          grade: n,
-        }; // trimmed payload — extra ids removed as requested
+          grade: Number(item.newGrade),
+          enrollment_id: Number(item.enrollmentId),
+          ...(gradeLevelId ? { grade_level_id: Number(gradeLevelId) } : {}),
+          ...(sectionId ? { section_id: Number(sectionId) } : {}),
+          ...(schoolYearId ? { school_year_id: Number(schoolYearId) } : {}),
+        };
 
-        return fetch(joinUrl(`/grades/create-or-update`), {
-          method: "POST",
-          headers: headers(token),
-          body: JSON.stringify(body),
-        }).then(async (res) => {
-          if (res.status === 401) { handleUnauthorized(); return { subjectId, ok: false, unauthorized: true }; }
-          const json = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(json?.message || `Save failed (${res.status})`);
-          return { subjectId, ok: true };
-        });
-      });
+        let attempt = 0;
+        let done = false;
+        let lastErr = "";
 
-      const results = await Promise.allSettled(tasks);
+        while (!done && attempt < 3) {
+          attempt++;
+          try {
+            const res = await fetch(joinUrl(`/grades/create-or-update`), {
+              method: "POST",
+              headers: headers(token),
+              body: JSON.stringify(payload),
+            });
 
-      let ok = 0, fail = 0;
-      const failedMsgs = [];
-      const savedMap = {};
-
-      // Update local nested grades for instant feedback
-      const updatedSubjects = subjects.map((s) => ({ ...s, grades: Array.isArray(s.grades) ? [...s.grades] : [] }));
-
-      results.forEach((r, idx) => {
-        const subjectId = filledValidSubjectIds[idx];
-        if (r.status === "fulfilled" && r.value?.ok) {
-          ok += 1;
-          savedMap[String(subjectId)] = Date.now();
-
-          // reflect change in local nested grades
-          const subj = updatedSubjects.find((x) => x.subject_id === subjectId);
-          if (subj) {
-            const g = (subj.grades || []).find((x) => x.grading_period === gradingPeriod);
-            const n = Number(inputsBySubject[String(subjectId)]);
-            if (g) g.grade = n;
-            else subj.grades = [...(subj.grades || []), { grading_period: gradingPeriod, grade: n }];
+            if (res.ok) {
+              successes.push(item.subjectId);
+              done = true;
+            } else {
+              const msg = await serverMessage(res);
+              if ([408, 409, 425, 429, 500, 502, 503, 504].includes(res.status)) {
+                lastErr = `${res.status}: ${msg}`;
+                await wait(300 * attempt);
+              } else {
+                throw new Error(`${res.status}: ${msg}`);
+              }
+            }
+          } catch (err) {
+            lastErr = String(err?.message || err);
+            if (attempt < 3) await wait(300 * attempt);
+            else break;
           }
-        } else if (r.status === "fulfilled" && r.value?.unauthorized) {
-          // handled by handleUnauthorized
-        } else {
-          fail += 1;
-          const errMsg = r.reason?.message || "Unknown error";
-          failedMsgs.push(`• ${subjects.find(s => s.subject_id === subjectId)?.subject_name || `Subject #${subjectId}`}: ${errMsg}`);
         }
-      });
 
-      setSavedTickBySubject((m) => ({ ...m, ...savedMap }));
-      setSubjects(updatedSubjects); // reflect saved grades immediately
+        if (!done) failures.push({ subjectId: item.subjectId, message: lastErr || "Unknown error" });
+      }
 
+      if (successes.length) {
+        const updated = subjects.map((s) => ({ ...s, grades: Array.isArray(s.grades) ? [...s.grades] : [] }));
+        for (const subjectId of successes) {
+          const subj = updated.find((x) => x.subject_id === subjectId);
+          if (!subj) continue;
+          const existing = subj.grades.find((g) => g.grading_period === gradingPeriod);
+          const gradeNum = Number(inputsBySubject[String(subjectId)]);
+          if (existing) existing.grade = gradeNum;
+          else subj.grades.push({ grading_period: gradingPeriod, grade: gradeNum });
+        }
+        setSubjects(updated);
+      }
+
+      if (failures.length === 0) {
+        setStatusModal({
+          show: true,
+          variant: "success",
+          title: "All grades saved",
+          message: `Saved ${successes.length} grade(s) successfully.`,
+        });
+      } else {
+        const byName = (id) => subjects.find((s) => s.subject_id === id)?.subject_name || `Subject #${id}`;
+        setStatusModal({
+          show: true,
+          variant: "warning",
+          title: "Some grades couldn’t be saved",
+          message:
+            `Saved ${successes.length} of ${toSave.length}.\n\n` +
+            failures.map((f) => `• ${byName(f.subjectId)} — ${f.message}`).join("\n"),
+        });
+      }
+    } catch (err) {
       setStatusModal({
         show: true,
-        variant: fail ? "warning" : "success",
-        title: fail ? "Partially saved" : "All grades saved",
-        message: fail
-          ? `Saved ${ok} of ${ok + fail} grade(s).\n\n${failedMsgs.join("\n")}`
-          : `Saved ${ok} grade(s) successfully.`,
+        variant: "danger",
+        title: "Save failed",
+        message: String(err?.message || err),
       });
-    } catch (err) {
-      console.error(err);
-      setStatusModal({ show: true, variant: "danger", title: "Save failed", message: String(err?.message || err) });
     } finally {
       setSavingAll(false);
+      await refreshBundle();
     }
   };
 
@@ -448,7 +548,8 @@ export default function GradeInputUpsert() {
             disabled={!teacherId || loadingBundle}
             title="Reload students & grades"
           >
-            <FaSync className={loadingBundle ? "me-1 spin" : "me-1"} /> Refresh
+            {loadingBundle ? <span className="spinner-border spinner-border-sm me-2" /> : <FaSync className="me-1" />}
+            {loadingBundle ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </div>
@@ -470,7 +571,7 @@ export default function GradeInputUpsert() {
                 value={selectedStudentId}
                 onChange={(v) => {
                   setSelectedStudentId(v);
-                  setGradingPeriod(""); // reset period when switching student
+                  setGradingPeriod("");
                 }}
                 placeholder="Search students…"
                 disabled={loadingBundle || !teacherId}
@@ -509,14 +610,14 @@ export default function GradeInputUpsert() {
         </div>
       </div>
 
-      {/* Subjects + single Save All button */}
+      {/* Subjects + Save All button */}
       <div className="card border-0 shadow-sm">
         <div className="card-body">
           <div className="d-flex align-items-center justify-content-between">
             <h6 className="mb-0">Subjects</h6>
             <div className="d-flex align-items-center gap-2">
               <span className="badge bg-light text-dark">
-                Ready: {filledValidSubjectIds.length} / {subjects.length}
+                Ready: {toSave.length} / {subjects.length}
               </span>
               <button
                 className="btn btn-primary"
@@ -524,7 +625,7 @@ export default function GradeInputUpsert() {
                 disabled={!canSaveAll}
                 title="Save all entered grades"
               >
-                <FaSave className={savingAll ? "me-2 spin" : "me-2"} />
+                {savingAll ? <span className="spinner-border spinner-border-sm me-2" /> : <FaSave className="me-2" />}
                 {savingAll ? "Saving…" : "Save All Grades"}
               </button>
             </div>
@@ -545,25 +646,22 @@ export default function GradeInputUpsert() {
               <table className="table align-middle">
                 <thead className="table-light">
                   <tr>
-                    <th style={{ width: '32%' }}>Subject</th>
-                    <th style={{ width: '18%' }}>Code</th>
-                    <th style={{ width: '24%' }}>Teacher</th>
-                    <th style={{ width: '14%' }}>Grade</th>
-                    <th style={{ width: '12%' }}>Status</th>
+                    <th style={{ width: '50%' }}>Subject</th>
+                    <th style={{ width: '25%' }}>Code</th>
+                    <th style={{ width: '25%' }}>Grade</th>
                   </tr>
                 </thead>
                 <tbody>
                   {subjects.map((s) => {
                     const key = String(s.subject_id);
-                    const savedTick = savedTickBySubject[key];
-                    const teacherName = selectedStudent?.subjects?.find(x => x.subject_id === s.subject_id)?.teacher?.teacher_name ?? '—';
-
                     return (
                       <tr key={s.subject_id}>
-                        <td className="fw-semibold">{s.subject_name}</td>
+                        <td className="fw-semibold">
+                          {s.subject_name}
+                          {/* <div className="small text-muted">enrollment_id: {s.enrollment_id || '—'}</div> */}
+                        </td>
                         <td>{s.subject_code || '—'}</td>
-                        <td>{teacherName?.trim() || '—'}</td>
-                        <td style={{ maxWidth: 140 }}>
+                        <td style={{ maxWidth: 180 }}>
                           <input
                             type="number"
                             inputMode="numeric"
@@ -578,9 +676,6 @@ export default function GradeInputUpsert() {
                           />
                           <div className="form-text">0–100, whole number.</div>
                         </td>
-                        <td>
-                          {savedTick ? <span className="text-success">Saved ✓</span> : <span className="text-muted">—</span>}
-                        </td>
                       </tr>
                     );
                   })}
@@ -590,12 +685,6 @@ export default function GradeInputUpsert() {
           )}
         </div>
       </div>
-
-      <style>{`
-        .spin { animation: spin 0.9s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .dropdown-item.active, .dropdown-item:active { color: #fff; }
-      `}</style>
     </div>
   );
 }

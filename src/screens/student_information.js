@@ -1,16 +1,42 @@
+import 'bootstrap/dist/css/bootstrap.min.css';
+
 // StudentInformation.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import "bootstrap/dist/css/bootstrap.min.css";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
+import axios from 'axios';
 import {
-  FaPlus, FaSearch, FaUpload, FaDownload, FaEdit, FaBookOpen, FaExchangeAlt,
-  FaChevronLeft, FaChevronRight, FaUndo, FaTimes, FaUserGraduate, FaInfoCircle,
-  FaSort, FaSortUp, FaSortDown, FaRedoAlt
-} from "react-icons/fa";
-import axios from "axios";
-import { checkToken } from "../components/token_checker";
-import { getUserPermissions } from "../components/get_permission";
-import StatusModal from "../components/status_modal";
+  FaBookOpen,
+  FaChevronLeft,
+  FaChevronRight,
+  FaDownload,
+  FaEdit,
+  FaExchangeAlt,
+  FaInfoCircle,
+  FaPlus,
+  FaRedoAlt,
+  FaSearch,
+  FaSort,
+  FaSortDown,
+  FaSortUp,
+  FaTimes,
+  FaUndo,
+  FaUpload,
+  FaUserGraduate,
+} from 'react-icons/fa';
+import {
+  Link,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
+
+import { getUserPermissions } from '../components/get_permission';
+import StatusModal from '../components/status_modal';
+import { checkToken } from '../components/token_checker';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 const PAGE_SIZES = [5, 10, 20, 50];
@@ -428,6 +454,7 @@ const StudentInformation = () => {
                               >
                                 <FaExchangeAlt /> Transfer
                               </Link>
+                              
                             </div>
                           </td>
                         </tr>
