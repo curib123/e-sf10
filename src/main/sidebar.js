@@ -84,7 +84,6 @@ import StudentInformation from '../screens/student_information';
 import StudentRecord from '../screens/student_records';
 import SubjectList from '../screens/subject_list';
 import SubjectUpsert from '../screens/subject_upsert';
-import SubjectByGradeLevel from '../screens/subjects_by_grade_levels';
 import TeacherAssign from '../screens/teacher_assign';
 import TeacherAssignUpsert from '../screens/teacher_assign_upsert';
 import HomeTeacher from '../screens/teacher_dashboard';
@@ -350,7 +349,6 @@ const MENU_CONFIG = [
     roles: ['admin', 'registrar'],
     children: [
       { to: '/assign-subject-per-year-level', icon: FaLayerGroup, label: 'Assign Subjects Grade Level', permission: PERMS.MANAGE_SUBJECTS },
-      { to: '/subject-per-year-level', icon: FaLayerGroup, label: 'Subject Grade Level', permission: PERMS.MANAGE_SUBJECTS },
       { to: '/teacher-assignments', icon: FaChalkboardTeacher, label: 'Assign Teacher', permission: PERMS.VIEW_TEACHER_ASSIGNMENTS },
       { to: '/class-schedules', icon: FaSchool, label: 'Class Schedules', permission: PERMS.VIEW_CLASS_SCHEDULES },
     ],
@@ -396,7 +394,6 @@ const ROUTE_COMPONENTS = {
   '/view_request': { el: <ViewRequest />, perm: PERMS.APPROVE_TRANSFERS },
   '/enrollments': { el: <EnrollmentList />, perm: PERMS.VIEW_ENROLLMENTS },
   '/input-grades': { el: <GradeInputsList />, perm: PERMS.MANAGE_GRADE_INPUT },
-   '/subject-per-year-level': { el: <SubjectByGradeLevel />, perm: PERMS.MANAGE_GRADE_INPUT },
 
   // Academic management
   '/subjects': { el: <SubjectList />, perm: PERMS.VIEW_SUBJECTS },

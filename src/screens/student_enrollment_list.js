@@ -1,6 +1,6 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// EnrollmentList.jsx — faster loads + caching + stable handlers
+// EnrollmentList.jsx — robust filtration + caching + stable handlers
 import React, {
   memo,
   startTransition,
@@ -117,7 +117,7 @@ const cacheSet = (key, v) => {
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
-// API (with parallel racing for variant endpoints)
+// API
 const api = {
   async get(path, token, signal) {
     return fetch(`${BASE_URL}${path}`, { headers: authHeaders(token), signal, keepalive: true });
@@ -134,27 +134,6 @@ const api = {
       signal,
       keepalive: true,
     });
-  },
-
-  // Race multiple endpoints; settle on first OK (faster than sequential)
-  async raceJSON(paths, token, signal, normalizeList = (js) => js) {
-    const tasks = paths.map(async (p) => {
-      try {
-        const { ok, js, status } = await api.getJSON(p, token, signal);
-        if (!ok) throw new Error(String(status || 'not ok'));
-        return normalizeList(js);
-      } catch (e) {
-        throw e;
-      }
-    });
-    try {
-      // Promise.any resolves on first *fulfilled*
-      const result = await Promise.any(tasks);
-      return result;
-    } catch {
-      // If all fail, return empty list
-      return [];
-    }
   },
 
   async getSchoolYears(token, signal) {
@@ -184,7 +163,16 @@ const api = {
     ];
     const normalize = (js) =>
       Array.isArray(js?.data) ? js.data : Array.isArray(js) ? js : [];
-    return api.raceJSON(paths, token, signal, normalize);
+    const tasks = paths.map(async (p) => {
+      const { ok, js } = await api.getJSON(p, token, signal);
+      if (!ok) throw new Error('not ok');
+      return normalize(js);
+    });
+    try {
+      return await Promise.any(tasks);
+    } catch {
+      return [];
+    }
   },
 
   async getActiveCurriculumId(token, signal) {
@@ -200,96 +188,255 @@ const api = {
   async getSections(schoolYearId, token, signal) {
     const qsPart =
       schoolYearId && schoolYearId !== 'all'
-        ? [`/sections?school_year_id=${encodeURIComponent(schoolYearId)}&limit=500`,
-           `/sections?school_year_id=${encodeURIComponent(schoolYearId)}`]
+        ? [
+            `/sections?school_year_id=${encodeURIComponent(schoolYearId)}&limit=500`,
+            `/sections?school_year_id=${encodeURIComponent(schoolYearId)}`,
+          ]
         : [];
     const paths = [...qsPart, '/sections?limit=500', '/sections'];
     const normalize = (js) =>
       Array.isArray(js?.data) ? js.data : Array.isArray(js) ? js : [];
-    return api.raceJSON(paths, token, signal, normalize);
+    const tasks = paths.map(async (p) => {
+      const { ok, js } = await api.getJSON(p, token, signal);
+      if (!ok) throw new Error('not ok');
+      return normalize(js);
+    });
+    try {
+      return await Promise.any(tasks);
+    } catch {
+      return [];
+    }
   },
+};
 
-  async getPagedEnrollments(params, token, signal) {
-    const {
+// ───────────────────────────────────────────────────────────────────────────────
+// Client fallback filtering (if server ignores filters)
+function applyClientFiltersSortPaginate({
+  data = [],
+  q,
+  studentId,
+  sectionId,
+  schoolYearId,
+  curriculumId,
+  status,
+  sort,
+  page,
+  limit,
+}) {
+  // 1) filter
+  const qq = (q || '').trim().toLowerCase();
+  let out = data.filter((r) => {
+    if (studentId && studentId !== 'all' && String(r.student_id ?? r.studentId) !== String(studentId)) return false;
+    if (sectionId && sectionId !== 'all' && String(r.section_id ?? r.sectionId) !== String(sectionId)) return false;
+    if (schoolYearId && schoolYearId !== 'all' && String(r.school_year_id ?? r.schoolYearId) !== String(schoolYearId)) return false;
+    if (curriculumId && curriculumId !== 'all' && String(r.curriculum_id ?? r.curriculumId) !== String(curriculumId)) return false;
+    if (status && status !== 'all' && String(r.status || '').toLowerCase() !== String(status).toLowerCase()) return false;
+
+    if (!qq) return true;
+    const hay = [
+      r.student_name,
+      r.section_name,
+      r.school_year,
+      r.curriculum_name,
+      r.status,
+      r.lrn,
+      ...(Array.isArray(r.enrolled_subjects) ? r.enrolled_subjects : []),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(qq);
+  });
+
+  // 2) sort
+  const [sortKey = 'date', sortDir = 'desc'] = (sort || 'date:desc').split(':');
+  const fieldMap = {
+    date: 'enrollment_date',
+    student: 'student_name',
+    section: 'section_name',
+    sy: 'school_year',
+    curriculum: 'curriculum_name',
+    status: 'status',
+  };
+  const f = fieldMap[sortKey] || 'enrollment_date';
+  out.sort((a, b) => {
+    const av = (a?.[f] ?? '').toString();
+    const bv = (b?.[f] ?? '').toString();
+    if (f === 'enrollment_date') {
+      const at = a?.[f] ? new Date(a[f]).getTime() : 0;
+      const bt = b?.[f] ? new Date(b[f]).getTime() : 0;
+      return sortDir === 'asc' ? at - bt : bt - at;
+    }
+    if (av === bv) return 0;
+    return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1);
+  });
+
+  // 3) paginate
+  const total = out.length;
+  const perPage = Math.max(1, Number(limit || 10));
+  const cur = Math.max(1, Number(page || 1));
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const start = (cur - 1) * perPage;
+  const pageRows = out.slice(start, start + perPage);
+
+  return {
+    data: pageRows,
+    pagination: { total, totalItems: total, page: cur, limit: perPage, totalPages },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Robust enrollments fetch: tries param variants → client fallback if needed
+async function getPagedEnrollments(params, token, signal) {
+  const {
+    q,
+    studentId,
+    sectionId,
+    schoolYearId,
+    curriculumId,
+    status,
+    page,
+    limit,
+    sort,
+  } = params;
+
+  // map UI sort → API field
+  const [sortKey, sortDir = 'desc'] = (sort || DEFAULT_SORT).split(':');
+  const sortMap = {
+    date: 'enrollment_date',
+    student: 'student_name',
+    section: 'section_name',
+    sy: 'school_year',
+    curriculum: 'curriculum_name',
+    status: 'status',
+  };
+  const field = sortMap[sortKey] || 'enrollment_date';
+  const dir = sortDir === 'asc' ? 'asc' : 'desc';
+
+  const base = '/enrollments';
+  const variants = [
+    // 1) preferred snake_case (matches your new endpoint docs best)
+    {
+      q,
+      page,
+      limit,
+      student_id: studentId !== 'all' ? studentId : undefined,
+      section_id: sectionId !== 'all' ? sectionId : undefined,
+      school_year_id: schoolYearId !== 'all' ? schoolYearId : undefined,
+      curriculum_id: curriculumId !== 'all' ? curriculumId : undefined,
+      status: status !== 'all' ? status : undefined,
+      sort: `${field}:${dir}`,
+    },
+    // 2) earlier style (short keys)
+    {
+      search: q,
+      page,
+      limit,
+      student: studentId !== 'all' ? studentId : undefined,
+      section: sectionId !== 'all' ? sectionId : undefined,
+      sy: schoolYearId !== 'all' ? schoolYearId : undefined,
+      curriculum: curriculumId !== 'all' ? curriculumId : undefined,
+      status: status !== 'all' ? status : undefined,
+      sortBy: field,
+      sortOrder: dir,
+    },
+    // 3) camelCase variant
+    {
+      q,
+      page,
+      limit,
+      studentId: studentId !== 'all' ? studentId : undefined,
+      sectionId: sectionId !== 'all' ? sectionId : undefined,
+      schoolYearId: schoolYearId !== 'all' ? schoolYearId : undefined,
+      curriculumId: curriculumId !== 'all' ? curriculumId : undefined,
+      status: status !== 'all' ? status : undefined,
+      orderBy: field,
+      order: dir,
+    },
+  ];
+
+  for (const v of variants) {
+    const url = `${base}?${qs(v)}`;
+    try {
+      const { ok, js, status: httpStatus } = await api.getJSON(url, token, signal);
+      if (!ok) {
+        if (httpStatus === 401) throw new Error('unauthorized');
+        continue;
+      }
+
+      const data = Array.isArray(js?.data) ? js.data : (Array.isArray(js) ? js : []);
+      const p = js?.pagination || {};
+      const total = Number(p.total ?? p.totalItems ?? data.length ?? 0);
+      const perPage = Number(p.limit ?? limit ?? DEFAULT_PAGE_SIZE);
+      const cur = Number(p.page ?? page ?? 1);
+      const totalPages = Number(p.totalPages ?? Math.max(1, Math.ceil(total / perPage)));
+
+      // If any filters were requested, but backend likely ignored them → client fallback
+      const requestedAnyFilter =
+        (q && q.trim()) ||
+        (studentId && studentId !== 'all') ||
+        (sectionId && sectionId !== 'all') ||
+        (schoolYearId && schoolYearId !== 'all') ||
+        (curriculumId && curriculumId !== 'all') ||
+        (status && status !== 'all');
+
+      const looksUnfiltered = requestedAnyFilter && data.length >= 0 && total >= data.length; // heuristic
+
+      if (requestedAnyFilter && looksUnfiltered) {
+        return applyClientFiltersSortPaginate({
+          data,
+          q,
+          studentId,
+          sectionId,
+          schoolYearId,
+          curriculumId,
+          status,
+          sort,
+          page: cur,
+          limit: perPage,
+        });
+      }
+
+      // normal, trust server
+      return {
+        data,
+        pagination: { total, totalItems: total, page: cur, limit: perPage, totalPages },
+      };
+    } catch (e) {
+      if (isAborted(e)) {
+        return { data: [], pagination: { page: 1, limit: limit || DEFAULT_PAGE_SIZE, totalPages: 1, totalItems: 0, total: 0 } };
+      }
+      // try next variant
+    }
+  }
+
+  // last resort: fetch bare list then client-filter
+  try {
+    const { ok, js, status: httpStatus } = await api.getJSON(`${base}?${qs({ page, limit })}`, token, signal);
+    if (!ok) {
+      if (httpStatus === 401) throw new Error('unauthorized');
+      throw new Error(`Fetch failed (${httpStatus || 'unknown'})`);
+    }
+    const data = Array.isArray(js?.data) ? js.data : (Array.isArray(js) ? js : []);
+    return applyClientFiltersSortPaginate({
+      data,
       q,
       studentId,
       sectionId,
       schoolYearId,
       curriculumId,
       status,
+      sort,
       page,
       limit,
-      sort,
-    } = params;
-
-    const [sortKey, sortDir = 'desc'] = (sort || DEFAULT_SORT).split(':');
-    const sortMap = {
-      date: 'enrollment_date',
-      student: 'student_name',
-      section: 'section_name',
-      sy: 'school_year',
-      curriculum: 'curriculum_name',
-      status: 'status',
-    };
-    const field = sortMap[sortKey] || 'enrollment_date';
-    const dir = sortDir === 'asc' ? 'asc' : 'desc';
-
-    const filterVariants = [
-      { student_id: studentId, section_id: sectionId, school_year_id: schoolYearId, curriculum_id: curriculumId, status },
-      { student: studentId, section: sectionId, sy: schoolYearId, curriculum: curriculumId, status },
-    ];
-    const sortVariants = [
-      { sort: `${field}:${dir}` },
-      { sortBy: field, sortOrder: dir },
-      { orderBy: field, order: dir },
-      { sortField: field, sortDir: dir },
-    ];
-    const pathVariants = ['/enrollments/search', '/enrollments'];
-
-    // Try fast: same idea as before but exits ASAP on first OK
-    for (const base of pathVariants) {
-      for (const filt of filterVariants) {
-        for (const sor of sortVariants) {
-          const query = qs({ q, page, limit, ...filt, ...sor });
-          const url = `${base}?${query}`;
-          try {
-            const { ok, js } = await api.getJSON(url, token, signal);
-            if (!ok) continue;
-
-            let data = Array.isArray(js?.data) ? js.data : Array.isArray(js) ? js : [];
-            let pagination = js?.pagination;
-            if (!pagination && !Array.isArray(js)) {
-              const totalPages = Number(js?.totalPages);
-              const totalItems = Number(js?.totalItems ?? (Array.isArray(js?.data) ? js.data.length : 0));
-              if (totalPages) {
-                pagination = {
-                  page: Number(js?.page || page || 1),
-                  limit: Number(js?.limit || limit || DEFAULT_PAGE_SIZE),
-                  totalPages,
-                  totalItems,
-                };
-              }
-            }
-            if (!pagination) {
-              const totalItems = data.length;
-              const totalPages = Math.max(1, Math.ceil(totalItems / limit));
-              const curPage = Math.min(Math.max(1, page), totalPages);
-              const start = (curPage - 1) * limit;
-              data = data.slice(start, start + limit);
-              pagination = { page: curPage, limit, totalPages, totalItems };
-            }
-            return { data, pagination };
-          } catch (e) {
-            if (isAborted(e)) {
-              return { data: [], pagination: { page: 1, limit, totalPages: 1, totalItems: 0 } };
-            }
-          }
-        }
-      }
+    });
+  } catch (e) {
+    if (isAborted(e)) {
+      return { data: [], pagination: { page: 1, limit: limit || DEFAULT_PAGE_SIZE, totalPages: 1, totalItems: 0, total: 0 } };
     }
-    throw new Error('Failed to fetch enrollments');
-  },
-};
+    throw e;
+  }
+}
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Async student search (kept lightweight; cached results)
@@ -609,7 +756,7 @@ const EnrollmentList = () => {
     };
   }, [schoolYearId, token, handleUnauthorized]);
 
-  // Fetch enrollments (server paged)
+  // Fetch enrollments (server paged + robust filtration)
   useEffect(() => {
     let mounted = true;
     const ctrl = new AbortController();
@@ -617,7 +764,7 @@ const EnrollmentList = () => {
     (async () => {
       try {
         setLoading(true);
-        const { data, pagination } = await api.getPagedEnrollments(
+        const { data, pagination } = await getPagedEnrollments(
           {
             q: deferredQ,
             studentId,
@@ -634,11 +781,10 @@ const EnrollmentList = () => {
         );
         if (!mounted) return;
 
-        // defer rendering a big table to keep UI responsive
         startTransition(() => {
           setRows(Array.isArray(data) ? data : []);
           setPageMeta({
-            total: Number(pagination.totalItems || 0),
+            total: Number((pagination.totalItems ?? pagination.total) || 0),
             totalPages: Number(pagination.totalPages || 1),
             currentPage: Number(pagination.page || 1),
           });
@@ -724,7 +870,6 @@ const EnrollmentList = () => {
     const [k, dir] = (sort || DEFAULT_SORT).split(':');
     if (k !== col) return <FaSort className="opacity-50" />;
     return dir === 'asc' ? <FaSortUp /> : <FaSortDown />;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   };
   const ThSortable = ({ col, children, width }) => (
     <th style={width ? { width } : undefined}>
@@ -983,11 +1128,7 @@ const EnrollmentList = () => {
             <>
               <div
                 className="table-responsive"
-                style={{
-                  // speed up initial paint for large tables
-                  contentVisibility: 'auto',
-                  containIntrinsicSize: '600px',
-                }}
+                style={{ contentVisibility: 'auto', containIntrinsicSize: '600px' }}
               >
                 <table className="table table-hover align-middle mb-0">
                   <thead className="table-light" style={{ position: 'sticky', top: 0, zIndex: 1 }}>
@@ -1023,7 +1164,7 @@ const EnrollmentList = () => {
                             status={r.status}
                             onEdit={handleEdit}
                             onAskDelete={handleAskDelete}
-                            rowObj={r} // keep whole for delete modal text
+                            rowObj={r}
                           />
                         ))}
                       </tbody>

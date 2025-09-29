@@ -13,21 +13,22 @@ import {
   FaSearch,
   FaSync,
   FaTimes,
-  FaTrash,
 } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 
 import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const VIEW_ALL_ENDPOINT = 'subjects/view-all-sub-grade-levels';
 
 // Minimal request helper
-const request = async (endpoint, method = "GET", token, body = null) => {
-  const res = await fetch(`${BASE_URL}/${endpoint}`, {
+const request = async (endpoint, method = 'GET', token, body = null) => {
+  const url = `${(BASE_URL || '').replace(/\/$/, '')}/${(endpoint || '').replace(/^\//, '')}`;
+  const res = await fetch(url, {
     method,
     headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : null,
@@ -49,167 +50,145 @@ const Skeleton = () => (
 
 export default function AssignSubjectsTable() {
   const navigate = useNavigate();
-  const token = useMemo(() => sessionStorage.getItem("token"), []);
+  const token = useMemo(() => sessionStorage.getItem('token'), []);
 
-  // Data
-  const [gradeLevels, setGradeLevels] = useState([]);
-  const [assignSubjects, setAssignSubjects] = useState([]);
+  // Data from API
+  const [curriculum, setCurriculum] = useState(null); // { curriculum_id, curriculum_name, school_year_id }
+  const [gradesRaw, setGradesRaw] = useState([]); // API `data` array
+
+  // Derived/UI data
+  const [gradeLevels, setGradeLevels] = useState([]); // dropdown options derived from gradesRaw
+  const [assignSubjects, setAssignSubjects] = useState([]); // normalized for rendering
+
+  // UI state
   const [loading, setLoading] = useState(true);
-
-  // UI
-  const [selectedGradeId, setSelectedGradeId] = useState(
-    Number(sessionStorage.getItem("asg.simple.selectedGradeId") || 0)
-  );
-  const [q, setQ] = useState(sessionStorage.getItem("asg.simple.q") || "");
-  const [debouncedQ, setDebouncedQ] = useState((sessionStorage.getItem("asg.simple.q") || "").toLowerCase());
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState({}); // {[grade_level_id]: boolean}
 
-  // Modal
-  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
-  const [confirmDelete, setConfirmDelete] = useState(null); // {subject_id, grade_level_id}
+  const [selectedGradeId, setSelectedGradeId] = useState(
+    Number(sessionStorage.getItem('asg.simple.selectedGradeId') || 0)
+  );
+  const [q, setQ] = useState(sessionStorage.getItem('asg.simple.q') || '');
+  const [debouncedQ, setDebouncedQ] = useState(
+    (sessionStorage.getItem('asg.simple.q') || '').toLowerCase()
+  );
 
-  // Persist + debounce
+  // Modal
+  const [modal, setModal] = useState({ show: false, title: '', message: '', variant: 'danger' });
+
+  // Persist + debounce search
   useEffect(() => {
-    sessionStorage.setItem("asg.simple.q", q);
+    sessionStorage.setItem('asg.simple.q', q);
     const t = setTimeout(() => setDebouncedQ(q.trim().toLowerCase()), 250);
     return () => clearTimeout(t);
   }, [q]);
 
   useEffect(() => {
-    sessionStorage.setItem("asg.simple.selectedGradeId", String(selectedGradeId || 0));
+    sessionStorage.setItem('asg.simple.selectedGradeId', String(selectedGradeId || 0));
   }, [selectedGradeId]);
 
-  // Load grade levels
-  useEffect(() => {
-    (async () => {
-      try {
-        const resp = await request("grade-levels", "GET", token);
-        if (resp?.success) {
-          const sorted = [...(resp.data || [])].sort(
-            (a, b) => (a.grade_order ?? 0) - (b.grade_order ?? 0)
-          );
-          setGradeLevels(sorted);
-        }
-      } catch {
-        setModal({ show: true, title: "Error", message: "Failed to load grade levels.", variant: "danger" });
-      }
-    })();
-  }, [token]);
-
-  // Load assignments
-  const fetchAssignments = async () => {
+  // Fetch all (active curriculum subjects per grade level)
+  const fetchAll = async () => {
     setLoading(true);
     try {
-      const endpoint = selectedGradeId
-        ? `subject-grade-levels/by-grade-level/${selectedGradeId}`
-        : "subject-grade-levels";
-      const data = await request(endpoint, "GET", token);
-
+      const data = await request(VIEW_ALL_ENDPOINT, 'GET', token);
       if (data?.success) {
-        if (selectedGradeId) {
-          const ginfo = gradeLevels.find((g) => g.grade_level_id === selectedGradeId) || {};
-          setAssignSubjects([
-            {
-              grade_level_id: selectedGradeId,
-              grade_name: ginfo?.grade_name || "",
-              grade_code: ginfo?.grade_code || "",
-              subjects: (data.data || []).map((s) => ({
-                subject_id: s.subject_id,
-                subject_code: s.subject?.subject_code,
-                subject_name: s.subject?.subject_name,
-                description: s.subject?.description,
-                is_required: s.is_required,
-                units: Number(s.units),
-              })),
-            },
-          ]);
-          setExpanded({ [selectedGradeId]: true });
-        } else {
-          const normalized = (data.data || []).map((g) => ({
-            grade_level_id: g.grade_level_id,
-            grade_name: g.grade_name,
-            grade_code: g.grade_code,
-            subjects: (g.subjects || []).map((s) => ({
-              subject_id: s.subject_id,
-              subject_code: s.subject_code,
-              subject_name: s.subject_name,
-              description: s.description,
-              is_required: s.is_required,
-              units: Number(s.units),
-            })),
-          }));
-          setAssignSubjects(normalized);
-          // expand only the first group for a simple default
-          if (normalized[0]) setExpanded({ [normalized[0].grade_level_id]: true });
-        }
+        setCurriculum(data.curriculum || null);
+        const grades = Array.isArray(data.data) ? data.data : [];
+        setGradesRaw(grades);
       } else {
-        setAssignSubjects([]);
+        setCurriculum(null);
+        setGradesRaw([]);
       }
-    } catch {
-      setModal({ show: true, title: "Error", message: "Failed to load subjects.", variant: "danger" });
+    } catch (err) {
+      setModal({ show: true, title: 'Error', message: 'Failed to load active curriculum subjects.', variant: 'danger' });
+      setCurriculum(null);
+      setGradesRaw([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAssignments();
+    fetchAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGradeId, gradeLevels]);
+  }, []);
+
+  // Derive dropdown options from gradesRaw
+  useEffect(() => {
+    const options = gradesRaw
+      .map((g) => ({
+        grade_level_id: g.grade_level_id,
+        grade_name: g.grade_name,
+        grade_code: g.grade_code,
+      }))
+      // de-dup in case API returns duplicates
+      .filter((v, i, arr) => arr.findIndex((x) => x.grade_level_id === v.grade_level_id) === i)
+      // keep natural ordering (assuming API already ordered); fallback by id
+      .sort((a, b) => (a.order ?? a.grade_level_id) - (b.order ?? b.grade_level_id));
+    setGradeLevels(options);
+  }, [gradesRaw]);
+
+  // Normalize for table (apply grade filter + search)
+  useEffect(() => {
+    let list = gradesRaw;
+    if (selectedGradeId) {
+      list = list.filter((g) => g.grade_level_id === selectedGradeId);
+    }
+
+    const normalized = list.map((g) => ({
+      grade_level_id: g.grade_level_id,
+      grade_name: g.grade_name,
+      grade_code: g.grade_code,
+      sections: Array.isArray(g.sections) ? g.sections : [],
+      subjects: (Array.isArray(g.subjects) ? g.subjects : [])
+        .map((s) => ({
+          subject_id: s.subject_id,
+          subject_code: s.subject_code,
+          subject_name: s.subject_name,
+        }))
+        .sort((a, b) => String(a.subject_code || '').localeCompare(String(b.subject_code || ''))),
+    }));
+
+    const searched = normalized.map((g) => ({
+      ...g,
+      subjects: g.subjects.filter((s) => {
+        if (!debouncedQ) return true;
+        const text = `${s.subject_code ?? ''} ${s.subject_name ?? ''}`.toLowerCase();
+        return text.includes(debouncedQ);
+      }),
+    }));
+
+    setAssignSubjects(searched);
+
+    // Expand only the first visible group by default
+    if (searched.length > 0) {
+      setExpanded((prev) => ({ [searched[0].grade_level_id]: prev[searched[0].grade_level_id] ?? true }));
+    }
+  }, [gradesRaw, selectedGradeId, debouncedQ]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchAssignments();
+    await fetchAll();
     setRefreshing(false);
   };
-
-  const handleDelete = async () => {
-    if (!confirmDelete) return;
-    try {
-      const { subject_id, grade_level_id } = confirmDelete;
-      const resp = await request(
-        `subject-grade-levels/delete/${subject_id}/${grade_level_id}`,
-        "DELETE",
-        token
-      );
-      if (resp?.success) {
-        setAssignSubjects((prev) =>
-          prev.map((g) =>
-            g.grade_level_id === grade_level_id
-              ? { ...g, subjects: g.subjects.filter((s) => s.subject_id !== subject_id) }
-              : g
-          )
-        );
-        setModal({ show: true, title: "Success", message: resp.message || "Deleted.", variant: "success" });
-      } else {
-        setModal({ show: true, title: "Error", message: resp?.message || "Cannot delete subject grade level assignment as it is being used in curriculum", variant: "danger" });
-      }
-    } catch {
-      setModal({ show: true, title: "Error", message: "An error occurred while deleting.", variant: "danger" });
-    } finally {
-      setConfirmDelete(null);
-    }
-  };
-
-  // Filter (client-side, minimal)
-  const filtered = assignSubjects.map((g) => ({
-    ...g,
-    subjects: g.subjects.filter((s) => {
-      if (!debouncedQ) return true;
-      const text = `${s.subject_code ?? ""} ${s.subject_name ?? ""} ${s.description ?? ""}`.toLowerCase();
-      return text.includes(debouncedQ);
-    }),
-  }));
 
   const toggleExpand = (id) => setExpanded((e) => ({ ...e, [id]: !e[id] }));
 
   return (
     <div className="container-xxl my-4">
       {/* Title */}
-      <div className="mb-3">
-        <h4 className="fw-bold mb-1">Assigned Subjects</h4>
-        <p className="text-muted mb-0">Minimal view to manage subjects per grade level.</p>
+      <div className="mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+          <h4 className="fw-bold mb-1">Assigned Subjects (Active Curriculum)</h4>
+          <p className="text-muted mb-0">View subjects per grade level for the currently active curriculum.</p>
+        </div>
+        {curriculum && (
+          <span className="badge rounded-pill text-bg-light px-3 py-2">
+            <span className="text-muted me-1">Curriculum:</span>
+            <strong>{curriculum.curriculum_name}</strong>
+          </span>
+        )}
       </div>
 
       {/* Toolbar (simple) */}
@@ -227,23 +206,23 @@ export default function AssignSubjectsTable() {
               <option value={0}>All Grades</option>
               {gradeLevels.map((g) => (
                 <option key={g.grade_level_id} value={g.grade_level_id}>
-                  {g.grade_name} {g.grade_code ? `(${g.grade_code})` : ""}
+                  {g.grade_name} {g.grade_code ? `(${g.grade_code})` : ''}
                 </option>
               ))}
             </select>
 
-            <div className="input-group" style={{ flex: "1 1 300px" }}>
+            <div className="input-group" style={{ flex: '1 1 300px' }}>
               <span className="input-group-text bg-transparent">
                 <FaSearch />
               </span>
               <input
                 className="form-control"
-                placeholder="Search by code, name, or description…"
+                placeholder="Search by subject code or name…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
               {q && (
-                <button className="btn btn-light border" onClick={() => setQ("")} title="Clear">
+                <button className="btn btn-light border" onClick={() => setQ('')} title="Clear">
                   <FaTimes />
                 </button>
               )}
@@ -254,11 +233,7 @@ export default function AssignSubjectsTable() {
               onClick={handleRefresh}
               disabled={refreshing || loading}
             >
-              {refreshing ? (
-                <span className="spinner-border spinner-border-sm" role="status" />
-              ) : (
-                <FaSync />
-              )}
+              {refreshing ? <span className="spinner-border spinner-border-sm" role="status" /> : <FaSync />}
               Refresh
             </button>
 
@@ -278,7 +253,7 @@ export default function AssignSubjectsTable() {
           <Skeleton />
           <Skeleton />
         </>
-      ) : filtered.length === 0 ? (
+      ) : assignSubjects.length === 0 ? (
         <div className="card border-0 shadow-sm rounded-4">
           <div className="card-body text-center p-5">
             <div className="display-6">🗂️</div>
@@ -293,8 +268,9 @@ export default function AssignSubjectsTable() {
           </div>
         </div>
       ) : (
-        filtered.map((grade) => {
+        assignSubjects.map((grade) => {
           const isOpen = !!expanded[grade.grade_level_id];
+          const sectionCount = Array.isArray(grade.sections) ? grade.sections.length : 0;
           return (
             <div key={grade.grade_level_id} className="card border-0 shadow-sm rounded-4 mb-3">
               <button
@@ -303,8 +279,13 @@ export default function AssignSubjectsTable() {
                 aria-expanded={isOpen}
               >
                 <span className="fw-semibold">
-                  {grade.grade_name} {grade.grade_code ? `(${grade.grade_code})` : ""}{" "}
-                  <span className="badge text-bg-light ms-2">{grade.subjects.length}</span>
+                  {grade.grade_name} {grade.grade_code ? `(${grade.grade_code})` : ''}{' '}
+                  <span className="badge text-bg-light ms-2" title="Subjects">{grade.subjects.length}</span>
+                  {sectionCount > 0 && (
+                    <span className="badge text-bg-secondary ms-2" title="Sections">
+                      {sectionCount} section{sectionCount > 1 ? 's' : ''}
+                    </span>
+                  )}
                 </span>
                 {isOpen ? <FaChevronUp /> : <FaChevronDown />}
               </button>
@@ -318,12 +299,8 @@ export default function AssignSubjectsTable() {
                       <table className="table table-hover align-middle mb-0">
                         <thead className="table-light">
                           <tr>
-                            <th style={{ width: 120 }} className="text-center">Code</th>
-                            <th style={{ minWidth: 240 }}>Name</th>
-                            <th>Description</th>
-                            <th style={{ width: 110 }} className="text-center">Required</th>
-                            <th style={{ width: 90 }} className="text-center">Units</th>
-                            <th style={{ width: 140 }} className="text-end">Actions</th>
+                            <th style={{ width: 140 }} className="text-center">Code</th>
+                            <th style={{ minWidth: 260 }}>Name</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -333,30 +310,6 @@ export default function AssignSubjectsTable() {
                                 <span className="badge text-bg-secondary">{s.subject_code}</span>
                               </td>
                               <td className="fw-semibold">{s.subject_name}</td>
-                              <td className="text-truncate" style={{ maxWidth: 520 }}>
-                                {s.description || <span className="text-muted">—</span>}
-                              </td>
-                              <td className="text-center">
-                                <span className={`badge ${s.is_required ? "text-bg-success" : "text-bg-secondary"}`}>
-                                  {s.is_required ? "Yes" : "No"}
-                                </span>
-                              </td>
-                              <td className="text-center">
-                                <span className="badge text-bg-light">{s.units}</span>
-                              </td>
-                              <td className="text-end">
-                                <button
-                                  className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-2 px-3"
-                                  onClick={() =>
-                                    setConfirmDelete({
-                                      subject_id: s.subject_id,
-                                      grade_level_id: grade.grade_level_id,
-                                    })
-                                  }
-                                >
-                                  <FaTrash /> Delete
-                                </button>
-                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -368,36 +321,6 @@ export default function AssignSubjectsTable() {
             </div>
           );
         })
-      )}
-
-      {/* Delete confirm */}
-      {confirmDelete && (
-        <>
-          <div className="modal-backdrop fade show" style={{ zIndex: 1040 }} />
-          <div className="modal fade show d-block" tabIndex="-1" role="dialog" style={{ zIndex: 1050 }}>
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content border-0 rounded-4 shadow">
-                <div className="modal-header border-0">
-                  <h5 className="modal-title fw-semibold">Remove Subject</h5>
-                  <button type="button" className="btn-close" onClick={() => setConfirmDelete(null)} />
-                </div>
-                <div className="modal-body">
-                  <p className="mb-0 text-muted">
-                    Remove this subject from the grade? This cannot be undone.
-                  </p>
-                </div>
-                <div className="modal-footer border-0">
-                  <button type="button" className="btn btn-light" onClick={() => setConfirmDelete(null)}>
-                    Cancel
-                  </button>
-                  <button type="button" className="btn btn-danger" onClick={handleDelete}>
-                    Yes, Remove
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
       )}
 
       <StatusModal {...modal} onHide={() => setModal((m) => ({ ...m, show: false }))} />
