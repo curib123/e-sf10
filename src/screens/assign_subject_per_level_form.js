@@ -16,12 +16,11 @@ import { useNavigate } from 'react-router-dom';
 import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const ACTIVE_CURRICULUM_ID = 1; // constant “active”
 
 // Safe URL joiner (avoids double/missing slashes)
 const joinUrl = (base, path) =>
   `${(base || '').replace(/\/$/, '')}/${(path || '').replace(/^\//, '')}`;
-
-const ACTIVE_CURRICULUM_ID = 1; // constant “active” per your note
 
 const AssignSubjectsForm = () => {
   const navigate = useNavigate();
@@ -34,71 +33,121 @@ const AssignSubjectsForm = () => {
     [token]
   );
 
-  const [gradeLevels, setGradeLevels] = useState([]);
-  const [gradeSubjects, setGradeSubjects] = useState([]); // bottom table (already assigned for selected grade)
-  const [assignedCodes, setAssignedCodes] = useState([]); // badge only (hidden count)
-  const [allSubjects, setAllSubjects] = useState([]); // top picker (from active curriculum, minus already assigned)
+  // ---- State
+  const [gradeLevels, setGradeLevels] = useState([]);         // [{ grade_level_id, grade_code, grade_name, grade_order }]
+  const [activeSubjects, setActiveSubjects] = useState([]);   // subjects in ACTIVE curriculum [{subject_id, code, name}]
+  const [gradeMap, setGradeMap] = useState(new Map());        // gid -> { grade, subjects[] } from view-all-sub-grade-levels
+
+  const [gradeSubjects, setGradeSubjects] = useState([]);     // bottom table (assigned list for selected grade)
+  const [assignedIds, setAssignedIds] = useState([]);         // subject_ids already assigned to selected grade
 
   const [formData, setFormData] = useState({ grade_level_id: 0, assignments: [] });
 
   const [query, setQuery] = useState('');
   const [selectAllPage, setSelectAllPage] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [loadingAssigned, setLoadingAssigned] = useState(false);
- 
+
+  const [bootLoading, setBootLoading] = useState(true);       // loading initial data
+  const [loading, setLoading] = useState(false);              // preparing top picker for a chosen grade
+  const [saving, setSaving] = useState(false);                // submitting single-create requests
+
   const [modal, setModal] = useState({ show: false, title: '', message: '', variant: 'info' });
 
   // pagination (top picker)
   const itemsPerPage = 10;
   const [page, setPage] = useState(1);
 
-  // fetch grade levels (once)
+  // ---- Helpers
+  /** Boot: load grade levels, active-curriculum subjects, and per-grade subjects map */
   useEffect(() => {
     (async () => {
+      setBootLoading(true);
       try {
-        const res = await fetch(joinUrl(BASE_URL, '/grade-levels'), { headers });
-        const data = await res.json();
-        if (data?.success) setGradeLevels(data.data || []);
-      } catch {
-        setModal({ show: true, title: 'Error', message: 'Failed to load grade levels.', variant: 'danger' });
+        const gradeLevelsUrl = joinUrl(BASE_URL, '/grade-levels');
+        const activeSubjectsUrl = joinUrl(
+          BASE_URL,
+          `/curriculum/curriculum-subjects/active/${ACTIVE_CURRICULUM_ID}`
+        );
+        const byGradeUrl = joinUrl(BASE_URL, '/subjects/view-all-sub-grade-levels');
+
+        const [glRes, subjRes, byGradeRes] = await Promise.all([
+          fetch(gradeLevelsUrl, { headers }),
+          fetch(activeSubjectsUrl, { headers }),
+          fetch(byGradeUrl, { headers }),
+        ]);
+
+        const [glData, subjData, byGradeData] = await Promise.all([
+          glRes.json(),
+          subjRes.json(),
+          byGradeRes.json(),
+        ]);
+
+        if (!glData?.success) throw new Error('Failed to load grade levels.');
+        if (!subjData?.success) throw new Error('Failed to load active curriculum subjects.');
+        if (!byGradeData?.success) throw new Error('Failed to load subjects by grade level.');
+
+        // Grade levels (sort by grade_order asc)
+        const gl = Array.isArray(glData.data) ? glData.data : [];
+        gl.sort((a, b) => (a.grade_order ?? 0) - (b.grade_order ?? 0));
+        setGradeLevels(
+          gl.map((r) => ({
+            grade_level_id: r.grade_level_id,
+            grade_code: r.grade_code,
+            grade_name: r.grade_name,
+            grade_order: r.grade_order,
+          }))
+        );
+
+        // Active curriculum subjects
+        const subjRows = Array.isArray(subjData.data) ? subjData.data : [];
+        setActiveSubjects(
+          subjRows.map((s) => ({
+            subject_id: s.subject_id,
+            subject_code: s.subject_code,
+            subject_name: s.subject_name,
+          }))
+        );
+
+        // Build gradeMap from view-all-sub-grade-levels
+        const rows = Array.isArray(byGradeData.data) ? byGradeData.data : [];
+        const map = new Map();
+        for (const r of rows) {
+          map.set(r.grade_level_id, {
+            grade: {
+              grade_level_id: r.grade_level_id,
+              grade_code: r.grade_code,
+              grade_name: r.grade_name,
+            },
+            subjects: (r.subjects || []).map((s) => ({
+              subject_id: s.subject_id,
+              subject_code: s.subject_code,
+              subject_name: s.subject_name,
+            })),
+          });
+        }
+        setGradeMap(map);
+      } catch (e) {
+        setModal({
+          show: true,
+          title: 'Error',
+          message:
+            e?.message ||
+            'Failed to load initial data (levels, subjects, per-grade assignments).',
+          variant: 'danger',
+        });
+      } finally {
+        setBootLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [headers]);
 
-  // helper: load assigned for grade and return {assignedList, codes}
-  const fetchAssignedForGrade = async (gid) => {
-    setLoadingAssigned(true);
-    try {
-      const r = await fetch(joinUrl(BASE_URL, `/subject-grade-levels/by-grade-level/${gid}`), { headers });
-      const d = await r.json();
-      const rows = d?.success ? (d.data || []) : [];
-      const assignedList = rows
-        .map((a) => ({
-          sgl_id: a.subject_grade_level_id ?? a.id ?? undefined,
-          subject_id: a.subject_id ?? a.subject?.subject_id,
-          subject_code: a.subject?.subject_code ?? a.subject_code,
-          subject_name: a.subject?.subject_name ?? a.subject_name,
-          units: Number(a.units ?? 0),
-          is_required: !!a.is_required,
-        }))
-        .filter((x) => x.subject_code);
-
-      const codes = new Set(assignedList.map((x) => x.subject_code));
-      setGradeSubjects(assignedList);
-      setAssignedCodes(Array.from(codes));
-      return { assignedList, codes };
-    } finally {
-      setLoadingAssigned(false);
-    }
-  };
-
-  // when grade changes: fetch assigned first, then fetch ACTIVE CURRICULUM subjects and filter via local set
+  /** Prepare data for selected grade from gradeMap */
   useEffect(() => {
-    const load = async () => {
+    (async () => {
       const gid = formData.grade_level_id;
 
-      setAssignedCodes([]);
-      setAllSubjects([]);
+      // reset visuals
+      setAssignedIds([]);
       setGradeSubjects([]);
       setSelectAllPage(false);
       setPage(1);
@@ -108,50 +157,40 @@ const AssignSubjectsForm = () => {
 
       setLoading(true);
       try {
-        // 1) assigned (local codes set)
-        const { codes: assignedCodesSet } = await fetchAssignedForGrade(gid);
-
-        // 2) subjects from ACTIVE CURRICULUM
-        const curriculumUrl = joinUrl(
-          BASE_URL,
-          `/curriculum/curriculum-subjects/active/${ACTIVE_CURRICULUM_ID}`
-        );
-        const r2 = await fetch(curriculumUrl, { headers });
-        const d2 = await r2.json();
-
-        const subjects = d2?.success
-          ? (d2.data || []).map((s) => ({
-              subject_id: s.subject_id,
-              subject_code: s.subject_code,
-              subject_name: s.subject_name,
-              is_required: false,
-              units: 0, // default input value
-            }))
-          : [];
-
-        // 3) filter strictly with the local set (hide already assigned)
-        const filtered = subjects.filter((s) => !assignedCodesSet.has(s.subject_code));
-        setAllSubjects(filtered);
+        const bucket = gradeMap.get(gid);
+        const ids = new Set((bucket?.subjects || []).map((s) => s.subject_id));
+        setAssignedIds(Array.from(ids));
+        setGradeSubjects(bucket?.subjects || []);
       } catch {
-        setModal({ show: true, title: 'Error', message: 'Failed to load subjects.', variant: 'danger' });
+        setModal({
+          show: true,
+          title: 'Error',
+          message: 'Failed to prepare data for the selected grade.',
+          variant: 'danger',
+        });
       } finally {
         setLoading(false);
       }
-    };
-    load();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.grade_level_id, headers]);
+  }, [formData.grade_level_id, gradeMap]);
 
-  // filtering + pagination (top picker)
+  // ---- Top picker filtering + pagination
   const filtered = useMemo(() => {
+    if (!formData.grade_level_id) return [];
+    // hide already assigned to this grade
+    const assignedSet = new Set(assignedIds);
+    const remaining = activeSubjects.filter((s) => !assignedSet.has(s.subject_id));
+
     const t = query.trim().toLowerCase();
-    if (!t) return allSubjects;
-    return allSubjects.filter(
+    if (!t) return remaining;
+
+    return remaining.filter(
       (s) =>
         (s.subject_code || '').toLowerCase().includes(t) ||
         (s.subject_name || '').toLowerCase().includes(t)
     );
-  }, [allSubjects, query]);
+  }, [activeSubjects, assignedIds, formData.grade_level_id, query]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const pageStart = (page - 1) * itemsPerPage;
@@ -198,12 +237,40 @@ const AssignSubjectsForm = () => {
 
   const resetAll = () => {
     setFormData({ grade_level_id: 0, assignments: [] });
-    setAssignedCodes([]);
-    setAllSubjects([]);
+    setAssignedIds([]);
     setGradeSubjects([]);
     setQuery('');
     setPage(1);
     setSelectAllPage(false);
+  };
+
+  const refreshPerGradeView = async () => {
+    try {
+      const byGradeUrl = joinUrl(BASE_URL, '/subjects/view-all-sub-grade-levels');
+      const res = await fetch(byGradeUrl, { headers });
+      const data = await res.json();
+      if (!data?.success) return;
+
+      const rows = Array.isArray(data.data) ? data.data : [];
+      const map = new Map();
+      for (const r of rows) {
+        map.set(r.grade_level_id, {
+          grade: {
+            grade_level_id: r.grade_level_id,
+            grade_code: r.grade_code,
+            grade_name: r.grade_name,
+          },
+          subjects: (r.subjects || []).map((s) => ({
+            subject_id: s.subject_id,
+            subject_code: s.subject_code,
+            subject_name: s.subject_name,
+          })),
+        });
+      }
+      setGradeMap(map);
+    } catch {
+      // silent; will be retried on next interaction
+    }
   };
 
   const submit = async (e) => {
@@ -231,46 +298,64 @@ const AssignSubjectsForm = () => {
       return;
     }
 
+    setSaving(true);
     try {
-      const payload = {
-        assignments: formData.assignments.map((a) => {
-          const n = Number(a.units);
-          const cleanUnits = Number.isFinite(n) && n >= 0 ? n : 0;
-          return {
-            subject_id: a.subject_id,
-            grade_level_id: formData.grade_level_id,
-            is_required: !!a.is_required,
-            units: cleanUnits,
-          };
-        }),
-      };
+      const successes = [];
+      const failures = [];
 
-      const res = await fetch(joinUrl(BASE_URL, '/subject-grade-levels/bulk-create'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      setModal({
-        show: true,
-        title: data?.success ? 'Success' : 'Error',
-        message: data?.message || (data?.success ? 'Saved.' : 'Failed to save.'),
-        variant: data?.success ? 'success' : 'danger',
-      });
+      // Submit each assignment with single-create endpoint
+      for (const a of formData.assignments) {
+        const payload = {
+          subject_id: a.subject_id,
+          grade_level_id: formData.grade_level_id,
+          is_required: !!a.is_required,
+          units: Number(a.units) || 0,
+        };
 
-      if (data?.success) {
-        // refresh assigned (local codes) and re-filter remaining subjects
-        const { codes: assignedCodesSet } = await fetchAssignedForGrade(formData.grade_level_id);
-        setAllSubjects((prev) => prev.filter((s) => !assignedCodesSet.has(s.subject_code)));
+        try {
+          const res = await fetch(joinUrl(BASE_URL, '/subject-grade-levels/create'), {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (data?.success) {
+            successes.push({ subject_id: a.subject_id });
+          } else {
+            failures.push({ subject_id: a.subject_id, error: data?.message || 'Failed' });
+          }
+        } catch (err) {
+          failures.push({ subject_id: a.subject_id, error: err?.message || 'Network error' });
+        }
+      }
+
+      const okCount = successes.length;
+      const failCount = failures.length;
+
+      // Refresh per-grade view (bottom table + assigned IDs)
+      if (okCount > 0) {
+        await refreshPerGradeView();
+        // re-derive for the current grade
+        const gid = formData.grade_level_id;
+        const bucket = gradeMap.get(gid);
+        const ids = new Set((bucket?.subjects || []).map((s) => s.subject_id));
+        setAssignedIds(Array.from(ids));
+        setGradeSubjects(bucket?.subjects || []);
+        // Clear selection
         setFormData((prev) => ({ ...prev, assignments: [] }));
       }
-    } catch {
+
+      // Feedback
+      let msg = `Created: ${okCount}`;
+      if (failCount > 0) msg += ` • Failed: ${failCount}`;
       setModal({
         show: true,
-        title: 'Error',
-        message: 'Error occurred while assigning subjects.',
-        variant: 'danger',
+        title: failCount === 0 ? 'Success' : okCount > 0 ? 'Partial success' : 'Error',
+        message: msg,
+        variant: failCount === 0 ? 'success' : okCount > 0 ? 'warning' : 'danger',
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -289,8 +374,8 @@ const AssignSubjectsForm = () => {
                 className="form-select"
                 value={formData.grade_level_id}
                 onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, grade_level_id: Number(e.target.value) }))
-                }
+                  setFormData((prev) => ({ ...prev, grade_level_id: Number(e.target.value) }))}
+                disabled={bootLoading}
               >
                 <option value={0}>Select grade level</option>
                 {gradeLevels.map((g) => (
@@ -312,13 +397,13 @@ const AssignSubjectsForm = () => {
                     setQuery(e.target.value);
                     setPage(1);
                   }}
-                  disabled={!formData.grade_level_id || loading}
+                  disabled={!formData.grade_level_id || bootLoading || loading}
                 />
                 {query && (
                   <button
                     className="btn btn-outline-secondary"
                     onClick={() => setQuery('')}
-                    disabled={loading}
+                    disabled={bootLoading || loading}
                   >
                     Clear
                   </button>
@@ -336,9 +421,11 @@ const AssignSubjectsForm = () => {
           {/* Picker Table */}
           <form onSubmit={submit} noValidate>
             <div className="table-responsive border rounded-3">
-              {!formData.grade_level_id || loading ? (
+              {bootLoading ? (
+                <div className="text-center text-muted py-5">Loading data…</div>
+              ) : !formData.grade_level_id || loading ? (
                 <div className="text-center text-muted py-5">
-                  {loading ? 'Loading…' : 'Pick a grade level to start.'}
+                  {loading ? 'Preparing subjects…' : 'Pick a grade level to start.'}
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="text-center text-muted py-5">No subjects available to assign.</div>
@@ -430,7 +517,7 @@ const AssignSubjectsForm = () => {
                       >
                         {i + 1}
                       </button>
-                    </li>
+                  </li>
                   ))}
                   <li className={`page-item ${page === totalPages ? 'disabled' : ''}`}>
                     <button
@@ -452,14 +539,24 @@ const AssignSubjectsForm = () => {
               <button
                 type="submit"
                 className="btn btn-success d-flex align-items-center gap-2 px-4"
-                disabled={!formData.grade_level_id || selectedCount === 0}
+                disabled={!formData.grade_level_id || selectedCount === 0 || saving}
               >
-                <FaCheck /> Assign Subjects
+                {saving ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                    <span>Assigning…</span>
+                  </>
+                ) : (
+                  <>
+                    <FaCheck /> Assign Subjects
+                  </>
+                )}
               </button>
               <button
                 type="button"
                 className="btn btn-secondary d-flex align-items-center gap-2 px-4"
                 onClick={resetAll}
+                disabled={saving}
               >
                 <FaTimes /> Reset
               </button>
@@ -467,6 +564,7 @@ const AssignSubjectsForm = () => {
                 type="button"
                 className="btn btn-light border d-flex align-items-center gap-2 px-4"
                 onClick={() => navigate(-1)}
+                disabled={saving}
               >
                 <FaArrowLeft /> Back
               </button>
@@ -475,20 +573,18 @@ const AssignSubjectsForm = () => {
 
           {/* Info */}
           <div className="mt-3 text-muted small">
-            <span className="me-3">Already assigned subjects are hidden for the selected grade.</span>
-            {assignedCodes.length > 0 && (
-              <span className="badge text-bg-light">Hidden: {assignedCodes.length}</span>
+            <span className="me-3">Already assigned subjects are hidden for the selected grade (from active curriculum).</span>
+            {assignedIds.length > 0 && (
+              <span className="badge text-bg-light">Hidden: {assignedIds.length}</span>
             )}
           </div>
 
-          {/* Bottom table: assigned subjects */}
+          {/* Bottom table: currently assigned subjects for selected grade (from view-all-sub-grade-levels) */}
           {formData.grade_level_id !== 0 && (
             <div className="mt-5">
               <h5 className="fw-bold mb-3">Currently Assigned Subjects for this Grade</h5>
               <div className="table-responsive border rounded-3">
-                {loadingAssigned ? (
-                  <div className="text-center text-muted py-4">Loading assigned subjects…</div>
-                ) : gradeSubjects.length === 0 ? (
+                {gradeSubjects.length === 0 ? (
                   <div className="text-center text-muted py-4">No subjects assigned to this grade yet.</div>
                 ) : (
                   <table className="table table-sm table-striped align-middle mb-0">
@@ -496,17 +592,13 @@ const AssignSubjectsForm = () => {
                       <tr>
                         <th style={{ width: 140 }}>Code</th>
                         <th>Name</th>
-                        <th style={{ width: 120 }}>Units</th>
-                        <th style={{ width: 120 }}>Required</th>
                       </tr>
                     </thead>
                     <tbody>
                       {gradeSubjects.map((r) => (
-                        <tr key={`${r.subject_id}-${r.sgl_id ?? r.subject_code}`}>
+                        <tr key={r.subject_id}>
                           <td className="fw-medium">{r.subject_code}</td>
                           <td>{r.subject_name}</td>
-                          <td>{r.units}</td>
-                          <td>{r.is_required ? 'Yes' : 'No'}</td>
                         </tr>
                       ))}
                     </tbody>

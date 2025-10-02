@@ -1,6 +1,22 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// src/pages/UpsertCurriculum.jsx — ONLY create curriculum and assign subjects (no grade-level mapping)
+/**
+ * src/pages/UpsertCurriculum.jsx
+ *
+ * Draft-first flow:
+ *  1) User fills curriculum details and selects subjects — all kept LOCALLY in state.
+ *  2) On "Finalize & Save":
+ *      a) POST /esf10/curriculum/create-curriculum
+ *      b) If success, POST /esf10/curriculum/add-subjects/:curriculum_id with { subject_ids: [...] }
+ *
+ * Read-only APIs:
+ *   GET  /esf10/subjects/view-all-subjects
+ *   GET  /esf10/school-year/all-school-years  (optional, for year picker)
+ *
+ * Write APIs:
+ *   POST /esf10/curriculum/create-curriculum
+ *   POST /esf10/curriculum/add-subjects/:curriculum_id
+ */
 import React, {
   useEffect,
   useMemo,
@@ -13,18 +29,30 @@ import {
   FaCheck,
   FaChevronLeft,
   FaChevronRight,
+  FaPlus,
+  FaSearch,
+  FaTimes,
+  FaTrash,
 } from 'react-icons/fa';
-import {
-  useNavigate,
-  useParams,
-} from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
-/** Safe URL joiner */
-const joinUrl = (base, path) => `${(base || '').replace(/\/$/, '')}/${(path || '').replace(/^\//, '')}`;
+/** Safe URL joiner (avoids double/missing slashes) */
+const joinUrl = (base, path) =>
+  `${(base || '').replace(/\/$/, '')}/${(path || '').replace(/^\//, '')}`;
+
+/** Debounce small hook */
+const useDebouncedValue = (value, delay = 250) => {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+};
 
 /** Busy overlay (glass) */
 const BusyOverlay = ({ show, label, onCancel }) => {
@@ -32,7 +60,7 @@ const BusyOverlay = ({ show, label, onCancel }) => {
   return (
     <div
       className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
-      style={{ backdropFilter: 'blur(2px)', background: 'rgba(0,0,0,.1)', zIndex: 2000 }}
+      style={{ backdropFilter: 'blur(3px)', background: 'rgba(0,0,0,.12)', zIndex: 2000 }}
       aria-live="assertive"
       aria-busy="true"
     >
@@ -40,7 +68,9 @@ const BusyOverlay = ({ show, label, onCancel }) => {
         <div className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
         <div className="fw-semibold small me-2">{label || 'Working…'}</div>
         {onCancel && (
-          <button className="btn btn-sm btn-outline-secondary" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-sm btn-outline-secondary" onClick={onCancel}>
+            Cancel
+          </button>
         )}
       </div>
     </div>
@@ -50,13 +80,19 @@ const BusyOverlay = ({ show, label, onCancel }) => {
 /** Step header (2-step) */
 const StepHeader = ({ step }) => {
   const steps = [
-    { id: 1, title: 'Create Curriculum' },
-    { id: 2, title: 'Assign Subjects' },
+    { id: 1, title: 'Create Curriculum (Local Draft)' },
+    { id: 2, title: 'Assign Subjects (Local Draft)' },
   ];
   const pct = Math.round((step / steps.length) * 100);
 
   return (
-    <div className="px-3 px-lg-4 pt-3 pb-2 border-bottom bg-light-subtle">
+    <div
+      className="px-3 px-lg-4 pt-3 pb-2 border-bottom"
+      style={{
+        background:
+          'linear-gradient(120deg, rgba(13,110,253,.085), rgba(25,135,84,.07) 60%, rgba(111,66,193,.06))',
+      }}
+    >
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
         <div className="d-flex align-items-center gap-3 flex-wrap">
           {steps.map((s, i) => {
@@ -78,35 +114,77 @@ const StepHeader = ({ step }) => {
                 >
                   {done ? <FaCheck /> : s.id}
                 </div>
-                <div className={`fw-semibold small ${active ? 'text-dark' : 'text-muted'}`}>{s.title}</div>
+                <div className={`fw-semibold small ${active ? 'text-dark' : 'text-muted'}`}>
+                  {s.title}
+                </div>
                 {i < steps.length - 1 && <div className="text-muted">›</div>}
               </div>
             );
           })}
         </div>
-        <span className="badge text-bg-secondary-subtle border small">Nothing is saved until you finish Step 2</span>
+        <span className="badge text-bg-secondary-subtle border small">
+          Nothing hits the server until you click “Finalize & Save”
+        </span>
       </div>
-      <div className="progress mt-3" role="progressbar" aria-valuenow={pct} aria-valuemin="0" aria-valuemax="100">
-        <div className="progress-bar" style={{ width: `${pct}%` }}>{pct}%</div>
+      <div
+        className="progress mt-3 rounded-pill"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin="0"
+        aria-valuemax="100"
+        style={{ height: 8 }}
+      >
+        <div className="progress-bar" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
 };
 
+/** Robust fetch that enforces a timeout and tolerates non-JSON responses */
+const fetchWithTimeoutJson = async (url, options = {}, timeoutMs = 30000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    const raw = await res.text(); // tolerate non-JSON
+    let json = null;
+    try {
+      json = raw ? JSON.parse(raw) : null;
+    } catch {
+      json = null;
+    }
+    return { res, json, raw };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const UpsertCurriculum = () => {
   const navigate = useNavigate();
-  const { id } = useParams();
-  const isEdit = Boolean(id);
 
   // ——— Auth / headers ———
   const token = useMemo(() => sessionStorage.getItem('token'), []);
   const headers = useMemo(
-    () => ({ 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }),
+    () => ({
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    }),
     [token]
   );
-  const [statusModal, setStatusModal] = useState({ show: false, title: '', message: '', variant: 'info' });
+  const [statusModal, setStatusModal] = useState({
+    show: false,
+    title: '',
+    message: '',
+    variant: 'info',
+  });
+
   const handleUnauthorized = () => {
-    setStatusModal({ show: true, title: 'Unauthorized', message: 'Please log in.', variant: 'danger' });
+    setStatusModal({
+      show: true,
+      title: 'Unauthorized',
+      message: 'Your session expired. Please log in.',
+      variant: 'danger',
+    });
     sessionStorage.removeItem('token');
     setTimeout(() => navigate('/login'), 900);
   };
@@ -124,42 +202,137 @@ const UpsertCurriculum = () => {
   const [busyLabel, setBusyLabel] = useState('');
 
   // ——— Data (fetched) ———
-  const [schoolYears, setSchoolYears] = useState([]);
-  const [usedSchoolYears, setUsedSchoolYears] = useState([]);
+  const [schoolYears, setSchoolYears] = useState([]); // optional; for effective year selection
   const [allSubjects, setAllSubjects] = useState([]); // [{subject_id, subject_code, subject_name}]
 
-  // ——— Local-only wizard state (saved at final step) ———
-  // Step 1
+  // ——— Local DRAFT (saved in state only until Finalize) ———
+  // Curriculum (Step 1)
   const [curriculumName, setCurriculumName] = useState('');
-  const [effectiveYearId, setEffectiveYearId] = useState(''); // API uses school_year_id
-  // Step 2
+  const [effectiveYearId, setEffectiveYearId] = useState(''); // school_year_id
+  // Subject selection (Step 2)
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 250);
   const [selectedSubjectIds, setSelectedSubjectIds] = useState(new Set());
   const ITEMS_PER_PAGE = 10;
   const [page, setPage] = useState(1);
 
-  // Abort controller for attaching
+  // Abort + cancel controls for subject attach
   const attachAbortRef = useRef(null);
+  const cancelledRef = useRef(false);
+
   const cancelAttach = () => {
     try {
       attachAbortRef.current?.abort();
     } catch {}
     attachAbortRef.current = null;
+    cancelledRef.current = true; // also stop between batches
+
     setLoading(false);
     setBusyLabel('');
-    setStatusModal({ show: true, title: 'Cancelled', message: 'Attaching subjects was cancelled.', variant: 'warning' });
+    setStatusModal({
+      show: true,
+      title: 'Cancelled',
+      message: 'Assigning subjects was cancelled.',
+      variant: 'warning',
+    });
   };
+
+  // ——— Effects: fetch reference data ———
+  useEffect(() => {
+    if (!checkToken()) return;
+    (async () => {
+      try {
+        const { res, json } = await fetchWithTimeoutJson(
+          joinUrl(BASE_URL, 'school-year/all-school-years'),
+          { headers },
+          20000
+        );
+        if (res.status === 401) return handleUnauthorized();
+        if (json?.success) setSchoolYears(json.schoolYears || json.data || []);
+      } catch {
+        /* ignore */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ Fetch ALL pages from /subjects/view-all-subjects
+  useEffect(() => {
+    if (!checkToken()) return;
+
+    let cancelled = false;
+
+    const fetchAllSubjects = async () => {
+      try {
+        const PAGE_SIZE = 100; // tune to your API limits
+        let pageNo = 1;
+        let totalPages = 1;
+        const collected = [];
+
+        do {
+          const url = new URL(joinUrl(BASE_URL, 'subjects/view-all-subjects'));
+          url.searchParams.set('page', String(pageNo));
+          url.searchParams.set('limit', String(PAGE_SIZE));
+
+          const { res, json } = await fetchWithTimeoutJson(url.toString(), { headers }, 25000);
+          if (res.status === 401) return handleUnauthorized();
+
+          const items = json?.success ? json.data || [] : [];
+          collected.push(...items);
+
+          const p = json?.pagination || {};
+          const currentPage = Number(p.page ?? pageNo);
+          totalPages = Number(p.totalPages ?? 1);
+
+          // Safety: if API ignores pagination, stop after first pass to avoid infinite loop
+          if (!p || (Array.isArray(items) && items.length < PAGE_SIZE && !p.totalPages)) {
+            totalPages = currentPage;
+          }
+
+          pageNo += 1;
+        } while (pageNo <= totalPages);
+
+        if (cancelled) return;
+
+        setAllSubjects(
+          collected.map((s) => ({
+            subject_id: Number(s.subject_id),
+            subject_code: s.subject_code,
+            subject_name: s.subject_name,
+          }))
+        );
+      } catch {
+        // swallow; UI shows empty state if needed
+      }
+    };
+
+    fetchAllSubjects();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Default effective year to active if present
+  useEffect(() => {
+    if (!effectiveYearId && schoolYears?.length) {
+      const active = schoolYears.find((sy) => Number(sy?.is_active) === 1);
+      if (active) setEffectiveYearId(active.school_year_id);
+    }
+  }, [schoolYears, effectiveYearId]);
 
   // ——— Derived ———
   const filteredSubjects = useMemo(() => {
-    const t = (query || '').trim().toLowerCase();
+    const t = (debouncedQuery || '').trim().toLowerCase();
     const base = t
       ? allSubjects.filter(
-          (s) => (s.subject_code || '').toLowerCase().includes(t) || (s.subject_name || '').toLowerCase().includes(t)
+          (s) =>
+            (s.subject_code || '').toLowerCase().includes(t) ||
+            (s.subject_name || '').toLowerCase().includes(t)
         )
       : allSubjects;
     return base;
-  }, [allSubjects, query]);
+  }, [allSubjects, debouncedQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSubjects.length / ITEMS_PER_PAGE));
   const safePage = Math.min(page, totalPages);
@@ -169,104 +342,11 @@ const UpsertCurriculum = () => {
   const selectedCount = selectedSubjectIds.size;
   const selectedList = useMemo(() => Array.from(selectedSubjectIds).map(Number), [selectedSubjectIds]);
 
-  // ——— Effects: fetch reference data ———
-  // GET /esf10/school-year/all-school-years
-  useEffect(() => {
-    if (!checkToken()) return;
-    (async () => {
-      try {
-        const res = await fetch(joinUrl(BASE_URL, 'school-year/all-school-years'), { headers });
-        if (res.status === 401) return handleUnauthorized();
-        const j = await res.json();
-        if (j?.success) setSchoolYears(j.schoolYears || j.data || []);
-      } catch {
-        /* ignore */
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Default Effective Year = ACTIVE (is_active === 1) unless already used by another curriculum
-  useEffect(() => {
-    if (!effectiveYearId && schoolYears?.length) {
-      const active = schoolYears.find((sy) => Number(sy?.is_active) === 1);
-      if (active) {
-        const isUsed =
-          usedSchoolYears.includes(active.school_year_id) &&
-          (!isEdit || Number(effectiveYearId) !== Number(active.school_year_id));
-        if (!isUsed) setEffectiveYearId(active.school_year_id);
-      }
-    }
-  }, [schoolYears, effectiveYearId, usedSchoolYears, isEdit]);
-
-  // List curriculums to mark used school years
-  useEffect(() => {
-    if (!checkToken()) return;
-    (async () => {
-      try {
-        const res = await fetch(joinUrl(BASE_URL, 'curriculum/view-all-curriculums'), { headers });
-        if (res.status === 401) return handleUnauthorized();
-        const j = await res.json();
-        if (j?.success && Array.isArray(j.data)) {
-          const used = j.data
-            .filter((c) => !isEdit || c.curriculum_id !== Number(id))
-            .map((c) => c.school_year_id);
-          setUsedSchoolYears(used);
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit, id]);
-
-  // Subjects
-  useEffect(() => {
-    if (!checkToken()) return;
-    (async () => {
-      try {
-        const res = await fetch(joinUrl(BASE_URL, 'subjects/view-all-subjects'), { headers });
-        if (res.status === 401) return handleUnauthorized();
-        const j = await res.json();
-        const subjects = j?.success ? j.data || [] : [];
-        setAllSubjects(
-          subjects.map((s) => ({
-            subject_id: Number(s.subject_id),
-            subject_code: s.subject_code,
-            subject_name: s.subject_name,
-          }))
-        );
-      } catch {
-        /* ignore */
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Prefill for edit (local only; save at final)
-  useEffect(() => {
-    if (!isEdit || !checkToken()) return;
-    (async () => {
-      try {
-        const res = await fetch(joinUrl(BASE_URL, `curriculum/view-curriculum/${id}`), { headers });
-        if (res.status === 401) return handleUnauthorized();
-        const j = await res.json();
-        if (j?.success && j?.data) {
-          setCurriculumName(j.data.curriculum_name || '');
-          setEffectiveYearId(j.data.school_year_id || '');
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit, id]);
-
   // ——— Step guards ———
   const canGoNextFrom1 = curriculumName.trim() && effectiveYearId;
-  const canFinalize = canGoNextFrom1 && selectedCount > 0;
+  const canFinalize = canGoNextFrom1 && selectedCount > 0 && !loading;
 
-  // ——— Handlers ———
+  // ——— Subject selection handlers (LOCAL SAVE in state) ———
   const toggleSubject = (sid, checked) => {
     setSelectedSubjectIds((prev) => {
       const next = new Set(prev);
@@ -286,73 +366,125 @@ const UpsertCurriculum = () => {
     });
   };
 
-  // ——— Helpers: robust fetch with timeout that tolerates non-JSON responses ———
-  const fetchWithTimeoutJson = async (url, options = {}, timeoutMs = 25000) => {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), timeoutMs);
-    try {
-      const res = await fetch(url, { ...options, signal: controller.signal });
-      const raw = await res.text();
-      let json = null;
-      try {
-        json = raw ? JSON.parse(raw) : null;
-      } catch {
-        json = null;
-      }
-      return { res, json, raw };
-    } finally {
-      clearTimeout(t);
+  const clearAllSelected = () => setSelectedSubjectIds(new Set());
+
+  // Tri-state header checkbox
+  const headerCheckboxRef = useRef(null);
+  const pageAllSelected =
+    pageSlice.length > 0 && pageSlice.every((r) => selectedSubjectIds.has(Number(r.subject_id)));
+  const pageSomeSelected =
+    pageSlice.some((r) => selectedSubjectIds.has(Number(r.subject_id))) && !pageAllSelected;
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = pageSomeSelected;
     }
+  }, [pageSomeSelected]);
+
+  // ——— Server calls (ONLY on Finalize & Save) ———
+  const createCurriculum = async () => {
+    const { res, json } = await fetchWithTimeoutJson(
+      joinUrl(BASE_URL, 'curriculum/create-curriculum'),
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          curriculum_name: curriculumName.trim(),
+          school_year_id: Number(effectiveYearId),
+        }),
+      },
+      25000
+    );
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error('Unauthorized');
+    }
+    if (!json?.success) {
+      throw new Error(json?.message || 'Failed to create curriculum.');
+    }
+    const curriculumId = Number(
+      json?.curriculumId ?? json?.data?.curriculum_id ?? json?.data?.id
+    );
+    if (!curriculumId) throw new Error('Missing curriculumId after save.');
+    return curriculumId;
   };
 
-  // ——— Attach subjects with batching to avoid timeouts on large sets ———
-  const attachSubjectsBatched = async (curriculumId, ids) => {
-    const BATCH_SIZE = 100; // tune if needed
+  const attachSubjectsOnce = async (curriculumId, subject_ids, timeoutMs = 30000) => {
+    // capture controller for cancel
+    const controller = new AbortController();
+    attachAbortRef.current = controller;
+
+    const { res, json } = await fetchWithTimeoutJson(
+      joinUrl(BASE_URL, `curriculum/add-subjects/${curriculumId}`),
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ subject_ids }),
+        signal: controller.signal, // for clarity; fetchWithTimeoutJson manages its own controller
+      },
+      timeoutMs
+    );
+
+    attachAbortRef.current = null;
+
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error('Unauthorized');
+    }
+    if (!json?.success) {
+      const sum = json?.data?.summary;
+      if (sum) {
+        return {
+          total: Number(sum.total ?? subject_ids.length),
+          successful: Number(sum.successful ?? 0),
+          failed: Number(sum.failed ?? 0),
+        };
+      }
+      const err = new Error(json?.message || `Attach failed (HTTP ${res.status})`);
+      err.code = res.status;
+      throw err;
+    }
+    const summary = json?.data?.summary || {};
+    return {
+      total: Number(summary.total ?? subject_ids.length),
+      successful: Number(summary.successful ?? subject_ids.length),
+      failed: Number(summary.failed ?? 0),
+    };
+  };
+
+  /** Always assign by chunks of 5 subjects per request */
+  const attachSubjectsSmart = async (curriculumId, ids) => {
+    const CHUNK = 5; // <- per request
     let total = 0;
-    let success = 0;
+    let successful = 0;
     let failed = 0;
 
-    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-      const batch = ids.slice(i, i + BATCH_SIZE);
-      const addUrl = joinUrl(BASE_URL, `curriculum/add-subjects/${curriculumId}`);
+    // reset cancellation flag at the start of a run
+    cancelledRef.current = false;
 
-      setBusyLabel(`Attaching subjects… (${Math.min(i + BATCH_SIZE, ids.length)}/${ids.length})`);
-
-      // per-batch abort controller to allow cancel
-      const controller = new AbortController();
-      attachAbortRef.current = controller;
-      const timer = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), 60000); // 60s per batch
-
-      try {
-        const res2 = await fetch(addUrl, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ subject_ids: batch }),
-          signal: controller.signal,
-        });
-        if (res2.status === 401) return handleUnauthorized();
-        const raw = await res2.text();
-        let data = null;
-        try {
-          data = raw ? JSON.parse(raw) : null;
-        } catch {
-          data = null;
-        }
-        if (!data?.success) throw new Error(data?.message || 'Failed to attach subjects.');
-        const sum = data?.data?.summary || {};
-        total += Number(sum.total ?? batch.length);
-        success += Number(sum.successful ?? batch.length);
-        failed += Number(sum.failed ?? 0);
-      } finally {
-        clearTimeout(timer);
-        attachAbortRef.current = null;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      if (cancelledRef.current) {
+        const err = new DOMException('User cancelled', 'AbortError');
+        throw err;
       }
+
+      const batch = ids.slice(i, i + CHUNK);
+
+      setBusyLabel(
+        `Assigning subjects to curriculum… (${Math.min(i + CHUNK, ids.length)}/${ids.length})`
+      );
+
+      // eslint-disable-next-line no-await-in-loop
+      const part = await attachSubjectsOnce(curriculumId, batch, 30000);
+
+      total += part.total || batch.length;
+      successful += part.successful || 0;
+      failed += part.failed || 0;
     }
 
-    return { total, success, failed };
+    return { total, successful, failed };
   };
 
-  // ——— Finalize (server save happens only here) ———
+  // ——— Finalize (WRITE to server now) ———
   const finalizeAndSave = async () => {
     if (!canFinalize) {
       setStatusModal({
@@ -363,43 +495,25 @@ const UpsertCurriculum = () => {
       });
       return;
     }
-    const subject_ids = selectedList;
+    if (!checkToken()) return;
 
     try {
-      // 1) Create or update curriculum
+      cancelledRef.current = false; // ensure fresh run
       setLoading(true);
-      setBusyLabel(isEdit ? 'Updating curriculum…' : 'Creating curriculum…');
+      setBusyLabel('Creating curriculum…');
 
-      const endpoint = isEdit
-        ? joinUrl(BASE_URL, `curriculum/update-curriculum/${id}`)
-        : joinUrl(BASE_URL, 'curriculum/create-curriculum');
+      // 1) Save curriculum first
+      const curriculumId = await createCurriculum();
 
-      const payload = {
-        curriculum_name: curriculumName.trim(),
-        school_year_id: Number(effectiveYearId),
-      };
-
-      const { res, json: result } = await fetchWithTimeoutJson(
-        endpoint,
-        { method: isEdit ? 'PUT' : 'POST', headers, body: JSON.stringify(payload) },
-        25000
-      );
-      if (res.status === 401) return handleUnauthorized();
-      if (!result?.success) throw new Error(result?.message || 'Failed to save curriculum.');
-
-      const curriculumId = isEdit
-        ? Number(id)
-        : Number(result?.curriculumId ?? result?.data?.curriculum_id ?? result?.data?.id);
-      if (!curriculumId) throw new Error('Missing curriculumId after save.');
-
-      // 2) Attach subjects (batched) — OPTION 1 ONLY
-      const { total, success, failed } = await attachSubjectsBatched(curriculumId, subject_ids);
+      // 2) Attach selected subjects to that curriculum (chunks of 5)
+      setBusyLabel('Assigning subjects to curriculum…');
+      const { total, successful, failed } = await attachSubjectsSmart(curriculumId, selectedList);
 
       setStatusModal({
         show: true,
-        title: 'Saved ✔',
-        message: `Curriculum #${curriculumId} saved.\nProcessed ${total} subject(s): ${success} successful, ${failed} failed.`,
-        variant: 'success',
+        title: failed === 0 ? 'Saved ✔' : successful > 0 ? 'Partially Saved' : 'No Subjects Attached',
+        message: `Curriculum #${curriculumId} saved.\nProcessed ${total} subject(s): ${successful} successful, ${failed} failed.`,
+        variant: failed === 0 ? 'success' : successful > 0 ? 'warning' : 'danger',
       });
 
       setTimeout(() => navigate(-1), 900);
@@ -407,8 +521,11 @@ const UpsertCurriculum = () => {
       const aborted = err?.name === 'AbortError';
       setStatusModal({
         show: true,
-        title: aborted ? 'Timed out' : 'Error',
-        message: aborted ? 'Attaching subjects took too long and was aborted.' : err?.message || 'Final save failed.',
+        title: aborted ? 'Timed out / Aborted' : 'Error',
+        message:
+          aborted
+            ? 'The request took too long or was cancelled.'
+            : err?.message || 'Final save failed.',
         variant: aborted ? 'warning' : 'danger',
       });
     } finally {
@@ -417,205 +534,338 @@ const UpsertCurriculum = () => {
     }
   };
 
-  // ——— Render helpers ———
-  const Step1 = () => {
-    const active = schoolYears.find((sy) => Number(sy?.is_active) === 1);
-    const canSuggest = !effectiveYearId && active;
-    return (
-      <div className="p-3 p-lg-4">
-        <div className="row g-3">
-          <div className="col-12 col-md-7">
-            <label className="form-label small fw-semibold">Curriculum Name</label>
-            <input
-              className="form-control form-control-sm"
-              value={curriculumName}
-              onChange={(e) => setCurriculumName(e.target.value)}
-              placeholder="e.g., K–12 Core 2026"
-              maxLength={128}
-              autoFocus
-            />
-            <div className="form-text">Give this curriculum a clear, unique name.</div>
-          </div>
-          <div className="col-12 col-md-5">
-            <label className="form-label small fw-semibold">Effective Year</label>
-            <select
-              className="form-select form-select-sm"
-              value={effectiveYearId}
-              onChange={(e) => setEffectiveYearId(e.target.value)}
-            >
-              <option value="" disabled>Select…</option>
-              {schoolYears.map((sy) => {
-                const used =
-                  usedSchoolYears.includes(sy.school_year_id) &&
-                  (!isEdit || Number(effectiveYearId) !== Number(sy.school_year_id));
-                const label =
-                  sy.start_year && sy.end_year
-                    ? `${sy.start_year} – ${sy.end_year}${used ? ' (Used)' : ''}`
-                    : `SY #${sy.school_year_id}`;
-                return (
-                  <option key={sy.school_year_id} value={sy.school_year_id} disabled={used}>
-                    {label}
-                  </option>
-                );
-              })}
-            </select>
-            {canSuggest && <div className="form-text small">Active effective year detected. It’s selected unless unavailable.</div>}
-            {!active && <div className="form-text small">No active effective year found — please choose one.</div>}
-          </div>
-        </div>
-
-        <div className="d-flex justify-content-between align-items-center mt-4">
-          <button className="btn btn-light btn-sm border d-inline-flex align-items-center gap-2" onClick={() => navigate(-1)}>
-            <FaArrowLeft /> Back
-          </button>
-          <button
-            className="btn btn-primary btn-sm d-inline-flex align-items-center gap-2"
-            onClick={() => setStep(2)}
-            disabled={!canGoNextFrom1}
-            title={!canGoNextFrom1 ? 'Fill in curriculum name and effective year' : 'Next'}
-          >
-            Next <FaChevronRight />
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  const Step2 = () => {
-    const isPageAllSelected = pageSlice.length > 0 && pageSlice.every((r) => selectedSubjectIds.has(Number(r.subject_id)));
-    return (
-      <div className="p-3 p-lg-4">
-        <div className="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
-          <div className="flex-grow-1">
-            <label className="form-label small fw-semibold mb-1">Search Subjects</label>
-            <div className="input-group input-group-sm">
-              <span className="input-group-text">Search</span>
-              <input
-                className="form-control"
-                placeholder="Find by subject code or name"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setPage(1);
-                }}
-              />
-              {query && (
-                <button
-                  className="btn btn-outline-secondary"
-                  onClick={() => {
-                    setQuery('');
-                    setPage(1);
-                  }}
+  // ——— Views ———
+  const Step1 = () => (
+    <div className="p-4">
+      <div className="row g-4">
+        <div className="col-12 col-lg-7">
+          <div className="card border-0 shadow-sm rounded-4">
+            <div className="card-body">
+              <h5 className="fw-bold mb-3">Basic Details (Local Draft)</h5>
+              <div className="mb-3">
+                <label className="form-label small fw-semibold">Curriculum Name</label>
+                <input
+                  className="form-control form-control-sm"
+                  value={curriculumName}
+                  onChange={(e) => setCurriculumName(e.target.value)}
+                  placeholder="e.g., K–12 Core 2026"
+                  maxLength={128}
+                  autoFocus
+                />
+                <div className="form-text">This is stored locally until you finalize.</div>
+              </div>
+              <div className="mb-2">
+                <label className="form-label small fw-semibold">Effective Year</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={effectiveYearId}
+                  onChange={(e) => setEffectiveYearId(e.target.value)}
                 >
-                  Clear
-                </button>
-              )}
+                  <option value="" disabled>
+                    Select…
+                  </option>
+                  {schoolYears.map((sy) => {
+                    const label =
+                      sy.start_year && sy.end_year
+                        ? `${sy.start_year} – ${sy.end_year}`
+                        : `SY #${sy.school_year_id}`;
+                    return (
+                      <option key={sy.school_year_id} value={sy.school_year_id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+                <div className="form-text">
+                  Also stored locally. You can change it before saving.
+                </div>
+              </div>
             </div>
-            <div className="small text-muted mt-2 d-flex align-items-center gap-2">
-              <span className="badge text-bg-light border">Total: {filteredSubjects.length}</span>
-              <span className="badge text-bg-primary-subtle border">Selected: {selectedCount}</span>
+
+            <div className="card-footer bg-transparent border-0 d-flex justify-content-between">
+              <button
+                className="btn btn-light btn-sm border d-inline-flex align-items-center gap-2"
+                onClick={() => navigate(-1)}
+              >
+                <FaArrowLeft /> Back
+              </button>
+              <button
+                className="btn btn-primary btn-sm d-inline-flex align-items-center gap-2"
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  setStep(2);
+                }}
+                disabled={!canGoNextFrom1 || loading}
+                title={!canGoNextFrom1 ? 'Fill in curriculum name and effective year' : 'Next'}
+              >
+                Next <FaChevronRight />
+              </button>
             </div>
           </div>
+        </div>
 
-          <div className="btn-group btn-group-sm ms-auto">
-            <button
-              className="btn btn-outline-secondary"
-              onClick={() => toggleAllOnPage(!isPageAllSelected)}
-              disabled={pageSlice.length === 0}
-              title={isPageAllSelected ? 'Unselect all on this page' : 'Select all on this page'}
-            >
-              {isPageAllSelected ? 'Unselect Page' : 'Select Page'}
-            </button>
+        <div className="col-12 col-lg-5">
+          <div className="card border-0 shadow-sm rounded-4 h-100">
+            <div className="card-body">
+              <h6 className="fw-bold mb-2">Draft Mode</h6>
+              <ul className="small text-muted mb-0">
+                <li>Nothing is saved to the server until “Finalize & Save”.</li>
+                <li>You can freely edit details and subject picks.</li>
+                <li>On save, the app first creates the curriculum, then assigns subjects using its ID.</li>
+              </ul>
+            </div>
           </div>
-        </div>
-
-        <div className="table-responsive border rounded-3">
-          {filteredSubjects.length === 0 ? (
-            <div className="text-center text-muted py-5">No subjects available.</div>
-          ) : (
-            <table className="table table-sm align-middle mb-0">
-              <thead className="table-light position-sticky top-0" style={{ zIndex: 1 }}>
-                <tr>
-                  <th style={{ width: 44 }} className="text-center">
-                    <input
-                      type="checkbox"
-                      className="form-check-input"
-                      checked={pageSlice.length > 0 && pageSlice.every((r) => selectedSubjectIds.has(Number(r.subject_id)))}
-                      onChange={(e) => toggleAllOnPage(e.target.checked)}
-                      aria-label="Select all on page"
-                    />
-                  </th>
-                  <th style={{ width: 200 }}>Code</th>
-                  <th>Name</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageSlice.map((s) => {
-                  const sid = Number(s.subject_id);
-                  const selected = selectedSubjectIds.has(sid);
-                  return (
-                    <tr key={sid} className={selected ? 'table-primary' : ''}>
-                      <td className="text-center">
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          checked={selected}
-                          onChange={(e) => toggleSubject(sid, e.target.checked)}
-                          aria-label={`Select ${s.subject_code}`}
-                        />
-                      </td>
-                      <td className="fw-semibold">{s.subject_code}</td>
-                      <td className="text-muted">{s.subject_name}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div className="d-flex align-items-center justify-content-between mt-2">
-          <div className="small text-muted">Page {safePage} of {totalPages}</div>
-          <div className="btn-group btn-group-sm">
-            <button className="btn btn-outline-secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1}>
-              <FaChevronLeft /> Prev
-            </button>
-            <button className="btn btn-outline-secondary" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}>
-              Next <FaChevronRight />
-            </button>
-          </div>
-        </div>
-
-        <div className="d-flex justify-content-between align-items-center mt-4">
-          <button className="btn btn-light btn-sm border d-inline-flex align-items-center gap-2" onClick={() => setStep(1)}>
-            <FaChevronLeft /> Back
-          </button>
-          <button
-            className="btn btn-dark btn-sm d-inline-flex align-items-center gap-2"
-            onClick={finalizeAndSave}
-            disabled={!canFinalize || loading}
-            title={!canFinalize ? 'Complete Steps 1 and 2 first' : 'Save to server'}
-          >
-            <FaCheck /> Finalize & Save
-          </button>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+
+  const Step2 = () => (
+    <div className="p-4">
+      <div className="row g-4">
+        {/* LEFT: Subject catalog */}
+        <div className="col-12 col-xl-8">
+          <div className="card border-0 shadow-sm rounded-4">
+            <div className="card-body">
+              <div className="d-flex flex-wrap align-items-end gap-2 mb-3">
+                <div className="flex-grow-1">
+                  <label className="form-label small fw-semibold mb-1">Search Subjects</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text">
+                      <FaSearch />
+                    </span>
+                    <input
+                      className="form-control"
+                      placeholder="Find by subject code or name"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setPage(1);
+                      }}
+                    />
+                    {query && (
+                      <button
+                        className="btn btn-outline-secondary"
+                        onClick={() => {
+                          setQuery('');
+                          setPage(1);
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="small text-muted mt-2 d-flex align-items-center flex-wrap gap-2">
+                    <span className="badge text-bg-light border">Total: {filteredSubjects.length}</span>
+                    <span className="badge text-bg-primary-subtle border">
+                      Selected: {selectedCount}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="table-responsive border rounded-3">
+                {filteredSubjects.length === 0 ? (
+                  <div className="text-center text-muted py-5">No subjects found.</div>
+                ) : (
+                  <table className="table table-sm align-middle mb-0">
+                    <thead className="table-light position-sticky top-0" style={{ zIndex: 1 }}>
+                      <tr>
+                        <th style={{ width: 44 }} className="text-center">
+                          <input
+                            ref={headerCheckboxRef}
+                            type="checkbox"
+                            className="form-check-input"
+                            checked={pageAllSelected}
+                            onChange={(e) => toggleAllOnPage(e.target.checked)}
+                            aria-label="Select all on page"
+                          />
+                        </th>
+                        <th style={{ width: 220 }}>Code</th>
+                        <th>Name</th>
+                        <th style={{ width: 90 }} className="text-center">
+                          Add
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageSlice.map((s) => {
+                        const sid = Number(s.subject_id);
+                        const selected = selectedSubjectIds.has(sid);
+                        return (
+                          <tr key={sid} className={selected ? 'table-primary' : ''}>
+                            <td className="text-center">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                checked={selected}
+                                onChange={(e) => toggleSubject(sid, e.target.checked)}
+                                aria-label={`Select ${s.subject_code}`}
+                              />
+                            </td>
+                            <td className="fw-semibold">{s.subject_code}</td>
+                            <td className="text-muted">{s.subject_name}</td>
+                            <td className="text-center">
+                              <button
+                                type="button"
+                                className={`btn btn-xs btn-${selected ? 'secondary' : 'primary'} btn-sm`}
+                                onClick={() => toggleSubject(sid, !selected)}
+                                title={selected ? 'Remove' : 'Add'}
+                              >
+                                {selected ? <FaTimes /> : <FaPlus />}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="d-flex align-items-center justify-content-between mt-2">
+                <div className="small text-muted">
+                  Page {safePage} of {totalPages}
+                </div>
+                <div className="btn-group btn-group-sm">
+                  <button
+                    className="btn btn-outline-secondary"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                  >
+                    <FaChevronLeft /> Prev
+                  </button>
+                  <button
+                    className="btn btn-outline-secondary"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                  >
+                    Next <FaChevronRight />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: Selection summary (sticky on xl) */}
+        <div className="col-12 col-xl-4">
+          <div className="position-xl-sticky" style={{ top: 16 }}>
+            <div className="card border-0 shadow-sm rounded-4">
+              <div className="card-body">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <h6 className="fw-bold mb-0">Selected Subjects (Local Draft)</h6>
+                  <span className="badge text-bg-primary-subtle border">{selectedCount}</span>
+                </div>
+
+                {selectedCount === 0 ? (
+                  <div className="text-muted small">No subjects selected yet.</div>
+                ) : (
+                  <div className="d-flex flex-wrap gap-2" style={{ maxHeight: 280, overflow: 'auto' }}>
+                    {selectedList
+                      .map((sid) => allSubjects.find((s) => Number(s.subject_id) === Number(sid)))
+                      .filter(Boolean)
+                      .map((s) => (
+                        <span
+                          key={s.subject_id}
+                          className="badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-2 px-3 py-2"
+                          title={s.subject_name}
+                        >
+                          <span className="fw-semibold">{s.subject_code}</span>
+                          <span className="text-muted small">{s.subject_name}</span>
+                          <button
+                            className="btn btn-sm btn-link p-0 ms-1 text-danger"
+                            onClick={() => toggleSubject(s.subject_id, false)}
+                            title="Remove"
+                            aria-label={`Remove ${s.subject_code}`}
+                          >
+                            <FaTimes />
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                )}
+
+                <div className="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+                  <button
+                    className="btn btn-outline-danger btn-sm d-inline-flex align-items-center gap-2"
+                    onClick={clearAllSelected}
+                    disabled={selectedCount === 0 || loading}
+                  >
+                    <FaTrash /> Clear
+                  </button>
+
+                  <button
+                    className="btn btn-dark btn-sm d-inline-flex align-items-center gap-2"
+                    onClick={finalizeAndSave}
+                    disabled={!canFinalize}
+                    title={!canFinalize ? 'Complete Steps 1 and 2 first' : 'Save to server'}
+                  >
+                    <FaCheck /> Finalize & Save
+                  </button>
+                </div>
+
+                <div className="form-text mt-2">
+                  On save, we create the curriculum first, then assign the selected subjects using its ID.
+                </div>
+              </div>
+            </div>
+
+            <div className="d-flex justify-content-center mt-3">
+              <button
+                className="btn btn-light btn-sm border d-inline-flex align-items-center gap-2"
+                onClick={() => setStep(1)}
+                disabled={loading}
+              >
+                <FaChevronLeft /> Back to Details
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sticky bottom action bar (mobile-friendly) */}
+      <div className="d-xl-none position-sticky bottom-0 mt-4">
+        <div className="card border-0 shadow rounded-4">
+          <div className="card-body d-flex justify-content-between align-items-center gap-2">
+            <div className="small text-muted">
+              Selected <span className="fw-bold">{selectedCount}</span>
+            </div>
+            <button
+              className="btn btn-dark btn-sm d-inline-flex align-items-center gap-2"
+              onClick={finalizeAndSave}
+              disabled={!canFinalize}
+            >
+              <FaCheck /> Finalize & Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="container-xxl my-3">
       <BusyOverlay
         show={loading && !!busyLabel}
         label={busyLabel}
-        onCancel={busyLabel?.toLowerCase().includes('attaching') ? cancelAttach : undefined}
+        onCancel={/\bassign/i.test(busyLabel) ? cancelAttach : undefined}
       />
-      <StatusModal {...statusModal} onHide={() => setStatusModal((s) => ({ ...s, show: false }))} />
+      <StatusModal
+        {...statusModal}
+        onHide={() => setStatusModal((s) => ({ ...s, show: false }))}
+      />
 
-      <div className="card border-0 shadow-sm rounded-4 overflow-hidden">
+      <div
+        className="card border-0 shadow-sm rounded-4 overflow-hidden"
+        role="region"
+        aria-label="Curriculum Builder"
+      >
         <div
           className="p-3 px-lg-4 border-bottom"
-          style={{ background: 'linear-gradient(135deg, rgba(13,110,253,.08), rgba(25,135,84,.06))' }}
+          style={{
+            background: 'linear-gradient(135deg, rgba(13,110,253,.08), rgba(25,135,84,.06))',
+          }}
         >
           <div className="d-flex align-items-center justify-content-between gap-2">
             <button
@@ -626,16 +876,15 @@ const UpsertCurriculum = () => {
               <FaArrowLeft /> Back
             </button>
             <div className="text-end small">
-              <div className="fw-semibold">{isEdit ? 'Edit Curriculum' : 'Create Curriculum'}</div>
-              <div className="text-muted">Save on Step 2</div>
+              <div className="fw-semibold">Curriculum Builder</div>
+              <div className="text-muted">Everything is local until you finalize</div>
             </div>
           </div>
         </div>
 
         <StepHeader step={step} />
 
-        {step === 1 && <Step1 />}
-        {step === 2 && <Step2 />}
+        {step === 1 ? <Step1 /> : <Step2 />}
       </div>
     </div>
   );
