@@ -1,118 +1,204 @@
 /* login.css */
 :root {
-  --auth-glass-bg: rgba(255, 255, 255, 0.75);
-  --auth-blur: 10px;
+  --brand: #0d6efd;            /* bootstrap primary (blue) */
+  --brand-600: #0b5ed7;
+  --brand-700: #094db1;
+
+  --ink-900: #0f172a;
+  --ink-700: #334155;
+  --ink-500: #64748b;
+
+  --glass: rgba(255, 255, 255, 0.78);
+  --glass-blur: 10px;
+
+  --shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.18);
+  --ring: 0 0 0 .2rem rgba(13, 110, 253, .25);
 }
 
-html, body {
-  height: 100%;
-}
-
+/* Global */
+html, body { height: 100%; }
 body {
-  background-color: #f6f8fb;
+  background-color: #f5f7fb;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
-/* Background image */
-.bg-image {
+/* ---------------- Background: blurred image ---------------- */
+.bg-stage {
   position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: -1;
+}
+
+/* Use your image path exactly as requested */
+.bg-image {
+  position: absolute;
   inset: 0;
   background-image: url("../../assets/images/background.jpg"); /* your image */
   background-size: cover;
   background-position: center;
   filter: blur(28px) saturate(1.05);
-  transform: scale(1.02);
-  z-index: -1;
+  transform: scale(1.04);  /* prevents edge artifacts from blur */
+  z-index: -2;
 }
 
-/* Card */
+/* ---------------- Card ---------------- */
 .glass-card {
-  background: var(--auth-glass-bg);
-  backdrop-filter: blur(var(--auth-blur));
-  -webkit-backdrop-filter: blur(var(--auth-blur));
+  background: var(--glass);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   max-width: 460px;
   width: 100%;
   transition: transform .25s ease, box-shadow .25s ease;
+  box-shadow: var(--shadow-lg);
+  transform:
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    translateZ(0);
+  will-change: transform;
 }
 
 .glass-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.22);
 }
 
-/* Brand circle */
+/* mount-in animation */
+.mount-in { animation: popSlide .6s cubic-bezier(.22,1,.36,1) both; }
+@keyframes popSlide {
+  0%   { opacity: 0; transform: translateY(12px) scale(.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* shake on error */
+.shake { animation: shakeX .45s cubic-bezier(.36,.07,.19,.97) both; }
+@keyframes shakeX {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+
+/* loading popup */
+.loading-pop { animation: popSlide .35s ease-out both; }
+
+/* ---------------- Brand ---------------- */
 .brand-badge {
-  width: 56px;
-  height: 56px;
+  width: 56px; height: 56px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  letter-spacing: .5px;
-  background: linear-gradient(135deg, #6a9cfb, #3b82f6);
+  display: grid; place-items: center;
+  font-weight: 800; letter-spacing: .5px;
+  background: linear-gradient(135deg, #3b82f6, #0ea5e9);
   color: #fff;
-  box-shadow: 0 8px 18px rgba(59,130,246,.35);
+  box-shadow: 0 10px 22px rgba(13, 110, 253, .35);
+  position: relative; isolation: isolate;
 }
 
-/* Inputs */
+/* ---------------- Inputs ---------------- */
 .auth-input-group .auth-addon {
-  background: #eef2ff;
-  color: #3b82f6;
+  background: #eef4ff;
+  color: var(--brand);
   border: 0;
   font-size: 1.05rem;
 }
-
 .auth-input-group .auth-addon-right {
   background: #fff;
   border-left: 0;
 }
-
 .auth-input-group .auth-control {
   border: 0 !important;
-  padding: .8rem .9rem;
+  padding: .85rem .95rem;
   font-size: 1.05rem;
+  background-color: #fff;
 }
+.auth-input-group:focus-within { box-shadow: var(--ring); }
 
-.auth-input-group:focus-within {
-  box-shadow: 0 0 0 .2rem rgba(59, 130, 246, .25);
-}
-
+/* eye toggle microinteraction */
 .toggle-eye {
-  color: #64748b;
+  color: var(--ink-500);
+  transition: transform .25s ease, color .2s ease;
 }
+.toggle-eye:hover { color: var(--ink-900); }
+.toggle-eye.active { transform: rotate(-18deg) scale(1.06); }
 
-.toggle-eye:hover {
-  color: #111827;
-}
+/* Switch styles */
+.form-check-input:focus { box-shadow: var(--ring); }
+.form-check-input:checked { background-color: var(--brand); border-color: var(--brand); }
 
-/* Submit button — always single-line text */
+/* ---------------- Button ---------------- */
 .auth-submit {
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  overflow: hidden;
   letter-spacing: .2px;
+  transition: transform .04s ease, box-shadow .2s ease, background-color .2s ease;
+  background: linear-gradient(135deg, var(--brand), var(--brand-600));
+  border: 0;
 }
+.auth-submit:hover {
+  background: linear-gradient(135deg, var(--brand-600), var(--brand-700));
+  box-shadow: 0 10px 22px rgba(13, 110, 253, .25);
+}
+.auth-submit:active { transform: translateY(1px); }
 
-/* Divider line */
+.auth-submit .btn-arrow {
+  transform: translateX(0);
+  transition: transform .25s ease;
+}
+.auth-submit:hover .btn-arrow { transform: translateX(2px); }
+
+/* Success flare layer (optional visual, hidden by default) */
+.auth-submit .btn-success-flare {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: .3px;
+  transform: translateY(102%);
+  transition: transform .5s cubic-bezier(.22,1,.36,1);
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+}
+.auth-submit.is-loading .btn-success-flare { display: none; }
+/* If you want to show it briefly via JS: add .show-success to .auth-submit */
+.auth-submit.show-success .btn-success-flare { transform: translateY(0); }
+
+/* Keep text from wrapping oddly */
+.auth-submit .btn-content { display: inline-flex; align-items: center; }
+
+/* ---------------- Divider + links ---------------- */
 .divider-line {
   height: 1px;
   background: linear-gradient(90deg, transparent, #dbe1ee, transparent);
 }
-
-/* Utilities */
-button,
-.input-group-text,
-.form-select {
-  white-space: nowrap; /* keep labels 1 line */
+.hover-underline { position: relative; }
+.hover-underline::after {
+  content: ''; position: absolute; left: 0; bottom: -2px;
+  width: 0; height: 1.5px; background: var(--brand);
+  transition: width .25s ease;
 }
+.hover-underline:hover::after { width: 100%; }
+
+/* ---------------- Utilities ---------------- */
+button, .input-group-text, .form-select { white-space: nowrap; }
 
 @media (max-width: 420px) {
-  .glass-card {
-    padding: 1.25rem !important;
+  .glass-card { padding: 1.25rem !important; }
+  .brand-badge { width: 48px; height: 48px; }
+}
+
+/* ---------------- Reduced motion ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  .mount-in,
+  .loading-pop,
+  .shake {
+    animation: none !important;
   }
-  .brand-badge {
-    width: 48px; height: 48px;
+  .auth-submit,
+  .toggle-eye,
+  .glass-card {
+    transition: none !important;
   }
 }
