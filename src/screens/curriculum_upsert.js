@@ -3,19 +3,9 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 /**
  * src/pages/UpsertCurriculum.jsx
  *
- * Draft-first flow:
- *  1) User fills curriculum details and selects subjects — all kept LOCALLY in state.
- *  2) On "Finalize & Save":
- *      a) POST /esf10/curriculum/create-curriculum
- *      b) If success, POST /esf10/curriculum/add-subjects/:curriculum_id with { subject_ids: [...] }
- *
- * Read-only APIs:
- *   GET  /esf10/subjects/view-all-subjects
- *   GET  /esf10/school-year/all-school-years  (optional, for year picker)
- *
- * Write APIs:
- *   POST /esf10/curriculum/create-curriculum
- *   POST /esf10/curriculum/add-subjects/:curriculum_id
+ * Supports:
+ *  - CREATE flow (no :id param): 2-step draft → POST create + POST add-subjects (chunks of 5)
+ *  - EDIT flow (with :id param): single-form → GET view-curriculum/:id to prefill → PUT update-curriculum/:id
  */
 import React, {
   useEffect,
@@ -34,7 +24,10 @@ import {
   FaTimes,
   FaTrash,
 } from 'react-icons/fa';
-import { useNavigate } from 'react-router-dom';
+import {
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
 
 import StatusModal from '../components/status_modal';
 
@@ -77,7 +70,7 @@ const BusyOverlay = ({ show, label, onCancel }) => {
   );
 };
 
-/** Step header (2-step) */
+/** Step header (2-step) for CREATE flow */
 const StepHeader = ({ step }) => {
   const steps = [
     { id: 1, title: 'Create Curriculum (Local Draft)' },
@@ -122,7 +115,7 @@ const StepHeader = ({ step }) => {
             );
           })}
         </div>
-        <span className="badge  text-primary">
+        <span className="badge text-primary">
           Nothing hits the server until you click “Finalize & Save”
         </span>
       </div>
@@ -146,7 +139,7 @@ const fetchWithTimeoutJson = async (url, options = {}, timeoutMs = 30000) => {
   const timer = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), timeoutMs);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
-    const raw = await res.text(); // tolerate non-JSON
+    const raw = await res.text();
     let json = null;
     try {
       json = raw ? JSON.parse(raw) : null;
@@ -161,6 +154,8 @@ const fetchWithTimeoutJson = async (url, options = {}, timeoutMs = 30000) => {
 
 const UpsertCurriculum = () => {
   const navigate = useNavigate();
+  const { id } = useParams(); // <-- Detect :id for EDIT mode
+  const isEdit = !!id;
 
   // ——— Auth / headers ———
   const token = useMemo(() => sessionStorage.getItem('token'), []);
@@ -203,20 +198,20 @@ const UpsertCurriculum = () => {
 
   // ——— Data (fetched) ———
   const [schoolYears, setSchoolYears] = useState([]); // optional; for effective year selection
-  const [allSubjects, setAllSubjects] = useState([]); // [{subject_id, subject_code, subject_name}]
+  const [allSubjects, setAllSubjects] = useState([]); // CREATE flow only
 
-  // ——— Local DRAFT (saved in state only until Finalize) ———
-  // Curriculum (Step 1)
+  // ——— Local state for both CREATE and EDIT ———
   const [curriculumName, setCurriculumName] = useState('');
   const [effectiveYearId, setEffectiveYearId] = useState(''); // school_year_id
-  // Subject selection (Step 2)
+
+  // ——— Subject selection (CREATE mode only) ———
   const [query, setQuery] = useState('');
   const debouncedQuery = useDebouncedValue(query, 250);
   const [selectedSubjectIds, setSelectedSubjectIds] = useState(new Set());
   const ITEMS_PER_PAGE = 10;
   const [page, setPage] = useState(1);
 
-  // Abort + cancel controls for subject attach
+  // Abort + cancel controls for subject attach (CREATE mode only)
   const attachAbortRef = useRef(null);
   const cancelledRef = useRef(false);
 
@@ -225,7 +220,7 @@ const UpsertCurriculum = () => {
       attachAbortRef.current?.abort();
     } catch {}
     attachAbortRef.current = null;
-    cancelledRef.current = true; // also stop between batches
+    cancelledRef.current = true;
 
     setLoading(false);
     setBusyLabel('');
@@ -256,15 +251,57 @@ const UpsertCurriculum = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Fetch ALL pages from /subjects/view-all-subjects
+  // ——— EDIT MODE: fetch current curriculum by id to prefill textfields ———
+  const [editLoaded, setEditLoaded] = useState(!isEdit); // true if not editing
   useEffect(() => {
-    if (!checkToken()) return;
+    if (!isEdit || !checkToken()) return;
+
+    (async () => {
+      try {
+        setBusyLabel('Loading curriculum…');
+        setLoading(true);
+
+        const { res, json } = await fetchWithTimeoutJson(
+          joinUrl(BASE_URL, `curriculum/view-curriculum/${id}`),
+          { headers }, // includes Authorization: Bearer <token>
+          20000
+        );
+
+        if (res.status === 401) return handleUnauthorized();
+
+        if (!json?.success || !json?.data) {
+          throw new Error('Failed to load curriculum.');
+        }
+
+        const c = json.data;
+        // Populate textfields
+        setCurriculumName(c.curriculum_name ?? '');
+        setEffectiveYearId(c.school_year_id ?? '');
+
+        setEditLoaded(true);
+      } catch (err) {
+        setStatusModal({
+          show: true,
+          title: 'Error',
+          message: err?.message || 'Unable to load curriculum.',
+          variant: 'danger',
+        });
+      } finally {
+        setLoading(false);
+        setBusyLabel('');
+      }
+    })();
+  }, [isEdit, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ✅ Fetch ALL pages from /subjects/view-all-subjects (CREATE only)
+  useEffect(() => {
+    if (!checkToken() || isEdit) return;
 
     let cancelled = false;
 
     const fetchAllSubjects = async () => {
       try {
-        const PAGE_SIZE = 100; // tune to your API limits
+        const PAGE_SIZE = 100;
         let pageNo = 1;
         let totalPages = 1;
         const collected = [];
@@ -284,7 +321,6 @@ const UpsertCurriculum = () => {
           const currentPage = Number(p.page ?? pageNo);
           totalPages = Number(p.totalPages ?? 1);
 
-          // Safety: if API ignores pagination, stop after first pass to avoid infinite loop
           if (!p || (Array.isArray(items) && items.length < PAGE_SIZE && !p.totalPages)) {
             totalPages = currentPage;
           }
@@ -302,7 +338,7 @@ const UpsertCurriculum = () => {
           }))
         );
       } catch {
-        // swallow; UI shows empty state if needed
+        /* ignore; UI shows empty state */
       }
     };
 
@@ -311,9 +347,9 @@ const UpsertCurriculum = () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isEdit]);
 
-  // Default effective year to active if present
+  // Default effective year to active if present (for both modes, if empty)
   useEffect(() => {
     if (!effectiveYearId && schoolYears?.length) {
       const active = schoolYears.find((sy) => Number(sy?.is_active) === 1);
@@ -321,7 +357,7 @@ const UpsertCurriculum = () => {
     }
   }, [schoolYears, effectiveYearId]);
 
-  // ——— Derived ———
+  // ——— Derived (CREATE mode only) ———
   const filteredSubjects = useMemo(() => {
     const t = (debouncedQuery || '').trim().toLowerCase();
     const base = t
@@ -346,7 +382,7 @@ const UpsertCurriculum = () => {
   const canGoNextFrom1 = curriculumName.trim() && effectiveYearId;
   const canFinalize = canGoNextFrom1 && selectedCount > 0 && !loading;
 
-  // ——— Subject selection handlers (LOCAL SAVE in state) ———
+  // ——— Subject selection handlers (CREATE) ———
   const toggleSubject = (sid, checked) => {
     setSelectedSubjectIds((prev) => {
       const next = new Set(prev);
@@ -380,7 +416,7 @@ const UpsertCurriculum = () => {
     }
   }, [pageSomeSelected]);
 
-  // ——— Server calls (ONLY on Finalize & Save) ———
+  // ——— Server calls (CREATE) ———
   const createCurriculum = async () => {
     const { res, json } = await fetchWithTimeoutJson(
       joinUrl(BASE_URL, 'curriculum/create-curriculum'),
@@ -409,7 +445,6 @@ const UpsertCurriculum = () => {
   };
 
   const attachSubjectsOnce = async (curriculumId, subject_ids, timeoutMs = 30000) => {
-    // capture controller for cancel
     const controller = new AbortController();
     attachAbortRef.current = controller;
 
@@ -419,7 +454,7 @@ const UpsertCurriculum = () => {
         method: 'POST',
         headers,
         body: JSON.stringify({ subject_ids }),
-        signal: controller.signal, // for clarity; fetchWithTimeoutJson manages its own controller
+        signal: controller.signal,
       },
       timeoutMs
     );
@@ -451,14 +486,12 @@ const UpsertCurriculum = () => {
     };
   };
 
-  /** Always assign by chunks of 5 subjects per request */
   const attachSubjectsSmart = async (curriculumId, ids) => {
-    const CHUNK = 5; // <- per request
+    const CHUNK = 5;
     let total = 0;
     let successful = 0;
     let failed = 0;
 
-    // reset cancellation flag at the start of a run
     cancelledRef.current = false;
 
     for (let i = 0; i < ids.length; i += CHUNK) {
@@ -484,7 +517,7 @@ const UpsertCurriculum = () => {
     return { total, successful, failed };
   };
 
-  // ——— Finalize (WRITE to server now) ———
+  // ——— Finalize (CREATE) ———
   const finalizeAndSave = async () => {
     if (!canFinalize) {
       setStatusModal({
@@ -498,14 +531,12 @@ const UpsertCurriculum = () => {
     if (!checkToken()) return;
 
     try {
-      cancelledRef.current = false; // ensure fresh run
+      cancelledRef.current = false;
       setLoading(true);
       setBusyLabel('Creating curriculum…');
 
-      // 1) Save curriculum first
       const curriculumId = await createCurriculum();
 
-      // 2) Attach selected subjects to that curriculum (chunks of 5)
       setBusyLabel('Assigning subjects to curriculum…');
       const { total, successful, failed } = await attachSubjectsSmart(curriculumId, selectedList);
 
@@ -527,6 +558,65 @@ const UpsertCurriculum = () => {
             ? 'The request took too long or was cancelled.'
             : err?.message || 'Final save failed.',
         variant: aborted ? 'warning' : 'danger',
+      });
+    } finally {
+      setLoading(false);
+      setBusyLabel('');
+    }
+  };
+
+  // ——— EDIT: PUT update by id ———
+  const canUpdate = curriculumName.trim() && effectiveYearId && !loading;
+
+  const updateCurriculum = async () => {
+    if (!checkToken()) return;
+    if (!canUpdate) {
+      setStatusModal({
+        show: true,
+        title: 'Incomplete',
+        message: 'Please provide curriculum name and school year.',
+        variant: 'warning',
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setBusyLabel('Updating curriculum…');
+
+      const { res, json } = await fetchWithTimeoutJson(
+        joinUrl(BASE_URL, `curriculum/update-curriculum/${id}`),
+        {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            curriculum_name: curriculumName.trim(),
+            school_year_id: Number(effectiveYearId),
+          }),
+        },
+        25000
+      );
+
+      if (res.status === 401) return handleUnauthorized();
+
+      if (!json?.success) {
+        throw new Error(json?.message || `Update failed (HTTP ${res.status})`);
+      }
+
+      setStatusModal({
+        show: true,
+        title: 'Updated ✔',
+        message: `Curriculum #${json.curriculumId ?? id} updated successfully.`,
+        variant: 'success',
+      });
+
+      setTimeout(() => navigate(-1), 900);
+    } catch (err) {
+      setStatusModal({
+        show: true,
+        title: 'Error',
+        message: err?.message || 'Update failed.',
+        variant: 'danger',
       });
     } finally {
       setLoading(false);
@@ -843,6 +933,90 @@ const UpsertCurriculum = () => {
     </div>
   );
 
+  // ——— EDIT MODE VIEW (no endpoint guide) ———
+  const EditView = () => (
+    <div className="p-4">
+      <div className="row g-4">
+        <div className="col-12 col-lg-7">
+          <div className="card border-0 shadow-sm rounded-4">
+            <div className="card-body">
+              <h5 className="fw-bold mb-3">Edit Curriculum</h5>
+
+              <div className="mb-3">
+                <label className="form-label small fw-semibold">Curriculum Name</label>
+                <input
+                  className="form-control form-control-sm"
+                  value={curriculumName}
+                  onChange={(e) => setCurriculumName(e.target.value)}
+                  placeholder="e.g., Math Curriculum 2025"
+                  maxLength={128}
+                  autoFocus
+                  disabled={!editLoaded}
+                />
+              </div>
+
+              <div className="mb-2">
+                <label className="form-label small fw-semibold">School Year</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={effectiveYearId}
+                  onChange={(e) => setEffectiveYearId(e.target.value)}
+                  disabled={!editLoaded}
+                >
+                  <option value="" disabled>
+                    Select…
+                  </option>
+                  {schoolYears.map((sy) => {
+                    const label =
+                      sy.start_year && sy.end_year
+                        ? `${sy.start_year} – ${sy.end_year}`
+                        : `SY #${sy.school_year_id}`;
+                    return (
+                      <option key={sy.school_year_id} value={sy.school_year_id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </div>
+
+            <div className="card-footer bg-transparent border-0 d-flex justify-content-between">
+              <button
+                className="btn btn-light btn-sm border d-inline-flex align-items-center gap-2"
+                onClick={() => navigate(-1)}
+              >
+                <FaArrowLeft /> Cancel
+              </button>
+              <button
+                className="btn btn-primary btn-sm d-inline-flex align-items-center gap-2"
+                onClick={updateCurriculum}
+                disabled={!editLoaded || !canUpdate}
+                title={!canUpdate ? 'Fill in curriculum name and school year' : 'Save changes'}
+              >
+                <FaCheck /> Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right column intentionally left minimal (no endpoint guide) */}
+        <div className="col-12 col-lg-5">
+          <div className="card border-0 shadow-sm rounded-4 h-100">
+            <div className="card-body">
+              <h6 className="fw-bold mb-2">Note</h6>
+              <ul className="small text-dark mb-0">
+                <li>This screen updates the curriculum record (name &amp; school year) only.</li>
+                <li>Subject assignments are not changed here.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ——— Render ———
   return (
     <div className="container-xxl my-3">
       <BusyOverlay
@@ -858,7 +1032,7 @@ const UpsertCurriculum = () => {
       <div
         className="card border-0 shadow-sm rounded-4 overflow-hidden"
         role="region"
-        aria-label="Curriculum Builder"
+        aria-label={isEdit ? 'Curriculum Editor' : 'Curriculum Builder'}
       >
         <div
           className="p-3 px-lg-4 border-bottom"
@@ -875,15 +1049,24 @@ const UpsertCurriculum = () => {
               <FaArrowLeft /> Back
             </button>
             <div className="text-end small">
-              <div className="fw-semibold">Curriculum Builder</div>
-              <div className="text-dark">Everything is local until you finalize</div>
+              <div className="fw-semibold">
+                {isEdit ? `Edit Curriculum #${id}` : 'Curriculum Builder'}
+              </div>
+              <div className="text-dark">
+                {isEdit ? 'Update name & school year' : 'Everything is local until you finalize'}
+              </div>
             </div>
           </div>
         </div>
 
-        <StepHeader step={step} />
-
-        {step === 1 ? <Step1 /> : <Step2 />}
+        {isEdit ? (
+          <EditView />
+        ) : (
+          <>
+            <StepHeader step={step} />
+            {step === 1 ? <Step1 /> : <Step2 />}
+          </>
+        )}
       </div>
     </div>
   );

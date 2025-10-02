@@ -1,8 +1,22 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import "bootstrap/dist/css/bootstrap.min.css";
-import { FaSave, FaArrowLeft } from "react-icons/fa";
-import StatusModal from "../components/status_modal";
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import {
+  FaArrowLeft,
+  FaSave,
+} from 'react-icons/fa';
+import {
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
@@ -22,6 +36,10 @@ export default function GradeLevelUpsert() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState({ show: false, title: "", message: "", variant: "info" });
   const inFlight = useRef(false);
+
+  // confirm-leave modal state
+  const [showConfirmLeave, setShowConfirmLeave] = useState(false);
+  const pendingLeaveAction = useRef(null); // () => void
 
   const showStatus = (variant, title, message) =>
     setStatus({ show: true, title, message, variant });
@@ -108,6 +126,52 @@ export default function GradeLevelUpsert() {
     payload.grade_name === initialData.grade_name &&
     String(payload.grade_order) === String(initialData.grade_order);
 
+  // ----- Dirty check & leave guards -----
+  const blankInitial = { grade_code: "", grade_name: "", grade_order: "" };
+  const getBaseline = () => (initialData || (isEdit ? blankInitial : blankInitial));
+  const isDirty = () => {
+    const base = getBaseline();
+    return (
+      formData.grade_code !== base.grade_code ||
+      formData.grade_name !== base.grade_name ||
+      String(formData.grade_order) !== String(base.grade_order)
+    );
+  };
+
+  // Warn on browser/tab close if dirty
+  useEffect(() => {
+    const handler = (e) => {
+      if (isDirty()) {
+        e.preventDefault();
+        e.returnValue = ""; // required for Chrome
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [formData, initialData]);
+
+  // Unified leave function with confirm modal
+  const requestLeave = (leaveFn) => {
+    if (!isDirty()) {
+      leaveFn();
+      return;
+    }
+    pendingLeaveAction.current = leaveFn;
+    setShowConfirmLeave(true);
+  };
+
+  const confirmLeave = () => {
+    setShowConfirmLeave(false);
+    const fn = pendingLeaveAction.current;
+    pendingLeaveAction.current = null;
+    if (typeof fn === "function") fn();
+  };
+
+  const cancelLeave = () => {
+    setShowConfirmLeave(false);
+    pendingLeaveAction.current = null;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!token) return handleUnauthorized();
@@ -162,6 +226,27 @@ export default function GradeLevelUpsert() {
     <div className="container-xxl my-4">
       <StatusModal {...status} onHide={() => setStatus((s) => ({ ...s, show: false }))} />
 
+      {/* Leave confirm modal */}
+      {showConfirmLeave && (
+        <div className="modal d-block" tabIndex="-1" style={{ background: "rgba(0,0,0,.4)" }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content rounded-4">
+              <div className="modal-header">
+                <h5 className="modal-title">Discard changes?</h5>
+                <button type="button" className="btn-close" onClick={cancelLeave} />
+              </div>
+              <div className="modal-body">
+                You have unsaved changes. If you leave this page, your edits will be lost.
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-light border" onClick={cancelLeave}>Stay</button>
+                <button className="btn btn-danger" onClick={confirmLeave}>Discard & Go Back</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card border-0 shadow-sm rounded-4">
         <div className="card-body p-4 p-lg-5">
           {/* Header */}
@@ -173,7 +258,7 @@ export default function GradeLevelUpsert() {
               <button
                 type="button"
                 className="btn btn-light border d-flex align-items-center gap-2 px-3"
-                onClick={() => navigate(-1)}
+                onClick={() => requestLeave(() => navigate(-1))}
               >
                 <FaArrowLeft /> Back
               </button>
@@ -240,7 +325,7 @@ export default function GradeLevelUpsert() {
               <button
                 type="button"
                 className="btn btn-light border"
-                onClick={() => navigate("/grade-levels")}
+                onClick={() => requestLeave(() => navigate(-1))}
                 disabled={loading}
               >
                 Cancel
