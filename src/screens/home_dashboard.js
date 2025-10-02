@@ -596,8 +596,8 @@ const styles = `
 
     /* HERO palette (blue family) */
     --hero-1: #1d4ed8; /* blue-700 */
-    --hero-2: #2563eb; /* blue-600 */
-    --hero-3: #60a5fa; /* blue-400 */
+    --hero-2: #3b42b6ff; /* blue-600 */
+    --hero-3: #34adbdff; /* blue-400 */
   }
 
   .soft-shadow { box-shadow: var(--shadow); background: var(--card-bg); color: var(--text); }

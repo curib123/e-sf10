@@ -102,7 +102,7 @@ const Login = ({ onLogin }) => {
   }, []);
 
   useEffect(() => {
-    document.title = 'Sign in — e-SF10';
+    document.title = 'E-SF10 SYSTEM';
   }, []);
 
   const handleLogin = useCallback(
