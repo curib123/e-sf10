@@ -122,7 +122,7 @@ const StepHeader = ({ step }) => {
             );
           })}
         </div>
-        <span className="badge text-bg-secondary-subtle border small">
+        <span className="badge  text-primary">
           Nothing hits the server until you click “Finalize & Save”
         </span>
       </div>
@@ -608,8 +608,7 @@ const UpsertCurriculum = () => {
           <div className="card border-0 shadow-sm rounded-4 h-100">
             <div className="card-body">
               <h6 className="fw-bold mb-2">Draft Mode</h6>
-              <ul className="small text-muted mb-0">
-                <li>Nothing is saved to the server until “Finalize & Save”.</li>
+              <ul className="small text-dark mb-0">
                 <li>You can freely edit details and subject picks.</li>
                 <li>On save, the app first creates the curriculum, then assigns subjects using its ID.</li>
               </ul>
@@ -877,7 +876,7 @@ const UpsertCurriculum = () => {
             </button>
             <div className="text-end small">
               <div className="fw-semibold">Curriculum Builder</div>
-              <div className="text-muted">Everything is local until you finalize</div>
+              <div className="text-dark">Everything is local until you finalize</div>
             </div>
           </div>
         </div>
