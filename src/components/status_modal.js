@@ -30,6 +30,11 @@ export default function StatusModal({
   size = "md",
   footer,                      // optional custom footer ReactNode
   className = "rounded-3 shadow",
+
+  // NEW: control stacking order (higher than Bootstrap defaults)
+  zIndex = 2000,               // modal container z-index (Bootstrap default ~1055)
+  backdropZIndex = 1995,       // backdrop z-index (Bootstrap default ~1050)
+  backdropClassName = "status-modal-backdrop-high", // can override if needed
 }) {
   const style = VARIANT_STYLES[variant] || VARIANT_STYLES.primary;
   const handleHide = onHide || onClose || (() => {});
@@ -39,44 +44,52 @@ export default function StatusModal({
     ? (allowBackdropClose ? true : "static")
     : "static";
 
-  const keyboardProp = dismissible
-    ? !!allowEscClose
-    : false;
+  const keyboardProp = dismissible ? !!allowEscClose : false;
 
   return (
-    <Modal
-      show={show}
-      onHide={handleHide}
-      centered={centered}
-      size={size}
-      backdrop={backdropProp}
-      keyboard={keyboardProp}
-      restoreFocus
-      enforceFocus
-      animation
-      className={className}
-    >
-      <Modal.Header
-        closeButton={dismissible}
-        closeVariant={style.closeVariant}
-        className={`${style.header} rounded-top-3`}
+    <>
+      {/* Scoped style to raise the backdrop */}
+      <style>{`
+        .${backdropClassName} { z-index: ${backdropZIndex} !important; }
+      `}</style>
+
+      <Modal
+        show={show}
+        onHide={handleHide}
+        centered={centered}
+        size={size}
+        backdrop={backdropProp}
+        keyboard={keyboardProp}
+        restoreFocus
+        enforceFocus
+        animation
+        className={className}
+        backdropClassName={backdropClassName}
+        // Inline style takes precedence and cleanly bumps the stack
+        style={{ zIndex }}
       >
-        <Modal.Title className="fw-semibold fs-5 w-100 text-center">
-          {title}
-        </Modal.Title>
-      </Modal.Header>
+        <Modal.Header
+          closeButton={dismissible}
+          closeVariant={style.closeVariant}
+          className={`${style.header} rounded-top-3`}
+        >
+          <Modal.Title className="fw-semibold fs-5 w-100 text-center">
+            {title}
+          </Modal.Title>
+        </Modal.Header>
 
-      <Modal.Body className="text-center fs-6 text-secondary">
-        {typeof message === "string" ? <p className="mb-0">{message}</p> : message}
-      </Modal.Body>
+        <Modal.Body className="text-center fs-6 text-secondary">
+          {typeof message === "string" ? <p className="mb-0">{message}</p> : message}
+        </Modal.Body>
 
-      <Modal.Footer className="justify-content-center">
-        {footer ?? (
-          <Button variant={style.button} onClick={handleHide} className="px-4 fw-semibold">
-            Close
-          </Button>
-        )}
-      </Modal.Footer>
-    </Modal>
+        <Modal.Footer className="justify-content-center">
+          {footer ?? (
+            <Button variant={style.button} onClick={handleHide} className="px-4 fw-semibold">
+              Close
+            </Button>
+          )}
+        </Modal.Footer>
+      </Modal>
+    </>
   );
 }

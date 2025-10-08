@@ -1,6 +1,6 @@
-// SidebarMui.jsx — dynamic document titles per route + centered bottom credits,
-// modern UI, cleaned spacing, no left rail, credits in sidebar bottom,
-// slim footer (no credits), main content locked to light theme
+// SidebarMui.jsx — Glassmorph AppBar+Drawer, slim active link,
+// icon-only dropdown when collapsed, centered sidebar credits,
+// slim footer (no credits), main content locked to light mode.
 
 import React, {
   memo,
@@ -17,7 +17,7 @@ import {
   useLocation,
 } from 'react-router-dom';
 
-// EXTRA ICONS (unique across entries)
+// UNIQUE ICONS (no repeats)
 import {
   AccountCircle as AccountIcon,
   AppRegistration as AppRegistrationIcon,
@@ -224,65 +224,100 @@ function mergeServerAndRolePerms(userRole, serverFlags) {
   return merged;
 }
 
-// ======== THEME ========
+// ======== THEME (Glassmorph AppBar & Drawer share the same surface) ========
 const focusRing = (t) => ({
   outline: 'none',
-  boxShadow: `0 0 0 3px ${t.palette.mode === 'light' ? 'rgba(37, 99, 235, .28)' : 'rgba(96,165,250,.38)'}`
+  boxShadow: 'none', // remove any custom glow
 });
 
-const getDesignTokens = (mode) => ({
-  palette: {
-    mode,
-    primary: { main: mode === 'light' ? '#2563eb' : '#60a5fa' },
-    divider: mode === 'light' ? '#e9edf5' : 'rgba(255,255,255,0.12)',
-    background: {
-      default: mode === 'light' ? '#f6f8fc' : '#0f172a',
-      paper: mode === 'light' ? '#ffffff' : '#0b1224',
+const getDesignTokens = (mode) => {
+  const isLight = mode === 'light';
+
+  const glassBg = isLight
+    ? 'linear-gradient(180deg, rgba(255,255,255,.72) 0%, rgba(255,255,255,.52) 100%)'
+    : 'linear-gradient(180deg, rgba(13,20,38,.62) 0%, rgba(13,20,38,.46) 100%)';
+
+  const glassBorder = isLight
+    ? '1px solid rgba(15,23,42,.08)'
+    : '1px solid rgba(255,255,255,.10)';
+
+  const glassShadow = isLight
+    ? '0 10px 30px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.05), inset 0 1px 0 rgba(255,255,255,.40)'
+    : '0 12px 32px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.06)';
+
+  return {
+    palette: {
+      mode,
+      primary: { main: isLight ? '#2563eb' : '#60a5fa' },
+      divider: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.10)',
+      background: {
+        default: isLight ? '#eef2f9' : '#0a0f1f',
+        paper: isLight ? '#ffffff' : '#0d1426',
+      },
+      text: {
+        primary: isLight ? '#0f172a' : '#f1f5f9',
+        secondary: isLight ? '#475569' : '#cbd5e1',
+      },
     },
-    text: {
-      primary: mode === 'light' ? '#0f172a' : '#f8fafc',
-      secondary: mode === 'light' ? '#475569' : '#cbd5e1',
+    shape: { borderRadius: 16 },
+    typography: {
+      fontFamily: `Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial`,
+      button: { textTransform: 'none', fontWeight: 600 },
     },
-  },
-  shape: { borderRadius: 14 },
-  typography: {
-    fontFamily: `Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial`,
-    fontSize: 14,
-    button: { textTransform: 'none', fontWeight: 600 }
-  },
-  components: {
-    MuiListItemButton: {
-      styleOverrides: {
-        root: {
-          borderRadius: 10,
-          transition: 'background-color .18s ease',
-          '&:hover': { backgroundColor: mode === 'light' ? 'rgba(2,6,23,.04)' : 'rgba(255,255,255,.06)' },
-          '&.Mui-selected': {
-            background: mode === 'light'
-              ? 'linear-gradient(90deg, rgba(37,99,235,.08), rgba(37,99,235,.04))'
-              : 'linear-gradient(90deg, rgba(96,165,250,.18), rgba(96,165,250,.08))',
-            boxShadow: mode === 'light'
-              ? 'inset 0 0 0 1px rgba(37,99,235,.16)'
-              : 'inset 0 0 0 1px rgba(96,165,250,.22)',
+    components: {
+      MuiAppBar: {
+        styleOverrides: {
+          root: {
+            backdropFilter: 'saturate(145%) blur(12px)',
+            background: glassBg,
+            borderBottom: glassBorder,
+            boxShadow: glassShadow,
           },
         },
       },
-    },
-    MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          borderRight: '1px solid',
-          borderColor: mode === 'light' ? '#e9edf5' : 'rgba(255,255,255,0.12)',
-          backgroundImage: mode === 'light'
-            ? 'linear-gradient(180deg, #fff, #fafbff)'
-            : 'linear-gradient(180deg, #0b1224, #0f172a)',
+      MuiDrawer: {
+        styleOverrides: {
+          paper: {
+            backdropFilter: 'saturate(145%) blur(12px)',
+            background: glassBg,
+            borderRight: glassBorder,
+            boxShadow: glassShadow,
+          },
         },
       },
+      MuiListItemButton: {
+        styleOverrides: {
+          root: {
+            borderRadius: 12,
+            paddingLeft: 12,
+            paddingRight: 12,
+            transition: 'background-color .18s ease, transform .12s ease',
+            '&:hover': {
+              backgroundColor: isLight ? 'rgba(2,6,23,.05)' : 'rgba(255,255,255,.08)',
+              transform: 'translateY(-1px)',
+            },
+            // Slimmer selected: subtle wash (no bulky pill), bar handled in component sx
+            '&.Mui-selected': {
+              background: isLight
+                ? 'linear-gradient(90deg, rgba(37,99,235,.06), rgba(37,99,235,.03))'
+                : 'linear-gradient(90deg, rgba(96,165,250,.18), rgba(96,165,250,.08))',
+              boxShadow: 'none',
+            },
+            '&:focus, &:focus-visible': { outline: 'none' }, // remove dotted outline
+          },
+        },
+      },
+      MuiTooltip: {
+        styleOverrides: {
+          tooltip: { fontSize: 12, fontWeight: 600, borderRadius: 10, padding: '6px 8px' },
+        },
+      },
+      MuiDivider: {
+        styleOverrides: { root: { opacity: isLight ? 0.9 : 0.7 } },
+      },
     },
-    MuiAppBar: { styleOverrides: { root: { borderBottom: 'none', boxShadow: '0 10px 30px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.05)' } } },
-    MuiPaper: { styleOverrides: { outlined: { borderColor: mode === 'light' ? '#e9edf5' : 'rgba(255,255,255,0.12)' } } },
-  },
-});
+  };
+};
 
 // ======== ICON MAP (unique) ========
 const I = {
@@ -375,7 +410,7 @@ const MENU_CONFIG = [
   },
 ];
 
-// ======== ROUTES (unchanged) ========
+// ======== ROUTES ========
 const ROUTE_COMPONENTS = {
   '/dashboard': { el: <Home />, perm: PERMS.VIEW_REPORTS },
   '/teacher-dashboard': { el: <HomeTeacher /> },
@@ -459,8 +494,26 @@ const EXTRA_ROUTES = {
 };
 
 // ======== Sidebar helpers ========
-const NAV_FONT_SIZE = '0.92rem';
+const NAV_FONT_SIZE = '0.94rem';
 const NAV_ICON_SIZE = 22;
+
+// Icon chip wrapper
+const IconChip = ({ children }) => (
+  <Box
+    sx={{
+      display: 'grid',
+      placeItems: 'center',
+      width: 36,
+      height: 36,
+      borderRadius: '12px',
+      bgcolor: (t) => t.palette.mode === 'light' ? 'rgba(15,23,42,0.05)' : 'rgba(255,255,255,0.07)',
+      border: '1px solid',
+      borderColor: 'divider',
+    }}
+  >
+    {children}
+  </Box>
+);
 
 const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, selected, collapsed, onClick }) {
   const content = (
@@ -471,42 +524,45 @@ const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, selected,
       onClick={onClick}
       sx={{
         position: 'relative',
-        px: collapsed ? 1 : 1.25,
-        py: 0.9,
+        px: collapsed ? 0.9 : 1.35,
+        py: 0.9,                       // slightly slimmer height
         borderRadius: 2,
         mx: 0,
-        my: 0.4,
+        my: 0.5,
         justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: collapsed ? 0 : 1.05,
+        textDecoration: 'none',
+        '&, &:focus, &:focus-visible': { outline: 'none' }, // remove dotted focus
         '& .MuiListItemIcon-root': {
-          minWidth: 0,
-          mr: collapsed ? 0 : 1.25,
-          justifyContent: 'center',
+          minWidth: 0,                // removes any "left rule" feel
+          mr: collapsed ? 0 : 1.0,
           '& svg': { fontSize: NAV_ICON_SIZE, transition: 'transform .12s ease, opacity .12s ease' },
         },
+        '& .MuiListItemText-primary': { fontSize: NAV_FONT_SIZE, fontWeight: 650, letterSpacing: 0.2, lineHeight: 1.15 },
         '&:hover': {
-          backgroundColor: (t) => (t.palette.mode === 'light' ? 'rgba(2,6,23,.04)' : 'rgba(255,255,255,.06)'),
+          backgroundColor: (t) => (t.palette.mode === 'light' ? 'rgba(2,6,23,.05)' : 'rgba(255,255,255,.08)'),
+          transform: 'translateY(-1px)',
         },
-        '&.Mui-selected .MuiListItemIcon-root, &.Mui-selected .MuiListItemIcon-root svg': {
-          color: 'primary.main',
+        // Slim active indicator: thin bar + subtle wash (wash comes from theme's .Mui-selected)
+        '&.Mui-selected::before': {
+          content: '""',
+          position: 'absolute',
+          left: 6,
+          top: 8,
+          bottom: 8,
+          width: 3,
+          borderRadius: 2,
+          backgroundColor: 'primary.main',
         },
-        '&.Mui-selected .MuiListItemText-primary': {
-          color: 'primary.main',
-          fontWeight: 800,
-        },
-        '&:focus-visible': (t) => focusRing(t),
-        '@media (prefers-reduced-motion: reduce)': {
-          '& .MuiListItemIcon-root svg': { transition: 'none', transform: 'none' },
-        },
+        '&.Mui-selected .MuiListItemIcon-root svg': { color: 'primary.main' },
+        '&.Mui-selected .MuiListItemText-primary': { color: 'primary.main', fontWeight: 800 },
       }}
       aria-current={selected ? 'page' : undefined}
     >
-      <ListItemIcon><Icon /></ListItemIcon>
-      {!collapsed && (
-        <ListItemText
-          primary={label}
-          primaryTypographyProps={{ fontSize: NAV_FONT_SIZE, fontWeight: 600, letterSpacing: 0.2, lineHeight: 1.1 }}
-        />
-      )}
+      <ListItemIcon>
+        <IconChip><Icon /></IconChip>
+      </ListItemIcon>
+      {!collapsed && <ListItemText primary={label} />}
     </ListItemButton>
   );
   return collapsed ? <Tooltip title={label} placement="right">{content}</Tooltip> : content;
@@ -514,8 +570,8 @@ const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, selected,
 
 /**
  * SidebarDropdown
- * - Expanded mode: inline Collapse.
- * - Collapsed: icon-only trigger opens Popover with submenu (auto-closes on click).
+ * - Expanded: inline Collapse.
+ * - Collapsed: icon-only trigger opens Popover menu.
  */
 const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open, onToggle, items, collapsed, active }) {
   const [anchorEl, setAnchorEl] = useState(null);
@@ -533,32 +589,47 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
       selected={active}
       sx={{
         position: 'relative',
-        px: collapsed ? 1 : 1.25,
+        px: collapsed ? 0.9 : 1.35,
         py: 0.9,
         borderRadius: 2,
         mx: 0,
-        my: 0.4,
+        my: 0.5,
         justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: collapsed ? 0 : 1.05,
+        textDecoration: 'none',
+        '&, &:focus, &:focus-visible': { outline: 'none' }, // remove dotted focus
         '& .MuiListItemIcon-root': {
           minWidth: 0,
-          mr: collapsed ? 0 : 1.25,
-          justifyContent: 'center',
+          mr: collapsed ? 0 : 1.0,
           '& svg': { fontSize: NAV_ICON_SIZE, transition: 'transform .12s ease, opacity .12s ease' },
         },
-        '&:hover': { backgroundColor: (t) => t.palette.action.hover },
-        '&:focus-visible': (t) => focusRing(t),
-        '&.Mui-selected .MuiListItemIcon-root, &.Mui-selected .MuiListItemIcon-root svg': { color: 'primary.main' },
+        '&:hover': { backgroundColor: (t) => t.palette.action.hover, transform: 'translateY(-1px)' },
+        '&.Mui-selected::before': {
+          content: '""',
+          position: 'absolute',
+          left: 6,
+          top: 8,
+          bottom: 8,
+          width: 3,
+          borderRadius: 2,
+          backgroundColor: 'primary.main',
+        },
+        '&.Mui-selected .MuiListItemIcon-root svg': { color: 'primary.main' },
         '&.Mui-selected .MuiListItemText-primary': { color: 'primary.main', fontWeight: 800 },
       }}
     >
-      <ListItemIcon><Icon /></ListItemIcon>
+      <ListItemIcon>
+        <IconChip><Icon /></IconChip>
+      </ListItemIcon>
       {!collapsed && (
-        <ListItemText
-          primary={label}
-          primaryTypographyProps={{ fontSize: NAV_FONT_SIZE, fontWeight: 700, letterSpacing: 0.2, lineHeight: 1.1 }}
-        />
+        <>
+          <ListItemText
+            primary={label}
+            primaryTypographyProps={{ fontSize: NAV_FONT_SIZE, fontWeight: 750, letterSpacing: 0.2, lineHeight: 1.15 }}
+          />
+          {open ? <ExpandLess /> : <ExpandMore />}
+        </>
       )}
-      {!collapsed && (open ? <ExpandLess /> : <ExpandMore />)}
     </ListItemButton>
   );
 
@@ -568,7 +639,7 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
 
       {!collapsed && (
         <Collapse in={open} timeout="auto" unmountOnExit>
-          <List component="div" disablePadding sx={{ pl: 1.75 }}>
+          <List component="div" disablePadding sx={{ pl: 2 }}>
             {items.map((c) => (
               <SidebarLink key={c.to} to={c.to} icon={c.icon} label={c.label} selected={false} collapsed={false} />
             ))}
@@ -583,9 +654,16 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
           anchorEl={anchorEl}
           anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
           transformOrigin={{ vertical: 'center', horizontal: 'left' }}
-          PaperProps={{ sx: { ml: 1, borderRadius: 2, boxShadow: '0 12px 28px rgba(0,0,0,0.12)' } }}
+          PaperProps={{
+            sx: {
+              ml: 1,
+              borderRadius: 2,
+              boxShadow: '0 18px 48px rgba(0,0,0,0.18)',
+              backdropFilter: 'saturate(140%) blur(6px)',
+            }
+          }}
         >
-          <Box sx={{ minWidth: 240, p: 0.5 }}>
+          <Box sx={{ minWidth: 280, p: 0.75 }}>
             <List dense disablePadding>
               {items.map((c) => (
                 <SidebarLink
@@ -623,12 +701,12 @@ function buildRoutesFromMenu(menu, perms) {
 }
 
 // ======== Main Component ========
-const drawerWidth = 320;
-const collapsedWidth = 92;
-const FOOTER_HEIGHT = 36;
+const drawerWidth = 360;     // was 304
+const collapsedWidth = 108;  // was 94
+const FOOTER_HEIGHT = 34;
 
 export default function SidebarMui({ onLogout }) {
-  // Themings
+  // Themes
   const [mode, setMode] = useState(getInitialTheme);
   const appTheme = useMemo(() => createTheme(getDesignTokens(mode)), [mode]);
   const mainLightTheme = useMemo(() => createTheme(getDesignTokens('light')), []);
@@ -719,27 +797,22 @@ export default function SidebarMui({ onLogout }) {
 
   // ---- DYNAMIC DOCUMENT TITLE PER ROUTE ----
   const PATH_LABELS = useMemo(() => {
-    // Flatten menu items to map path -> label (use first match)
     const map = {};
     MENU_CONFIG.forEach((m) => {
       if (m.type === 'link') map[m.to] = m.label;
       if (m.type === 'dropdown') (m.children || []).forEach((c) => { map[c.to] = c.label; });
     });
-    // Also include base dropdown labels for parent paths
     MENU_CONFIG.filter(m => m.type === 'dropdown').forEach((m) => { map[`/${m.key}`] = m.label; });
     return map;
   }, []);
 
   useEffect(() => {
-    // Exact match first
     let action = PATH_LABELS[pathname];
     if (!action) {
-      // Try prefix match (for nested routes like /subjects/create etc.)
       const entry = Object.keys(PATH_LABELS).find((k) => pathname.startsWith(k + '/'));
       if (entry) action = PATH_LABELS[entry];
     }
     if (!action) {
-      // Fallback: title-case from path segment
       const seg = pathname.split('/').filter(Boolean).join(' / ');
       action = seg ? seg.replace(/-/g, ' ').replace(/\b\w/g, s => s.toUpperCase()) : 'Dashboard';
     }
@@ -747,7 +820,7 @@ export default function SidebarMui({ onLogout }) {
   }, [pathname, PATH_LABELS]);
   // ------------------------------------------
 
-  // Drawer content (credits)
+  // Drawer credits popover (collapsed)
   const [creditsAnchor, setCreditsAnchor] = useState(null);
   const creditsOpen = Boolean(creditsAnchor);
   const openCredits = (e) => setCreditsAnchor(e.currentTarget);
@@ -759,17 +832,17 @@ export default function SidebarMui({ onLogout }) {
       {/* Header */}
       <Box
         sx={{
-          px: 1.5, pt: 1.25, pb: 1,
+          px: 2.5, pt: 1.75, pb: 1.25,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          textAlign: 'center', gap: 1, minHeight: 56,
+          textAlign: 'center', gap: 1, minHeight: 64,
         }}
       >
         {!collapsed && (
           <Box sx={{ overflow: 'hidden' }}>
-            <Typography noWrap sx={{ fontWeight: 900, fontSize: '1.18rem', letterSpacing: 0.2, lineHeight: 1.15 }}>
+            <Typography noWrap sx={{ fontWeight: 900, fontSize: '1.22rem', letterSpacing: 0.2, lineHeight: 1.15 }}>
               E-SF10 SYSTEM
             </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', mt: 0.25 }}>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', mt: .25 }}>
               Manage student forms easily & securely
             </Typography>
           </Box>
@@ -778,13 +851,13 @@ export default function SidebarMui({ onLogout }) {
 
       <Divider />
 
-      {/* Scroll area with proper gutters */}
+      {/* Scroll area */}
       <Box
         sx={{
           flex: 1,
           overflowY: 'auto',
           py: 1,
-          px: 1.25,
+          px: 2.25,
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
           '&::-webkit-scrollbar': { display: 'none' },
@@ -834,9 +907,9 @@ export default function SidebarMui({ onLogout }) {
 
       {/* Sidebar bottom credits — CENTERED */}
       {!collapsed ? (
-        <Box sx={{ p: 1.5, display: 'grid', justifyItems: 'center' }}>
-          <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, textAlign: 'center', width: '100%' }}>
-            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+        <Box sx={{ p: 2, pt: 1.5, display: 'grid', justifyItems: 'center' }}>
+          <Paper variant="outlined" sx={{ p: 1.35, borderRadius: 2, textAlign: 'center', width: '100%' }}>
+            <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', mb: 0.5, letterSpacing: 0.2 }}>
               Developers
             </Typography>
             <Typography variant="caption" sx={{ display: 'block' }}>
@@ -845,7 +918,7 @@ export default function SidebarMui({ onLogout }) {
             <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
               • Quivir Cutanda (Back-end)
             </Typography>
-            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+            <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', mb: 0.5, letterSpacing: 0.2 }}>
               Project Adviser / Manager
             </Typography>
             <Typography variant="caption" sx={{ display: 'block' }}>
@@ -860,7 +933,7 @@ export default function SidebarMui({ onLogout }) {
           </Box>
         </Box>
       ) : (
-        <Box sx={{ p: 1, display: 'grid', justifyItems: 'center', rowGap: 0.5 }}>
+        <Box sx={{ p: 1.25, display: 'grid', justifyItems: 'center', rowGap: 0.5 }}>
           <Tooltip title="Credits">
             <IconButton size="small" onClick={openCredits}>
               <InfoIcon fontSize="small" />
@@ -877,9 +950,17 @@ export default function SidebarMui({ onLogout }) {
             anchorEl={creditsAnchor}
             anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
             transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-            PaperProps={{ sx: { p: 1, borderRadius: 2, minWidth: 240, textAlign: 'center' } }}
+            PaperProps={{
+              sx: {
+                p: 1,
+                borderRadius: 2,
+                minWidth: 260,
+                textAlign: 'center',
+                backdropFilter: 'saturate(140%) blur(6px)',
+              }
+            }}
           >
-            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+            <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', mb: 0.5 }}>
               Developers
             </Typography>
             <Typography variant="caption" sx={{ display: 'block' }}>
@@ -888,7 +969,7 @@ export default function SidebarMui({ onLogout }) {
             <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
               • Quivir Cutanda (Back-end)
             </Typography>
-            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+            <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', mb: 0.5 }}>
               Project Adviser / Manager
             </Typography>
             <Typography variant="caption" sx={{ display: 'block' }}>
@@ -913,14 +994,11 @@ export default function SidebarMui({ onLogout }) {
           elevation={0}
           sx={{
             zIndex: (t) => t.zIndex.drawer + 1,
-            bgcolor: 'background.paper',
             width: { md: `calc(100% - ${sideWidth}px)` },
             ml: { md: `${sideWidth}px` },
-            boxShadow: '0 10px 30px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
-            borderBottom: 'none',
           }}
         >
-          <Toolbar sx={{ gap: 1.25, minHeight: 72, px: { xs: 1.25, sm: 2, md: 3 } }}>
+          <Toolbar sx={{ gap: 1.25, minHeight: 72, px: { xs: 1.75, sm: 2.5, md: 3 } }}>
             <Tooltip title={mdUp ? (collapsed ? 'Expand sidebar' : 'Collapse sidebar') : 'Open menu'}>
               <IconButton
                 color="inherit"
@@ -928,6 +1006,7 @@ export default function SidebarMui({ onLogout }) {
                 onClick={mdUp ? toggleCollapse : handleDrawerToggle}
                 aria-label="toggle sidebar"
                 size="large"
+                sx={{ '&, &:focus, &:focus-visible': { outline: 'none' } }}
               >
                 <MenuIcon />
               </IconButton>
@@ -940,16 +1019,16 @@ export default function SidebarMui({ onLogout }) {
                   component="img"
                   src={logoUrl}
                   alt="School Logo"
-                  sx={{ width: 40, height: 40, borderRadius: 1.25, border: '1px solid', borderColor: 'divider', objectFit: 'cover' }}
+                  sx={{ width: 40, height: 40, borderRadius: 2, border: '1px solid', borderColor: 'divider', objectFit: 'cover' }}
                 />
               ) : (
                 <Box sx={{
-                  width: 40, height: 40, borderRadius: 1.25, bgcolor: 'action.hover',
+                  width: 40, height: 40, borderRadius: 2, bgcolor: 'action.hover',
                   display: 'grid', placeItems: 'center', color: 'text.disabled', fontSize: 11
                 }}>N/A</Box>
               )}
               <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <Typography variant="subtitle1" noWrap fontWeight={700}>{schoolData.school_name || 'Loading…'}</Typography>
+                <Typography variant="subtitle1" noWrap fontWeight={800}>{schoolData.school_name || 'Loading…'}</Typography>
                 <Typography variant="caption" color="text.secondary" noWrap>{schoolData.school_address || '—'}</Typography>
               </Box>
             </Box>
@@ -958,18 +1037,18 @@ export default function SidebarMui({ onLogout }) {
 
             {/* Profile */}
             <Tooltip title={fullName}>
-              <IconButton onClick={handleProfileClick} size="small" sx={{ ml: 0.5 }}>
+              <IconButton onClick={handleProfileClick} size="small" sx={{ ml: 0.5, '&, &:focus, &:focus-visible': { outline: 'none' } }}>
                 <Avatar sx={{ width: 32, height: 32 }}>{avatarInitial}</Avatar>
               </IconButton>
             </Tooltip>
             <Box sx={{ display: { xs: 'none', sm: 'flex' }, flexDirection: 'column', alignItems: 'flex-start', mx: 1 }}>
-              <Typography variant="body2" noWrap fontWeight={600}>{fullName}</Typography>
+              <Typography variant="body2" noWrap fontWeight={700}>{fullName}</Typography>
               <Typography variant="caption" color="text.secondary" noWrap>{roleLabel}</Typography>
             </Box>
 
             {/* Theme toggle (affects sidebar/appbar only) */}
             <Tooltip title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}>
-              <IconButton onClick={toggleTheme} aria-label="toggle color mode" color="inherit">
+              <IconButton onClick={toggleTheme} aria-label="toggle color mode" color="inherit" sx={{ '&, &:focus, &:focus-visible': { outline: 'none' } }}>
                 {mode === 'dark' ? <LightIcon /> : <DarkIcon />}
               </IconButton>
             </Tooltip>
@@ -1024,9 +1103,6 @@ export default function SidebarMui({ onLogout }) {
                 borderColor: 'divider',
                 overflowX: 'hidden',
                 transition: (t) => t.transitions.create('width', { duration: t.transitions.duration.shortest }),
-                backgroundImage: (t) => t.palette.mode === 'light'
-                  ? 'linear-gradient(180deg, #fff, #fafbff)'
-                  : 'linear-gradient(180deg, #0b1224, #0f172a)',
               },
             }}
           >
@@ -1040,7 +1116,7 @@ export default function SidebarMui({ onLogout }) {
             component="main"
             sx={{
               flexGrow: 1,
-              p: 2.25,
+              p: 2.5,
               bgcolor: '#ffffff', // always white
               color: '#0f172a',   // fixed text color
               minHeight: '100vh',
@@ -1051,7 +1127,6 @@ export default function SidebarMui({ onLogout }) {
               '&::-webkit-scrollbar': { display: 'none' },
             }}
           >
-            {/* Spacer under AppBar */}
             <Toolbar sx={{ minHeight: 72 }} />
             <Routes>
               {useMemo(() => orderedRoutes.map((r) => <Route key={r.path} path={r.path} element={r.el} />), [orderedRoutes])}
