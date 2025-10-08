@@ -1,4 +1,5 @@
-// SidebarMui.jsx — Glassmorph AppBar+Drawer, slim active link,
+// SidebarMui.jsx — Glassmorph AppBar+Drawer, NavLink active styles,
+// NO vertical bar for dropdown headers & dropdown child links,
 // icon-only dropdown when collapsed, centered sidebar credits,
 // slim footer (no credits), main content locked to light mode.
 
@@ -225,11 +226,6 @@ function mergeServerAndRolePerms(userRole, serverFlags) {
 }
 
 // ======== THEME (Glassmorph AppBar & Drawer share the same surface) ========
-const focusRing = (t) => ({
-  outline: 'none',
-  boxShadow: 'none', // remove any custom glow
-});
-
 const getDesignTokens = (mode) => {
   const isLight = mode === 'light';
 
@@ -296,14 +292,13 @@ const getDesignTokens = (mode) => {
               backgroundColor: isLight ? 'rgba(2,6,23,.05)' : 'rgba(255,255,255,.08)',
               transform: 'translateY(-1px)',
             },
-            // Slimmer selected: subtle wash (no bulky pill), bar handled in component sx
             '&.Mui-selected': {
               background: isLight
                 ? 'linear-gradient(90deg, rgba(37,99,235,.06), rgba(37,99,235,.03))'
                 : 'linear-gradient(90deg, rgba(96,165,250,.18), rgba(96,165,250,.08))',
               boxShadow: 'none',
             },
-            '&:focus, &:focus-visible': { outline: 'none' }, // remove dotted outline
+            '&:focus, &:focus-visible': { outline: 'none' },
           },
         },
       },
@@ -515,49 +510,79 @@ const IconChip = ({ children }) => (
   </Box>
 );
 
-const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, selected, collapsed, onClick }) {
+/**
+ * SidebarLink
+ * - Uses NavLink .active class for active styles
+ * - Optional `noActiveBar` removes the slim left bar (used for dropdown children)
+ * - Optional `matchStart` enables startsWith matching (active for subroutes)
+ */
+const SidebarLink = memo(function SidebarLink({
+  to,
+  icon: Icon,
+  label,
+  collapsed,
+  onClick,
+  matchStart = false,
+  noActiveBar = false,
+}) {
   const content = (
     <ListItemButton
       component={NavLink}
       to={to}
-      selected={selected}
+      end={!matchStart}
       onClick={onClick}
       sx={{
         position: 'relative',
         px: collapsed ? 0.9 : 1.35,
-        py: 0.9,                       // slightly slimmer height
+        py: 0.9,
         borderRadius: 2,
         mx: 0,
         my: 0.5,
         justifyContent: collapsed ? 'center' : 'flex-start',
         gap: collapsed ? 0 : 1.05,
         textDecoration: 'none',
-        '&, &:focus, &:focus-visible': { outline: 'none' }, // remove dotted focus
+        '&, &:focus, &:focus-visible': { outline: 'none' },
+
         '& .MuiListItemIcon-root': {
-          minWidth: 0,                // removes any "left rule" feel
+          minWidth: 0,
           mr: collapsed ? 0 : 1.0,
           '& svg': { fontSize: NAV_ICON_SIZE, transition: 'transform .12s ease, opacity .12s ease' },
         },
-        '& .MuiListItemText-primary': { fontSize: NAV_FONT_SIZE, fontWeight: 650, letterSpacing: 0.2, lineHeight: 1.15 },
+        '& .MuiListItemText-primary': {
+          fontSize: NAV_FONT_SIZE, fontWeight: 650, letterSpacing: 0.2, lineHeight: 1.15
+        },
+
         '&:hover': {
           backgroundColor: (t) => (t.palette.mode === 'light' ? 'rgba(2,6,23,.05)' : 'rgba(255,255,255,.08)'),
           transform: 'translateY(-1px)',
         },
-        // Slim active indicator: thin bar + subtle wash (wash comes from theme's .Mui-selected)
-        '&.Mui-selected::before': {
-          content: '""',
-          position: 'absolute',
-          left: 6,
-          top: 8,
-          bottom: 8,
-          width: 3,
-          borderRadius: 2,
-          backgroundColor: 'primary.main',
+
+        // ACTIVE STATE from NavLink (.active)
+        '&.active': {
+          background: (t) =>
+            t.palette.mode === 'light'
+              ? 'linear-gradient(90deg, rgba(37,99,235,.06), rgba(37,99,235,.03))'
+              : 'linear-gradient(90deg, rgba(96,165,250,.18), rgba(96,165,250,.08))',
         },
-        '&.Mui-selected .MuiListItemIcon-root svg': { color: 'primary.main' },
-        '&.Mui-selected .MuiListItemText-primary': { color: 'primary.main', fontWeight: 800 },
+
+        // Left accent bar ONLY when allowed
+        ...(noActiveBar ? {} : {
+          '&.active::before': {
+            content: '""',
+            position: 'absolute',
+            left: 6,
+            top: 8,
+            bottom: 8,
+            width: 3,
+            borderRadius: 2,
+            backgroundColor: 'primary.main',
+          },
+        }),
+
+        '&.active .MuiListItemIcon-root svg': { color: 'primary.main' },
+        '&.active .MuiListItemText-primary': { color: 'primary.main', fontWeight: 800 },
       }}
-      aria-current={selected ? 'page' : undefined}
+      aria-current={({ isActive }) => (isActive ? 'page' : undefined)}
     >
       <ListItemIcon>
         <IconChip><Icon /></IconChip>
@@ -565,6 +590,7 @@ const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, selected,
       {!collapsed && <ListItemText primary={label} />}
     </ListItemButton>
   );
+
   return collapsed ? <Tooltip title={label} placement="right">{content}</Tooltip> : content;
 });
 
@@ -572,6 +598,8 @@ const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, selected,
  * SidebarDropdown
  * - Expanded: inline Collapse.
  * - Collapsed: icon-only trigger opens Popover menu.
+ * - NO vertical bar for active header; uses subtle wash only.
+ * - Child links inside dropdown pass `noActiveBar` so no vertical bar there either.
  */
 const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open, onToggle, items, collapsed, active }) {
   const [anchorEl, setAnchorEl] = useState(null);
@@ -586,6 +614,7 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
       aria-haspopup="menu"
       aria-expanded={collapsed ? popOpen : open}
       aria-label={label}
+      // use "selected" for wash; NO ::before vertical bar
       selected={active}
       sx={{
         position: 'relative',
@@ -597,23 +626,17 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
         justifyContent: collapsed ? 'center' : 'flex-start',
         gap: collapsed ? 0 : 1.05,
         textDecoration: 'none',
-        '&, &:focus, &:focus-visible': { outline: 'none' }, // remove dotted focus
+        '&, &:focus, &:focus-visible': { outline: 'none' },
+
         '& .MuiListItemIcon-root': {
           minWidth: 0,
           mr: collapsed ? 0 : 1.0,
           '& svg': { fontSize: NAV_ICON_SIZE, transition: 'transform .12s ease, opacity .12s ease' },
         },
         '&:hover': { backgroundColor: (t) => t.palette.action.hover, transform: 'translateY(-1px)' },
-        '&.Mui-selected::before': {
-          content: '""',
-          position: 'absolute',
-          left: 6,
-          top: 8,
-          bottom: 8,
-          width: 3,
-          borderRadius: 2,
-          backgroundColor: 'primary.main',
-        },
+
+        // Remove the accent bar entirely on dropdown headers.
+        // Keep icon/text emphasis on "selected"
         '&.Mui-selected .MuiListItemIcon-root svg': { color: 'primary.main' },
         '&.Mui-selected .MuiListItemText-primary': { color: 'primary.main', fontWeight: 800 },
       }}
@@ -641,7 +664,14 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
         <Collapse in={open} timeout="auto" unmountOnExit>
           <List component="div" disablePadding sx={{ pl: 2 }}>
             {items.map((c) => (
-              <SidebarLink key={c.to} to={c.to} icon={c.icon} label={c.label} selected={false} collapsed={false} />
+              <SidebarLink
+                key={c.to}
+                to={c.to}
+                icon={c.icon}
+                label={c.label}
+                collapsed={false}
+                noActiveBar // <- no vertical bar for dropdown children
+              />
             ))}
           </List>
         </Collapse>
@@ -671,8 +701,8 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
                   to={c.to}
                   icon={c.icon}
                   label={c.label}
-                  selected={false}
                   collapsed={false}
+                  noActiveBar // <- no vertical bar here too
                   onClick={() => setAnchorEl(null)}
                 />
               ))}
@@ -701,8 +731,8 @@ function buildRoutesFromMenu(menu, perms) {
 }
 
 // ======== Main Component ========
-const drawerWidth = 360;     // was 304
-const collapsedWidth = 108;  // was 94
+const drawerWidth = 360;
+const collapsedWidth = 108;
 const FOOTER_HEIGHT = 34;
 
 export default function SidebarMui({ onLogout }) {
@@ -866,7 +896,6 @@ export default function SidebarMui({ onLogout }) {
         <List disablePadding>
           {filteredMenus.map((menu) => {
             if (menu.type === 'link') {
-              const selected = pathname === menu.to;
               const Icon = menu.icon;
               if (!hasRole(menu.roles) || !can(menu.permission)) return null;
               return (
@@ -875,8 +904,8 @@ export default function SidebarMui({ onLogout }) {
                   to={menu.to}
                   icon={Icon}
                   label={menu.label}
-                  selected={selected}
                   collapsed={collapsed}
+                  // keep vertical accent for top-level links
                 />
               );
             }
@@ -885,6 +914,8 @@ export default function SidebarMui({ onLogout }) {
             if (!visibleChildren.length) return null;
             const isOpen = !!openMenus[menu.key];
             const Icon = menu.icon;
+
+            // active when any child path is active
             const anyChildActive = visibleChildren.some((c) => pathname === c.to || pathname.startsWith(c.to + '/'));
             return (
               <Box key={menu.key}>
@@ -935,7 +966,7 @@ export default function SidebarMui({ onLogout }) {
       ) : (
         <Box sx={{ p: 1.25, display: 'grid', justifyItems: 'center', rowGap: 0.5 }}>
           <Tooltip title="Credits">
-            <IconButton size="small" onClick={openCredits}>
+            <IconButton size="small" onClick={(e) => setCreditsAnchor(e.currentTarget)}>
               <InfoIcon fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -999,11 +1030,11 @@ export default function SidebarMui({ onLogout }) {
           }}
         >
           <Toolbar sx={{ gap: 1.25, minHeight: 72, px: { xs: 1.75, sm: 2.5, md: 3 } }}>
-            <Tooltip title={mdUp ? (collapsed ? 'Expand sidebar' : 'Collapse sidebar') : 'Open menu'}>
+            <Tooltip title={useMediaQuery(appTheme.breakpoints.up('md')) ? (collapsed ? 'Expand sidebar' : 'Collapse sidebar') : 'Open menu'}>
               <IconButton
                 color="inherit"
                 edge="start"
-                onClick={mdUp ? toggleCollapse : handleDrawerToggle}
+                onClick={useMediaQuery(appTheme.breakpoints.up('md')) ? toggleCollapse : handleDrawerToggle}
                 aria-label="toggle sidebar"
                 size="large"
                 sx={{ '&, &:focus, &:focus-visible': { outline: 'none' } }}
@@ -1116,7 +1147,8 @@ export default function SidebarMui({ onLogout }) {
             component="main"
             sx={{
               flexGrow: 1,
-              p: 2.5,
+              padding:'10px',
+              p: 5,
               bgcolor: '#ffffff', // always white
               color: '#0f172a',   // fixed text color
               minHeight: '100vh',

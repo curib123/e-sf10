@@ -1,3 +1,6 @@
+// HomeDashboard.bootstrap.bigHeaderBigKPIs.jsx
+// Bootstrap 5.3+ | Only header & KPI cards are larger; all other sections use normal/compact sizing.
+
 import React, {
   useCallback,
   useEffect,
@@ -21,11 +24,9 @@ import {
   Table,
 } from 'react-bootstrap';
 import {
-  FaDownload,
   FaExchangeAlt,
   FaSchool,
   FaSearch,
-  FaSyncAlt,
   FaUserPlus,
   FaUsers,
   FaUserTie,
@@ -37,55 +38,55 @@ import { checkToken } from '../components/token_checker';
 // Base API URL
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
-const fmtTime = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-const fmtDate = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+const fmtTime = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const fmtDate = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "2-digit" });
 
 // helpers
 const clamp = (n, min, max) => Math.min(max, Math.max(min, Number(n) || 0));
 function formatRelative(ts, now = Date.now()) {
-  if (!ts) return '—';
-  const d = typeof ts === 'number' ? ts : new Date(ts).getTime();
-  if (Number.isNaN(d)) return '—';
+  if (!ts) return "—";
+  const d = typeof ts === "number" ? ts : new Date(ts).getTime();
+  if (Number.isNaN(d)) return "—";
   const diff = Math.max(0, now - d);
-  if (diff < 1000) return 'just now';
+  if (diff < 1000) return "just now";
   if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   const days = Math.floor(diff / 86_400_000);
-  if (days === 1) return 'yesterday';
+  if (days === 1) return "yesterday";
   if (days < 7) return `${days}d ago`;
   return new Date(d).toLocaleString();
 }
-const classifyAction = (action = '') => {
-  const a = (action || '').toLowerCase();
-  if (/(create|added|new)/.test(a)) return 'created';
-  if (/(update|edit|change)/.test(a)) return 'updated';
-  if (/(delete|remove)/.test(a)) return 'deleted';
-  if (/(transfer|move)/.test(a)) return 'transfer';
-  return 'info';
+const classifyAction = (action = "") => {
+  const a = (action || "").toLowerCase();
+  if (/(create|added|new)/.test(a)) return "created";
+  if (/(update|edit|change)/.test(a)) return "updated";
+  if (/(delete|remove)/.test(a)) return "deleted";
+  if (/(transfer|move)/.test(a)) return "transfer";
+  return "info";
 };
-const actionBadge = (action = '') => {
+const actionBadge = (action = "") => {
   const kind = classifyAction(action);
   const map = {
-    created: { text: 'Created', bg: 'success' },
-    updated: { text: 'Updated', bg: 'primary' },
-    deleted: { text: 'Deleted', bg: 'danger' },
-    transfer: { text: 'Transfer', bg: 'warning' },
-    info: { text: 'Info', bg: 'secondary' },
+    created: { text: "Created", bg: "success" },
+    updated: { text: "Updated", bg: "primary" },
+    deleted: { text: "Deleted", bg: "danger" },
+    transfer: { text: "Transfer", bg: "warning" },
+    info: { text: "Info", bg: "secondary" },
   };
   return map[kind] || map.info;
 };
 
-const RingIcon = ({ children, tint = '#2563eb' }) => (
-  <div className="d-inline-flex justify-content-center align-items-center position-relative" style={{ width: 48, height: 48 }}>
-    <span className="position-absolute w-100 h-100 rounded-circle opacity-25" style={{ boxShadow: `inset 0 0 0 8px ${tint}33` }} />
-    <span className="rounded-circle d-inline-flex justify-content-center align-items-center text-white" style={{ width: 40, height: 40, background: tint }}>
+const RingIcon = ({ children, tint = "var(--bs-primary)" }) => (
+  <div className="d-inline-flex justify-content-center align-items-center position-relative" style={{ width: 44, height: 44 }}>
+    <span className="position-absolute w-100 h-100 rounded-circle opacity-25" style={{ boxShadow: `inset 0 0 0 6px ${tint}33` }} />
+    <span className="rounded-circle d-inline-flex justify-content-center align-items-center text-white" style={{ width: 36, height: 36, background: tint }}>
       {children}
     </span>
   </div>
 );
 
-function AnimatedNumber({ value = 0, duration = 700 }) {
+function AnimatedNumber({ value = 0, duration = 600 }) {
   const [n, setN] = useState(0);
   useEffect(() => {
     const from = 0;
@@ -105,42 +106,51 @@ function AnimatedNumber({ value = 0, duration = 700 }) {
   return <>{n.toLocaleString()}</>;
 }
 
-const StatCard = ({ icon, label, value = 0, percent = 0, color }) => (
-  <Card className="border-0 soft-shadow hover-lift h-100 rounded-4 kpi-card">
-    <Card.Body className="p-3">
-      <div className="d-flex align-items-start gap-3">
-        <RingIcon tint={color}>{icon}</RingIcon>
-        <div className="flex-grow-1">
-          <div className="text-muted small">{label}</div>
-          <div className="d-flex align-items-baseline justify-content-between mt-1">
-            <div className="fw-bold fs-3 kpi-number" style={{ color }}>
-              <AnimatedNumber value={value} />
+/**
+ * StatCard — supports size "md" (default normal) and "lg" (bigger).
+ * We'll render the KPI cards with size="lg" while keeping all other cards normal.
+ */
+const StatCard = ({ icon, label, value = 0, percent = 0, color, size = "md" }) => {
+  const isLg = size === "lg";
+  return (
+    <Card className={`border-0 soft-shadow hover-lift h-100 rounded-${isLg ? 4 : 3} ${isLg ? "kpi-lg" : ""}`}>
+      <Card.Body className={isLg ? "p-4" : "p-3 py-2"}>
+        <div className="d-flex align-items-start gap-3">
+          <RingIcon tint={color}>{icon}</RingIcon>
+          <div className="flex-grow-1">
+            <div className="text-body-secondary small">{label}</div>
+            <div className="d-flex align-items-baseline justify-content-between mt-1">
+              <div className={`fw-bold ${isLg ? "display-6 mb-0" : "fs-4"}`} style={{ color, lineHeight: 1 }}>
+                <AnimatedNumber value={value} />
+              </div>
+              <Badge bg="light" text="dark" className={`rounded-pill ${isLg ? "fs-6" : ""}`}>
+                {Math.round(clamp(percent, 0, 100))}%
+              </Badge>
             </div>
-            <Badge bg="light" text="dark" className="rounded-pill">
-              {Math.round(clamp(percent, 0, 100))}%
-            </Badge>
+            <ProgressBar
+              now={clamp(percent, 0, 100)}
+              className={isLg ? "mt-3" : "mt-2"}
+              style={{ height: isLg ? 10 : 6, borderRadius: 999 }}
+            />
           </div>
-          <ProgressBar now={clamp(percent, 0, 100)} className="mt-2" style={{ height: 6, borderRadius: 6, background: 'rgba(0,0,0,.06)' }} />
         </div>
-      </div>
-    </Card.Body>
-  </Card>
-);
+      </Card.Body>
+    </Card>
+  );
+};
 
 const InfoItem = ({ title, children }) => (
-  <Col md={4} className="mb-3">
-    <div className="text-muted small mb-1">{title}</div>
-    <div className="fw-semibold text-truncate" title={children || '—'}>
-      {children || '—'}
-    </div>
+  <Col md={4} className="mb-2">
+    <div className="text-body-secondary small mb-1">{title}</div>
+    <div className="fw-semibold text-truncate">{children || "—"}</div>
   </Col>
 );
 
 const SkeletonCard = () => (
-  <Card className="soft-shadow border-0 rounded-4">
-    <Card.Body className="p-4">
+  <Card className="soft-shadow border-0 rounded-3">
+    <Card.Body className="p-3">
       <Placeholder as="div" animation="wave">
-        <Placeholder xs={3} className="mb-3" />
+        <Placeholder xs={3} className="mb-2" />
         <Placeholder xs={8} className="mb-2" />
         <Placeholder xs={6} />
       </Placeholder>
@@ -149,13 +159,13 @@ const SkeletonCard = () => (
 );
 
 export default function HomeDashboard() {
-  const token = useMemo(() => sessionStorage.getItem('token'), []);
+  const token = useMemo(() => sessionStorage.getItem("token"), []);
   const authHeaders = () => ({ Authorization: `Bearer ${token}` });
 
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [modal, setModal] = useState({ show: false, title: '', message: '', variant: 'danger' });
+  const [modal, setModal] = useState({ show: false, title: "", message: "", variant: "danger" });
   const [now, setNow] = useState(Date.now());
 
   // logs state
@@ -164,8 +174,8 @@ export default function HomeDashboard() {
   const [logsPage, setLogsPage] = useState(1);
   const [logsLimit, setLogsLimit] = useState(10);
   const [logsTotalPages, setLogsTotalPages] = useState(1);
-  const [logsQuery, setLogsQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [logsQuery, setLogsQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [compact, setCompact] = useState(false);
 
   // NEW: Active teachers + curriculum + enrolled count
@@ -175,26 +185,26 @@ export default function HomeDashboard() {
 
   // derived filtered logs
   const visibleLogs = useMemo(() => {
-    const q = (logsQuery || '').toLowerCase();
+    const q = (logsQuery || "").toLowerCase();
     return (logs || []).filter((l) => {
       const matchesQuery = q
-        ? [l?.action, l?.first_name, l?.last_name, l?.email].filter(Boolean).join(' ').toLowerCase().includes(q)
+        ? [l?.action, l?.first_name, l?.last_name, l?.email].filter(Boolean).join(" ").toLowerCase().includes(q)
         : true;
-      const kind = classifyAction(l?.action || '');
-      const matchesType = typeFilter === 'all' ? true : kind === typeFilter;
+      const kind = classifyAction(l?.action || "");
+      const matchesType = typeFilter === "all" ? true : kind === typeFilter;
       return matchesQuery && matchesType;
     });
   }, [logs, logsQuery, typeFilter]);
 
-  const handleError = (message) => setModal({ show: true, title: 'Error', message, variant: 'danger' });
+  const handleError = (message) => setModal({ show: true, title: "Error", message, variant: "danger" });
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
       const { data } = await axios.get(`${BASE_URL}/dashboard`, { headers: authHeaders() });
       setDashboardData(data);
-    } catch (e) {
-      handleError('Failed to fetch dashboard data.');
+    } catch {
+      handleError("Failed to fetch dashboard data.");
     } finally {
       setLoading(false);
     }
@@ -211,8 +221,8 @@ export default function HomeDashboard() {
         setLogs(data.logs || []);
         setLogsTotalPages(data.totalPages || 1);
       }
-    } catch (e) {
-      handleError('Failed to fetch activity logs.');
+    } catch {
+      handleError("Failed to fetch activity logs.");
     } finally {
       setLogsLoading(false);
     }
@@ -221,7 +231,7 @@ export default function HomeDashboard() {
   const fetchActiveTeachers = useCallback(async () => {
     try {
       const { data } = await axios.get(`${BASE_URL}/teachers/active`, { headers: authHeaders() });
-      const count = typeof data?.count === 'number' ? data.count : Array.isArray(data?.data) ? data.data.length : 0;
+    const count = typeof data?.count === "number" ? data.count : Array.isArray(data?.data) ? data.data.length : 0;
       setTeacherCount(Number(count || 0));
     } catch {}
   }, [token]);
@@ -233,20 +243,21 @@ export default function HomeDashboard() {
     } catch {}
   }, [token]);
 
-  const fetchEnrolledCountForActiveCurriculum = useCallback(async (curr) => {
-    const cid = curr?.curriculum_id ?? curr?.curriculumId ?? curr?.id;
-    if (!cid) return;
-    try {
-      const { data } = await axios.get(`${BASE_URL}/enrollments`, {
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        params: { page: 1, limit: 1, curriculum_id: cid, status: 'Enrolled' },
-      });
-      const total =
-        Number(data?.pagination?.total) ||
-        (Array.isArray(data?.data) ? data.data.length : 0);
-      setEnrolledCountCurr(Number(total || 0));
-    } catch {}
-  }, [token]);
+  const fetchEnrolledCountForActiveCurriculum = useCallback(
+    async (curr) => {
+      const cid = curr?.curriculum_id ?? curr?.curriculumId ?? curr?.id;
+      if (!cid) return;
+      try {
+        const { data } = await axios.get(`${BASE_URL}/enrollments`, {
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          params: { page: 1, limit: 1, curriculum_id: cid, status: "Enrolled" },
+        });
+        const total = Number(data?.pagination?.total) || (Array.isArray(data?.data) ? data.data.length : 0);
+        setEnrolledCountCurr(Number(total || 0));
+      } catch {}
+    },
+    [token]
+  );
 
   useEffect(() => { checkToken(); }, []);
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
@@ -262,16 +273,15 @@ export default function HomeDashboard() {
   // early returns
   if (loading) {
     return (
-      <Container fluid className="p-4" style={{ minHeight: '100vh', background: 'var(--app-bg)' }}>
+      <Container fluid className="p-3" style={{ minHeight: "100vh" }}>
         <style>{styles}</style>
-        <Row className="g-4">
+        <Row className="g-3">
           <Col lg={8}><SkeletonCard /></Col>
           <Col lg={4}><SkeletonCard /></Col>
           <Col xs={12}><SkeletonCard /></Col>
           <Col md={4}><SkeletonCard /></Col>
           <Col md={4}><SkeletonCard /></Col>
           <Col md={4}><SkeletonCard /></Col>
-          <Col xs={12}><SkeletonCard /></Col>
         </Row>
       </Container>
     );
@@ -282,19 +292,12 @@ export default function HomeDashboard() {
 
   // KPIs
   const stats = [
-    { icon: <FaUsers size={20} />, label: 'Total Students', value: Number(studentStats.total_students) || 0, percent: 100, color: '#2563eb' },
-    { icon: <FaExchangeAlt size={18} />, label: 'Pending Transfers', value: Number(studentStats.pending_transfers) || 0, percent: 100, color: '#0ea5e9' },
-    { icon: <FaUserPlus size={18} />, label: 'Recent Students', value: Number(studentStats.recent_students) || 0, percent: 100, color: '#22c55e' },
+    { icon: <FaUsers size={18} />, label: "Total Students", value: Number(studentStats.total_students) || 0, percent: 100, color: "var(--bs-primary)" },
+    { icon: <FaExchangeAlt size={16} />, label: "Pending Transfers", value: Number(studentStats.pending_transfers) || 0, percent: 100, color: "var(--bs-info)" },
+    { icon: <FaUserPlus size={16} />, label: "Recent Students", value: Number(studentStats.recent_students) || 0, percent: 100, color: "var(--bs-success)" },
   ];
 
-  const colPropsFor = (count) => (count === 1
-    ? { xs: 12, sm: 12, md: 12, lg: 12 }
-    : count === 2
-    ? { xs: 12, sm: 6, md: 6, lg: 6 }
-    : { xs: 12, sm: 6, md: 4, lg: 4 });
-  const kpiCol = colPropsFor(stats.length);
-
-  const initials = `${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase();
+  const initials = `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`.toUpperCase();
 
   const renderPagination = () => (
     <Pagination className="mb-0">
@@ -307,80 +310,60 @@ export default function HomeDashboard() {
   );
 
   return (
-    <Container fluid className="p-3 p-md-4" style={{ minHeight: '100vh' }}>
+    <Container fluid className="p-3" style={{ minHeight: "100vh" }}>
       <style>{styles}</style>
 
       <StatusModal {...modal} onHide={() => setModal((m) => ({ ...m, show: false }))} />
 
-      {/* Topbar */}
-      <Row className="align-items-center mb-3 g-2">
-        <Col sm={6} className="d-flex align-items-center gap-3">
-          <div
-            className="brand-pill text-truncate"
-            title={activeCurriculum?.curriculum_name || schoolInfo?.school_name || 'Dashboard'}
-          >
-            {activeCurriculum?.curriculum_name || schoolInfo?.school_name || 'Dashboard'}
-          </div>
-        </Col>
-        <Col sm={6} className="d-flex justify-content-sm-end justify-content-start gap-2 flex-wrap">
-          <Button
-            variant="light"
-            className="btn-soft d-flex align-items-center gap-2"
-            onClick={() => {
-              fetchDashboard();
-              fetchLogs();
-              fetchActiveTeachers();
-              fetchActiveCurriculum();
-              if (activeCurriculum) fetchEnrolledCountForActiveCurriculum(activeCurriculum);
-            }}
-          >
-            <FaSyncAlt /> Refresh
-          </Button>
-          <Button variant="light" className="btn-soft d-flex align-items-center gap-2" onClick={exportLogsCsv}>
-            <FaDownload /> Export CSV
-          </Button>
-          {/* Theme switcher removed */}
-        </Col>
-      </Row>
-
-      {/* Slim full-width hero (no blur) */}
-      <Row className="g-3 mb-3">
-        <Col xs={12}>
-          <Card className="hero-card border-0 rounded-4 overflow-hidden soft-shadow">
-            <Card.Body className="p-3 p-md-4 hero-body hero-slim">
-              <div className="d-flex align-items-center justify-content-between flex-wrap gap-3">
-                <div className="d-flex align-items-center gap-3">
-                  <div className="rounded-circle d-flex justify-content-center align-items-center flex-shrink-0 text-white hero-avatar hero-avatar-slim" aria-label="User initials">
-                    {initials || <FaUsers size={18} />}
-                  </div>
-                  <div className="text-white">
-                    <div className="fw-semibold fs-5 mb-0 lh-base">
-                      Welcome{user.first_name ? `, ${user.first_name}` : ''}!
-                    </div>
-                    <div className="d-flex flex-wrap gap-2 mt-1">
-                      {(Array.isArray(user.roles) ? user.roles : [user.roles])
-                        .filter(Boolean)
-                        .map((r, i) => (
-                          <Badge key={i} bg="light" text="dark">
-                            {r}
-                          </Badge>
-                        ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-end text-white hero-clock hero-clock-slim">
-                  <div className="fw-bold fs-5">{fmtTime.format(now)}</div>
-                  <div className="opacity-75 small">{fmtDate.format(now)}</div>
-                </div>
+        {/* Hero (bigger) */}
+<Row className="g-2 mb-3">
+  <Col xs={12}>
+    <Card className="hero-card border-0 rounded-3 soft-shadow overflow-hidden">
+      <Card.Body className="p-2 p-lg-3 hero-xl">
+        <div className="d-flex align-items-center justify-content-between flex-wrap gap-3">
+          <div className="d-flex align-items-center gap-3">
+            <div
+              className="rounded-circle d-flex justify-content-center align-items-center flex-shrink-0 text-white hero-avatar-lg"
+              aria-label="User initials"
+            >
+              {initials || <FaUsers size={22} />}
+            </div>
+            <div className="text-white">
+              <div className="fw-semibold display-6 lh-base mb-1">
+                Welcome{user.first_name ? `, ${user.first_name}` : ""}!
               </div>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+              <div className="d-flex flex-wrap gap-2 mt-1">
+                {(Array.isArray(user.roles) ? user.roles : [user.roles])
+                  .filter(Boolean)
+                  .map((r, i) => (
+                    <Badge key={i} bg="light" text="dark" className="rounded-pill badge-hero">
+                      {r}
+                    </Badge>
+                  ))}
+              </div>
+            </div>
+          </div>
+          <div className="text-end text-white">
+            <div className="display-6 fw-bold">{fmtTime.format(now)}</div>
+            <div className="opacity-75 fs-5">{fmtDate.format(now)}</div>
+          </div>
+        </div>
+      </Card.Body>
+    </Card>
+  </Col>
+</Row>
 
-      {/* School & Curriculum Info */}
-      <Card className="mb-3 soft-shadow border-0 rounded-4">
-        <Card.Header className="bg-white border-0 fw-bold text-primary d-flex align-items-center">
+    {/* KPIs — ONLY these 3 are larger */}
+      <Row className="g-2 mb-2">
+        {stats.map((s, i) => (
+          <Col key={i} xs={12} sm={6} md={4}>
+            <StatCard icon={s.icon} label={s.label} value={s.value} percent={s.percent} color={s.color} size="lg" />
+          </Col>
+        ))}
+      </Row>
+      {/* School & Curriculum Info (normal size) */}
+      <Card className="mb-2 soft-shadow border-0 rounded-3">
+        <Card.Header className="bg-body border-0 fw-semibold text-primary d-flex align-items-center py-2">
           <FaSchool className="me-2" /> School Information
         </Card.Header>
         <Card.Body className="pt-2">
@@ -393,7 +376,7 @@ export default function HomeDashboard() {
             <InfoItem title="Address">{schoolInfo.school_address}</InfoItem>
             <InfoItem title="Division">{schoolInfo.division}</InfoItem>
             <InfoItem title="School Head">
-              {schoolInfo.school_head} <FaUserTie className="text-muted ms-1" />
+              {schoolInfo.school_head} <FaUserTie className="text-body-tertiary ms-1" />
             </InfoItem>
           </Row>
           <Row className="mt-1">
@@ -404,75 +387,70 @@ export default function HomeDashboard() {
         </Card.Body>
       </Card>
 
-      {/* KPIs */}
-      <Row className="g-3 mb-3">
-        {stats.map((s, i) => (
-          <Col key={i} {...kpiCol}>
-            <StatCard icon={s.icon} label={s.label} value={s.value} percent={s.percent} color={s.color} />
-          </Col>
-        ))}
-      </Row>
+     
 
-      {/* Quick Actions + Status */}
-      <Row className="g-3 mb-3">
-        <Col md={6} lg={3}>
-          <Card className="soft-shadow rounded-4 border-0 h-100">
+      {/* Quick Actions + Status (normal) */}
+      <Row className="g-2 mb-2">
+        <Col md={4} lg={3}>
+          <Card className="soft-shadow rounded-3 border-0 h-100">
             <Card.Body className="p-3 d-flex flex-column gap-2">
               <div className="fw-semibold">Quick Actions</div>
               <div className="d-grid gap-2">
-                <Button variant="primary" size="sm" className="btn-elevate" onClick={() => window.location.assign('/student_information')}>
+                <Button variant="primary" size="sm" onClick={() => window.location.assign("/student_information")}>
                   View Students
                 </Button>
-                <Button variant="outline-primary" size="sm" className="btn-elevate" onClick={() => window.location.assign('/add_student')}>
+                <Button variant="outline-primary" size="sm" onClick={() => window.location.assign("/add_student")}>
                   Add Student
                 </Button>
-                <Button variant="outline-secondary" size="sm" className="btn-elevate" onClick={() => window.location.assign('/enrollments')}>
+                <Button variant="outline-secondary" size="sm" onClick={() => window.location.assign("/enrollments")}>
                   Enrollments
                 </Button>
               </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={6} lg={9}>
-          <Card className="soft-shadow rounded-4 border-0 h-100">
+        <Col md={8} lg={9}>
+          <Card className="soft-shadow rounded-3 border-0 h-100">
             <Card.Body className="p-3 d-flex align-items-center justify-content-between">
               <div>
                 <div className="fw-semibold">System Status</div>
-                <div className="text-muted small">All services operational</div>
+                <div className="text-body-secondary small">All services operational</div>
               </div>
-              <div className="status-dot online" title="Operational" />
+              <span className="status-dot online" title="Operational" />
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Recent Activity (logs) */}
-      <Card className="soft-shadow border-0 rounded-4">
-        <Card.Header className="bg-white border-0 fw-bold text-primary d-flex align-items-center justify-content-between flex-wrap gap-2">
+      {/* Recent Activity (normal) */}
+      <Card className="soft-shadow border-0 rounded-3">
+        <Card.Header className="bg-body border-0 fw-semibold text-primary d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
           <span>Recent Activity</span>
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            <div className="filter-chips d-flex gap-1">
+            <div className="d-flex gap-1 filters-scroll">
               {[
-                { id: 'all', label: 'All' },
-                { id: 'created', label: 'Created' },
-                { id: 'updated', label: 'Updated' },
-                { id: 'deleted', label: 'Deleted' },
-                { id: 'transfer', label: 'Transfer' },
-                { id: 'info', label: 'Info' },
+                { id: "all", label: "All" },
+                { id: "created", label: "Created" },
+                { id: "updated", label: "Updated" },
+                { id: "deleted", label: "Deleted" },
+                { id: "transfer", label: "Transfer" },
+                { id: "info", label: "Info" },
               ].map((f) => (
                 <button
                   key={f.id}
-                  className={`chip ${typeFilter === f.id ? 'active' : ''}`}
+                  className={`chip ${typeFilter === f.id ? "active" : ""}`}
                   onClick={() => setTypeFilter(f.id)}
                 >
                   {f.label}
                 </button>
               ))}
             </div>
-            <InputGroup size="sm" style={{ width: 260 }}>
+
+            <InputGroup size="sm" style={{ width: 240 }}>
               <InputGroup.Text><FaSearch /></InputGroup.Text>
               <Form.Control placeholder="Search logs..." value={logsQuery} onChange={(e) => setLogsQuery(e.target.value)} />
             </InputGroup>
+
             <Form.Select
               size="sm"
               value={logsLimit}
@@ -481,25 +459,27 @@ export default function HomeDashboard() {
             >
               {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}/page</option>)}
             </Form.Select>
-            <Form.Check
-              type="switch"
-              id="density-switch"
-              checked={compact}
-              onChange={(e) => setCompact(e.target.checked)}
-              label={<span className="small text-muted">{compact ? 'Compact' : 'Cozy'}</span>}
-            />
+
+            <div className="form-check form-switch ms-1">
+              <input className="form-check-input" type="checkbox" role="switch" id="densitySwitch"
+                checked={compact} onChange={(e) => setCompact(e.target.checked)} />
+              <label className="form-check-label small text-body-secondary" htmlFor="densitySwitch">
+                {compact ? "Compact" : "Cozy"}
+              </label>
+            </div>
           </div>
         </Card.Header>
+
         <Card.Body className="p-0">
           {logsLoading ? (
-            <div className="p-4"><SkeletonCard /></div>
+            <div className="p-3"><SkeletonCard /></div>
           ) : visibleLogs?.length ? (
             <>
               <div className="table-responsive">
-                <Table hover className={`mb-0 align-middle table-modern ${compact ? 'table-compact' : ''}`}>
+                <Table hover size={compact ? "sm" : undefined} className="mb-0 align-middle table-modern">
                   <thead className="table-light sticky-top">
                     <tr>
-                      <th style={{ width: '55%' }}>Action</th>
+                      <th style={{ width: "55%" }}>Action</th>
                       <th>User</th>
                       <th>When</th>
                     </tr>
@@ -510,20 +490,20 @@ export default function HomeDashboard() {
                       const kind = classifyAction(action);
                       return (
                         <tr key={log_id} className={`row-${kind}`}>
-                          <td className="text-truncate" style={{ maxWidth: 560 }}>
+                          <td className="text-truncate" style={{ maxWidth: 720 }}>
                             <Badge bg={badge.bg} className="me-2 align-middle">{badge.text}</Badge>
                             <span className="align-middle">{action}</span>
                           </td>
-                          <td className="text-muted">
+                          <td className="text-body-secondary">
                             <div className="d-flex align-items-center gap-2">
                               <div className="avatar-mini">
-                                {(first_name?.[0] || '').toUpperCase()}
-                                {(last_name?.[0] || '').toUpperCase()}
+                                {(first_name?.[0] || "").toUpperCase()}
+                                {(last_name?.[0] || "").toUpperCase()}
                               </div>
-                              <span>{[first_name, last_name].filter(Boolean).join(' ') || email || '—'}</span>
+                              <span>{[first_name, last_name].filter(Boolean).join(" ") || email || "—"}</span>
                             </div>
                           </td>
-                          <td className="text-muted" title={new Date(log_timestamp).toLocaleString()}>
+                          <td className="text-body-secondary" title={new Date(log_timestamp).toLocaleString()}>
                             {formatRelative(log_timestamp, now)}
                           </td>
                         </tr>
@@ -533,14 +513,14 @@ export default function HomeDashboard() {
                 </Table>
               </div>
 
-              <div className="d-flex justify-content-between align-items-center px-3 py-2 border-top bg-white rounded-bottom-4 flex-wrap gap-2">
-                <div className="text-muted small">Page {logsPage} of {logsTotalPages}</div>
+              <div className="d-flex justify-content-between align-items-center px-3 py-2 border-top bg-body rounded-bottom-3 flex-wrap gap-2">
+                <div className="text-body-secondary small">Page {logsPage} of {logsTotalPages}</div>
                 {renderPagination()}
               </div>
             </>
           ) : (
-            <div className="text-center py-5 text-muted">
-              <svg width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-2">
+            <div className="text-center py-5 text-body-secondary">
+              <svg width="88" height="88" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
@@ -555,18 +535,18 @@ export default function HomeDashboard() {
 
   function exportLogsCsv() {
     try {
-      const headers = ['log_id', 'action', 'user', 'email', 'timestamp'];
+      const headers = ["log_id", "action", "user", "email", "timestamp"];
       const rows = visibleLogs.map((l) => [
         l.log_id,
-        (l.action || '').replace(/\n|\r/g, ' '),
-        [l.first_name, l.last_name].filter(Boolean).join(' '),
-        l.email || '',
+        (l.action || "").replace(/\n|\r/g, " "),
+        [l.first_name, l.last_name].filter(Boolean).join(" "),
+        l.email || "",
         new Date(l.log_timestamp).toISOString(),
       ]);
-      const csv = [headers.join(','), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `activity_logs_${Date.now()}.csv`;
       document.body.appendChild(a);
@@ -574,91 +554,72 @@ export default function HomeDashboard() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      handleError('Failed to export CSV.');
+      handleError("Failed to export CSV.");
     }
   }
 }
 
-// ----- styles (scoped)
+// ----- styles (scoped) -----
 const styles = `
   :root {
-    /* Clean blue theme (no indigo) */
-    --app-bg: radial-gradient(1200px 600px at 20% -10%, #eaf2ff 0%, transparent 40%), linear-gradient(180deg, #f7faff, #eef5ff 60%, #f7faff 100%);
-    --card-bg: #ffffff;
-    --text: #1f2937;
-    --muted: #6b7280;
-    --border: rgba(0,0,0,.08);
-    --hover: #f8fafc;
-    --shadow: 0 6px 24px rgba(17,24,39,.06);
-    --shadow-lg: 0 12px 28px rgba(17,24,39,.10);
-    --accent: #2563eb; /* blue-600 */
-    --accent-2: #3b82f6; /* blue-500 */
-
-    /* HERO palette (blue family) */
-    --hero-1: #1d4ed8; /* blue-700 */
-    --hero-2: #3b42b6ff; /* blue-600 */
-    --hero-3: #34adbdff; /* blue-400 */
+    --shadow: 0 6px 16px rgba(16,24,40,.06);
+    --shadow-lg: 0 12px 24px rgba(16,24,40,.10);
   }
-
-  .soft-shadow { box-shadow: var(--shadow); background: var(--card-bg); color: var(--text); }
-  .hover-lift { transition: transform .18s ease, box-shadow .18s ease; }
+  .soft-shadow { box-shadow: var(--shadow); background: var(--bs-body-bg); }
+  .hover-lift { transition: transform .16s ease, box-shadow .16s ease; }
   .hover-lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 
-  /* === SLIM HERO (no blur, full width) === */
-  .hero-card {
-    position: relative;
-    border: 0;
-    background:
-      radial-gradient(600px 360px at 110% -20%, rgba(255,255,255,.30), transparent 60%),
-      radial-gradient(480px 320px at -20% 120%, rgba(255,255,255,.18), transparent 60%),
-      linear-gradient(135deg, var(--hero-1), var(--hero-2), var(--hero-3));
-    background-repeat: no-repeat, no-repeat, no-repeat;
-    background-size: cover, cover, 200% 200%;
-    background-position: center, center, 0% 50%;
-    animation: heroMove 18s ease-in-out infinite;
-    overflow: hidden;
+  /* Header chip (bigger only when .brand-chip-lg is added) */
+  .brand-chip {
+    display:inline-flex; align-items:center;
+    padding:.35rem .6rem; border-radius:999px;
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    box-shadow: 0 4px 12px rgba(0,0,0,.04);
+    font-weight: 700; font-size: .95rem;
   }
-  .hero-body { min-height: clamp(120px, 18vh, 220px); }
-  .hero-card::after {
-    content: "";
-    position: absolute; inset: 0;
-    pointer-events: none;
-    background-image:
-      linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
-    background-size: 24px 24px;
-    mix-blend-mode: overlay;
-  }
-  @keyframes heroMove {
-    0%   { background-position: center, center, 0% 50%; }
-    50%  { background-position: center, center, 100% 50%; }
-    100% { background-position: center, center, 0% 50%; }
-  }
-  .hero-avatar { width: 72px; height: 72px; font-size: 1.25rem; font-weight: 700; background: rgba(255,255,255,.20); }
-  .hero-avatar-slim { width: 56px; height: 56px; font-size: 1rem; }
-  .hero-clock { text-shadow: 0 1px 0 rgba(0,0,0,.25); }
-  .hero-clock-slim .fs-5 { font-weight: 700; }
-
-  .brand-pill {
-    font-weight: 700; font-size: 1.05rem; padding: .45rem .75rem; border-radius: 9999px;
-    background: var(--card-bg); color: var(--text);
-    box-shadow: 0 4px 16px rgba(33,37,41,.06); border: 1px solid var(--border);
+  .brand-chip-lg {
+    padding: .6rem .9rem;
+    font-weight: 800;
+    font-size: 1.05rem;
   }
 
-  .btn-soft { border: 1px solid var(--border) !important; background: var(--card-bg) !important; color: var(--text) !important; }
-  .btn-soft:hover { filter: brightness(0.98); }
-  .btn-elevate { box-shadow: var(--shadow); }
+  /* Hero */
+/* Animated gradient for the hero */
+.hero-card {
+  /* same colors, we just animate their positions */
+  background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 50%, #34d399 100%);
+  background-size: 150% 150%;
+  animation: heroGradientShift 14s ease-in-out infinite;
+  color: #fff;
+}
 
-  .kpi-card { position: relative; overflow: hidden; }
-  .kpi-card::before { content: ""; position: absolute; right: -28px; top: -28px; width: 110px; height: 110px; border-radius: 50%; background: radial-gradient(closest-side, rgba(37,99,235,.12), transparent); }
-  .kpi-number { letter-spacing: .2px; }
+/* Smoothly move the gradient stops around */
+@keyframes heroGradientShift {
+  0%   { background-position: 0% 50%; }
+  25%  { background-position: 50% 100%; }
+  50%  { background-position: 100% 50%; }
+  75%  { background-position: 50% 0%; }
+  100% { background-position: 0% 50%; }
+}
 
-  .table-modern { color: var(--text); }
-  .table-modern tbody tr { transition: background-color .15s ease, box-shadow .15s ease; }
-  .table-modern tbody tr:hover { background-color: var(--hover); }
-  .table-modern thead.sticky-top { top: 0; z-index: 1; background: var(--card-bg); }
-  .table-compact td, .table-compact th { padding-top: .35rem !important; padding-bottom: .35rem !important; }
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .hero-card { animation: none; }
+}
+  .hero-tall { min-height: 150px; } /* only hero is taller; rest of the page stays normal */
+  .hero-avatar-sm { width: 48px; height: 48px; font-size: .95rem; font-weight: 700; background: rgba(255,255,255,.22); }
 
+  /* KPI big aura applies only to big KPI cards */
+  .kpi-lg::before {
+    content: ""; position: absolute; right: -28px; top: -28px;
+    width: 130px; height: 130px; border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(13,110,253,.12), transparent);
+  }
+
+  /* Table */
+  .table-modern tbody tr:hover { background-color: var(--bs-tertiary-bg); }
+  .table-modern thead.sticky-top { top: 0; z-index: 1; }
   .row-created { box-shadow: inset 3px 0 0 0 #22c55e; }
   .row-updated { box-shadow: inset 3px 0 0 0 #2563eb; }
   .row-deleted { box-shadow: inset 3px 0 0 0 #ef4444; }
@@ -666,16 +627,45 @@ const styles = `
   .row-info { box-shadow: inset 3px 0 0 0 #9ca3af; }
 
   .avatar-mini {
-    width: 28px; height: 28px; border-radius: 9999px;
-    background: #e0f2fe; /* sky-100 */
-    color: #2563eb; /* blue-600 */
+    width: 26px; height: 26px; border-radius: 9999px;
+    background: #e0f2fe; color: #2563eb;
     display:flex; align-items:center; justify-content:center;
     font-size: .7rem; font-weight: 700;
   }
+    /* Bigger hero */
+.hero-xl { min-height: 200px; }                  /* height up from 150px */
+@media (min-width: 992px) {
+  .hero-xl { min-height: 240px; }               /* roomier on lg+ */
+}
+
+/* Larger avatar for hero */
+.hero-avatar-lg {
+  width: 72px;
+  height: 72px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  background: rgba(255,255,255,.22);
+  border: 1px solid rgba(255,255,255,.18);
+  backdrop-filter: saturate(1.1);
+}
+
+/* Slightly larger role badges in the hero */
+.badge-hero {
+  padding: .45rem .75rem;
+  font-weight: 600;
+  font-size: .95rem;
+}
+
 
   .status-dot { width: 14px; height: 14px; border-radius: 9999px; box-shadow: 0 0 0 6px rgba(16,185,129,.12); }
   .status-dot.online { background: radial-gradient(circle at 35% 35%, #6ee7b7, #10b981); }
 
-  .chip { border: 1px solid var(--border); background: var(--card-bg); color: var(--text); padding: .25rem .5rem; border-radius: 9999px; font-size: .8rem; }
-  .chip.active { background: var(--accent); color: #fff; border-color: transparent; }
+  /* Filter chips */
+  .chip { border: 1px solid var(--bs-border-color); background: var(--bs-body-bg); color: var(--bs-body-color); padding: .2rem .6rem; border-radius: 9999px; font-size: .8rem; }
+  .chip.active { background: var(--bs-primary); color: #fff; border-color: var(--bs-primary); }
+  .filters-scroll { overflow-x: auto; padding-bottom: 2px; }
+  .filters-scroll::-webkit-scrollbar { height: 6px; }
+  .filters-scroll::-webkit-scrollbar-thumb { background: var(--bs-tertiary-bg); border-radius: 999px; }
 `;
+
+
