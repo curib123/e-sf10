@@ -1,7 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import StatusModal from "../components/status_modal";
-import { checkToken } from "../components/token_checker";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import { Link } from 'react-router-dom';
+
+import StatusModal from '../components/status_modal';
+import { checkToken } from '../components/token_checker';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
@@ -308,7 +315,7 @@ export default function UploadSf10WithSearch() {
 
       {/* Title + Subtitle */}
       <div className="mb-4 text-center">
-        <h2 className="fw-bold mb-1">Upload SF10 File</h2>
+        <h2 className="fw-bold mb-1 text-dark">Upload SF10 File</h2>
         <p className="text-muted mb-0">
           Use the search box below to find a student, then upload their ESF10/SF10 record.
         </p>

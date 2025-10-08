@@ -1,15 +1,21 @@
-import React, { useState, useEffect, useMemo } from "react";
-import StatusModal from "../components/status_modal";
-import { checkToken } from "../components/token_checker";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
 import {
-  FaUserGraduate,
   FaArrowLeft,
-  FaIdCard,
   FaHome,
-  FaUserShield,
+  FaIdCard,
   FaInfoCircle,
   FaSave,
-} from "react-icons/fa";
+  FaUserGraduate,
+  FaUserShield,
+} from 'react-icons/fa';
+
+import StatusModal from '../components/status_modal';
+import { checkToken } from '../components/token_checker';
 
 // Base API URL
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
@@ -139,7 +145,7 @@ export default function StudentForm({ initialData = null, onSubmit }) {
         <form onSubmit={handleSubmit} className="bg-white rounded-4 shadow-sm border p-4 p-md-5">
           {/* Header */}
           <div className="d-flex justify-content-between align-items-center mb-3">
-            <h4 className="mb-0 fw-bold d-flex align-items-center gap-2">
+            <h4 className="mb-0 fw-bold d-flex align-items-center gap-2 text-dark">
               <FaUserGraduate aria-hidden="true" />
               {student.student_id ? "Update Student" : "Register New Student"}
             </h4>

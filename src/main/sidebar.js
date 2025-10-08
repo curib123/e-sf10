@@ -1,5 +1,6 @@
-// Styles
-import './sidebar.css';
+// SidebarMui.jsx — dynamic document titles per route + centered bottom credits,
+// modern UI, cleaned spacing, no left rail, credits in sidebar bottom,
+// slim footer (no credits), main content locked to light theme
 
 import React, {
   memo,
@@ -10,46 +11,83 @@ import React, {
 
 import axios from 'axios';
 import {
-  Button,
-  Modal,
-} from 'react-bootstrap';
-import {
-  FaAddressBook,
-  FaBars,
-  FaBook,
-  FaBookOpen,
-  FaBuilding,
-  FaCalendarAlt,
-  FaChalkboardTeacher,
-  FaChevronDown,
-  FaClipboardCheck,
-  FaCog,
-  FaDatabase,
-  FaExchangeAlt,
-  FaHistory,
-  FaHome,
-  FaLayerGroup,
-  FaListAlt,
-  FaListOl,
-  FaSchool,
-  FaSignOutAlt,
-  FaSitemap,
-  FaTasks,
-  FaUpload,
-  FaUserGraduate,
-  FaUserPlus,
-  FaUsersCog,
-} from 'react-icons/fa';
-import {
   NavLink,
   Route,
   Routes,
   useLocation,
 } from 'react-router-dom';
 
+// EXTRA ICONS (unique across entries)
+import {
+  AccountCircle as AccountIcon,
+  AppRegistration as AppRegistrationIcon,
+  AssignmentInd as AssignmentIndIcon,
+  AutoStories as AutoStoriesIcon,
+  Backup as BackupIcon,
+  Brightness4 as DarkIcon,
+  Brightness7 as LightIcon,
+  CalendarMonth as CalendarIcon,
+  CloudUpload as CloudUploadIcon,
+  CompareArrows as CompareArrowsIcon,
+  Contacts as ContactsIcon,
+  DashboardCustomize as DashboardCustomizeIcon,
+  DateRange as DateRangeIcon,
+  Domain as DomainIcon,
+  EventNote as EventNoteIcon,
+  ExpandLess,
+  ExpandMore,
+  FolderShared as FolderSharedIcon,
+  Grading as GradingIcon,
+  History as HistoryIcon,
+  Home as HomeIcon,
+  HomeWork as HomeWorkIcon,
+  HowToReg as HowToRegIcon,
+  InfoOutlined as InfoIcon,
+  Layers as LayersIcon,
+  Logout as LogoutIcon,
+  ManageAccounts as ManageAccountsIcon,
+  Menu as MenuIcon,
+  MenuBook as MenuBookIcon,
+  PersonAdd as PersonAddIcon,
+  SettingsSuggest as SettingsSuggestIcon,
+  Stairs as StairsIcon,
+  SupervisorAccount as SupervisorAccountIcon,
+  ViewWeek as ViewWeekIcon,
+} from '@mui/icons-material';
+import {
+  AppBar,
+  Avatar,
+  Box,
+  Button,
+  Collapse,
+  createTheme,
+  CssBaseline,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Drawer,
+  IconButton,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Paper,
+  Popover,
+  ThemeProvider,
+  Toolbar,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from '@mui/material';
+
+// helpers (existing)
 import { getUserPermissions } from '../components/get_permission';
 import { checkToken } from '../components/token_checker';
-// Screens ---------------------------------------------------------------
+// screens (existing)
 import AllLogs from '../screens/all_logs';
 import AssignSubjectPerYearLevelForm
   from '../screens/assign_subject_per_level_form';
@@ -94,12 +132,12 @@ import UploadEcardAll from '../screens/upload_ecards_all';
 import User from '../screens/user_list';
 import AddUser from '../screens/user_upsert';
 
-// API Config
+// API config
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 const LOGO_URL = process.env.REACT_APP_API_LOGO_URL;
 const api = axios.create({ baseURL: BASE_URL, headers: { 'Content-Type': 'application/json' } });
 
-// PERMISSIONS
+// ======= PERMISSIONS (unchanged) =======
 const PERMS = Object.freeze({
   REGISTER_STUDENT: 'register_student',
   SEARCH_STUDENT: 'search_student',
@@ -107,17 +145,13 @@ const PERMS = Object.freeze({
   EDIT_STUDENT_INFO: 'edit_student_info',
   DELETE_STUDENT: 'delete_student',
   VIEW_ECARDS: 'view_ecards',
-
   UPLOAD_DOCUMENTS: 'upload_documents',
   DOWNLOAD_DOCUMENTS: 'download_documents',
   DELETE_DOCUMENTS: 'delete_documents',
-
   LOCK_RECORDS: 'lock_records',
   UNLOCK_RECORDS: 'unlock_records',
-
   APPROVE_TRANSFERS: 'approve_transfers',
   REQUEST_TRANSFERS: 'request_transfers',
-
   MANAGE_USERS: 'manage_users',
   MANAGE_ROLES: 'manage_roles',
   MANAGE_PERMISSIONS: 'manage_permissions',
@@ -127,39 +161,28 @@ const PERMS = Object.freeze({
   EXPORT_DATA: 'export_data',
   IMPORT_DATA: 'import_data',
   VIEW_REPORTS: 'view_reports',
-
   VIEW_TEACHERS: 'view_teachers',
   MANAGE_TEACHERS: 'manage_teachers',
-
   VIEW_TEACHER_ASSIGNMENTS: 'view_teacher_assignments',
   MANAGE_TEACHER_ASSIGNMENTS: 'manage_teacher_assignments',
-
   VIEW_SUBJECTS: 'view_subjects',
   MANAGE_SUBJECTS: 'manage_subjects',
-
   VIEW_SECTIONS: 'view_sections',
   MANAGE_SECTIONS: 'manage_sections',
-
   VIEW_SCHOOL_YEARS: 'view_school_years',
   MANAGE_SCHOOL_YEARS: 'manage_school_years',
-
   VIEW_GRADES: 'view_grades',
   MANAGE_GRADES: 'manage_grades',
   MANAGE_GRADE_INPUT: 'manage_grade_input',
-
   VIEW_GRADE_LEVELS: 'view_grade_levels',
   MANAGE_GRADE_LEVELS: 'manage_grade_levels',
-
   VIEW_ENROLLMENTS: 'view_enrollments',
   MANAGE_ENROLLMENTS: 'manage_enrollments',
-
   VIEW_CLASS_SCHEDULES: 'view_class_schedules',
   MANAGE_CLASS_SCHEDULES: 'manage_class_schedules',
-
   VIEW_CURRICULUM: 'view_curriculum',
   MANAGE_CURRICULUM: 'manage_curriculum',
 });
-
 const ALL_PERM_KEYS = Object.values(PERMS);
 
 const ROLE_POLICIES = {
@@ -168,8 +191,7 @@ const ROLE_POLICIES = {
     PERMS.REGISTER_STUDENT, PERMS.SEARCH_STUDENT, PERMS.VIEW_STUDENT_INFO,
     PERMS.EDIT_STUDENT_INFO, PERMS.DELETE_STUDENT, PERMS.VIEW_ECARDS,
     PERMS.UPLOAD_DOCUMENTS, PERMS.DOWNLOAD_DOCUMENTS, PERMS.DELETE_DOCUMENTS,
-    PERMS.LOCK_RECORDS, PERMS.UNLOCK_RECORDS,
-    PERMS.APPROVE_TRANSFERS, PERMS.REQUEST_TRANSFERS,
+    PERMS.LOCK_RECORDS, PERMS.UNLOCK_RECORDS, PERMS.APPROVE_TRANSFERS, PERMS.REQUEST_TRANSFERS,
     PERMS.VIEW_REPORTS, PERMS.EXPORT_DATA, PERMS.IMPORT_DATA,
     PERMS.VIEW_TEACHERS, PERMS.MANAGE_TEACHERS,
     PERMS.VIEW_TEACHER_ASSIGNMENTS, PERMS.MANAGE_TEACHER_ASSIGNMENTS,
@@ -187,138 +209,192 @@ const ROLE_POLICIES = {
     PERMS.SEARCH_STUDENT, PERMS.VIEW_STUDENT_INFO, PERMS.VIEW_ECARDS,
     PERMS.UPLOAD_DOCUMENTS, PERMS.DOWNLOAD_DOCUMENTS,
     PERMS.VIEW_TEACHER_ASSIGNMENTS, PERMS.VIEW_CLASS_SCHEDULES,
-    PERMS.VIEW_GRADES, PERMS.MANAGE_GRADE_INPUT,
-    PERMS.VIEW_REPORTS,
+    PERMS.VIEW_GRADES, PERMS.MANAGE_GRADE_INPUT, PERMS.VIEW_REPORTS,
   ]),
 };
 
-function buildPermFlags(keys) {
-  const o = {};
-  keys.forEach((k) => (o[k] = true));
-  return o;
-}
+function buildPermFlags(keys) { const o = {}; keys.forEach((k) => (o[k] = true)); return o; }
 function grantAllPerms() { return buildPermFlags(ALL_PERM_KEYS); }
 function mergeServerAndRolePerms(userRole, serverFlags) {
   if (userRole === 'admin') return grantAllPerms();
   const roleSet = ROLE_POLICIES[userRole] || new Set();
   const roleFlags = buildPermFlags([...roleSet]);
   const merged = { ...roleFlags };
-  if (serverFlags && typeof serverFlags === 'object') {
-    for (const k of ALL_PERM_KEYS) if (k in serverFlags) merged[k] = Boolean(serverFlags[k]);
-  }
+  if (serverFlags && typeof serverFlags === 'object') for (const k of ALL_PERM_KEYS) if (k in serverFlags) merged[k] = !!serverFlags[k];
   return merged;
 }
 
-// UI Primitives
-const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, collapsed }) {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) => `link ${isActive ? 'active' : ''}`}
-      title={collapsed ? label : undefined}
-    >
-      <span className="link-icon"><Icon /></span>
-      {!collapsed && <span className="ms-2 link-label">{label}</span>}
-    </NavLink>
-  );
+// ======== THEME ========
+const focusRing = (t) => ({
+  outline: 'none',
+  boxShadow: `0 0 0 3px ${t.palette.mode === 'light' ? 'rgba(37, 99, 235, .28)' : 'rgba(96,165,250,.38)'}`
 });
 
-const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, collapsed, open, onToggle, children }) {
-  return (
-    <li className="dropdown-link my-1">
-      <button
-        type="button"
-        className="link dropdown-toggle-btn d-flex justify-content-between align-items-center w-100 bg-transparent border-0 p-0"
-        onClick={onToggle}
-        aria-expanded={open}
-        title={collapsed ? label : undefined}
-      >
-        <div className="d-flex align-items-center">
-          <span className="link-icon"><Icon /></span>
-          {!collapsed && <span className="ms-2 link-label">{label}</span>}
-        </div>
-        {!collapsed && <FaChevronDown className={`dropdown-icon ${open ? 'rotate' : ''}`} />}
-      </button>
-      <ul className={`submenu ${open ? 'show' : ''}`} style={{ display: collapsed ? 'none' : undefined }}>{children}</ul>
-    </li>
-  );
+const getDesignTokens = (mode) => ({
+  palette: {
+    mode,
+    primary: { main: mode === 'light' ? '#2563eb' : '#60a5fa' },
+    divider: mode === 'light' ? '#e9edf5' : 'rgba(255,255,255,0.12)',
+    background: {
+      default: mode === 'light' ? '#f6f8fc' : '#0f172a',
+      paper: mode === 'light' ? '#ffffff' : '#0b1224',
+    },
+    text: {
+      primary: mode === 'light' ? '#0f172a' : '#f8fafc',
+      secondary: mode === 'light' ? '#475569' : '#cbd5e1',
+    },
+  },
+  shape: { borderRadius: 14 },
+  typography: {
+    fontFamily: `Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial`,
+    fontSize: 14,
+    button: { textTransform: 'none', fontWeight: 600 }
+  },
+  components: {
+    MuiListItemButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 10,
+          transition: 'background-color .18s ease',
+          '&:hover': { backgroundColor: mode === 'light' ? 'rgba(2,6,23,.04)' : 'rgba(255,255,255,.06)' },
+          '&.Mui-selected': {
+            background: mode === 'light'
+              ? 'linear-gradient(90deg, rgba(37,99,235,.08), rgba(37,99,235,.04))'
+              : 'linear-gradient(90deg, rgba(96,165,250,.18), rgba(96,165,250,.08))',
+            boxShadow: mode === 'light'
+              ? 'inset 0 0 0 1px rgba(37,99,235,.16)'
+              : 'inset 0 0 0 1px rgba(96,165,250,.22)',
+          },
+        },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          borderRight: '1px solid',
+          borderColor: mode === 'light' ? '#e9edf5' : 'rgba(255,255,255,0.12)',
+          backgroundImage: mode === 'light'
+            ? 'linear-gradient(180deg, #fff, #fafbff)'
+            : 'linear-gradient(180deg, #0b1224, #0f172a)',
+        },
+      },
+    },
+    MuiAppBar: { styleOverrides: { root: { borderBottom: 'none', boxShadow: '0 10px 30px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.05)' } } },
+    MuiPaper: { styleOverrides: { outlined: { borderColor: mode === 'light' ? '#e9edf5' : 'rgba(255,255,255,0.12)' } } },
+  },
 });
 
-// MENU
+// ======== ICON MAP (unique) ========
+const I = {
+  AdminDashboard: HomeIcon,
+  TeacherDashboard: DashboardCustomizeIcon,
+
+  StudentRecordsDD: FolderSharedIcon,
+  AcademicMgmtDD: AppRegistrationIcon,
+  AssignSchedDD: EventNoteIcon,
+  SchoolSetupDD: DomainIcon,
+  SystemSettingsDD: SettingsSuggestIcon,
+
+  AddStudent: PersonAddIcon,
+  Directory: ContactsIcon,
+  Enrollment: HowToRegIcon,
+  UploadSF10: CloudUploadIcon,
+  InputGrades: GradingIcon,
+  TransferReq: CompareArrowsIcon,
+
+  Subjects: MenuBookIcon,
+  Curriculum: AutoStoriesIcon,
+  Teachers: SupervisorAccountIcon,
+
+  AssignSubjects: LayersIcon,
+  AssignTeacher: AssignmentIndIcon,
+  ClassSchedules: CalendarIcon,
+
+  AcademicYear: DateRangeIcon,
+  GradeLevels: StairsIcon,
+  Sections: ViewWeekIcon,
+  SchoolInfo: HomeWorkIcon,
+
+  UserMgmt: ManageAccountsIcon,
+  ActivityLogs: HistoryIcon,
+  BackupRestore: BackupIcon,
+};
+
+// ======== MENU CONFIG ========
 const MENU_CONFIG = [
-  { type: 'link', roles: ['admin', 'registrar'], permission: PERMS.VIEW_REPORTS, to: '/dashboard', icon: FaHome, label: 'Dashboard' },
-  { type: 'link', roles: ['teacher'], to: '/teacher-dashboard', icon: FaHome, label: 'Dashboard' },
+  { type: 'link', roles: ['admin', 'registrar'], permission: PERMS.VIEW_REPORTS, to: '/dashboard', icon: I.AdminDashboard, label: 'Dashboard' },
+  { type: 'link', roles: ['teacher'], to: '/teacher-dashboard', icon: I.TeacherDashboard, label: 'Dashboard (Teacher)' },
+
   {
-    type: 'dropdown', label: 'Student Records', icon: FaUserGraduate, key: 'student', roles: ['admin', 'registrar', 'teacher'],
+    type: 'dropdown', label: 'Student Records', icon: I.StudentRecordsDD, key: 'student', roles: ['admin', 'registrar', 'teacher'],
     children: [
-      { to: '/add_student', icon: FaUserPlus, label: 'Add New Student', permission: PERMS.REGISTER_STUDENT },
-      { to: '/student_information', icon: FaAddressBook, label: 'Student Directory', permission: PERMS.VIEW_STUDENT_INFO },
-      { to: '/enrollments', icon: FaListAlt, label: 'Student Enrollment', permission: PERMS.VIEW_ENROLLMENTS },
-      { to: '/upload_ecards_all', icon: FaUpload, label: 'Upload SF10 Records', permission: PERMS.UPLOAD_DOCUMENTS },
-      { to: '/input-grades', icon: FaBookOpen, label: 'Input Students Grades', permission: PERMS.MANAGE_GRADE_INPUT },
-      { to: '/view_request', icon: FaExchangeAlt, label: 'Transfer Requests', permission: PERMS.APPROVE_TRANSFERS },
+      { to: '/add_student', icon: I.AddStudent, label: 'Add New Student', permission: PERMS.REGISTER_STUDENT },
+      { to: '/student_information', icon: I.Directory, label: 'Student Directory', permission: PERMS.VIEW_STUDENT_INFO },
+      { to: '/enrollments', icon: I.Enrollment, label: 'Student Enrollment', permission: PERMS.VIEW_ENROLLMENTS },
+      { to: '/upload_ecards_all', icon: I.UploadSF10, label: 'Upload SF10 Records', permission: PERMS.UPLOAD_DOCUMENTS },
+      { to: '/input-grades', icon: I.InputGrades, label: 'Input Students Grades', permission: PERMS.MANAGE_GRADE_INPUT },
+      { to: '/view_request', icon: I.TransferReq, label: 'Transfer Requests', permission: PERMS.APPROVE_TRANSFERS },
     ],
   },
+
   {
-    type: 'dropdown', label: 'Academic Management', icon: FaBook, key: 'academic_management', roles: ['admin', 'registrar'],
+    type: 'dropdown', label: 'Academic Management', icon: I.AcademicMgmtDD, key: 'academic_management', roles: ['admin', 'registrar'],
     children: [
-      { to: '/subjects', icon: FaBookOpen, label: 'Subject Management', permission: PERMS.VIEW_SUBJECTS },
-      { to: '/curriculum', icon: FaTasks, label: 'Curriculum Management', permission: PERMS.VIEW_CURRICULUM },
-      { to: '/teacher', icon: FaChalkboardTeacher, label: 'Teacher Management', permission: PERMS.VIEW_TEACHERS },
+      { to: '/subjects', icon: I.Subjects, label: 'Subject Management', permission: PERMS.VIEW_SUBJECTS },
+      { to: '/curriculum', icon: I.Curriculum, label: 'Curriculum Management', permission: PERMS.VIEW_CURRICULUM },
+      { to: '/teacher', icon: I.Teachers, label: 'Teacher Management', permission: PERMS.VIEW_TEACHERS },
     ],
   },
+
   {
-    type: 'dropdown', label: 'Assignments & Scheduling', icon: FaClipboardCheck, key: 'academic_assignments', roles: ['admin', 'registrar'],
+    type: 'dropdown', label: 'Assignments & Scheduling', icon: I.AssignSchedDD, key: 'academic_assignments', roles: ['admin', 'registrar'],
     children: [
-      { to: '/assign-subject-per-year-level', icon: FaLayerGroup, label: 'Assign Subjects Grade Level', permission: PERMS.MANAGE_SUBJECTS },
-      { to: '/teacher-assignments', icon: FaChalkboardTeacher, label: 'Assign Teacher', permission: PERMS.VIEW_TEACHER_ASSIGNMENTS },
-      { to: '/class-schedules', icon: FaSchool, label: 'Class Schedules', permission: PERMS.VIEW_CLASS_SCHEDULES },
+      { to: '/assign-subject-per-year-level', icon: I.AssignSubjects, label: 'Assign Subjects Grade Level', permission: PERMS.MANAGE_SUBJECTS },
+      { to: '/teacher-assignments', icon: I.AssignTeacher, label: 'Assign Teacher', permission: PERMS.VIEW_TEACHER_ASSIGNMENTS },
+      { to: '/class-schedules', icon: I.ClassSchedules, label: 'Class Schedules', permission: PERMS.VIEW_CLASS_SCHEDULES },
     ],
   },
+
   {
-    type: 'dropdown', label: 'School Setup', icon: FaCalendarAlt, key: 'academic_setup', roles: ['admin', 'registrar'],
+    type: 'dropdown', label: 'School Setup', icon: I.SchoolSetupDD, key: 'academic_setup', roles: ['admin', 'registrar'],
     children: [
-      { to: '/school_year', icon: FaCalendarAlt, label: 'Academic Year', permission: PERMS.VIEW_SCHOOL_YEARS },
-      { to: '/grade_level', icon: FaListOl, label: 'Grade Levels', permission: PERMS.VIEW_GRADE_LEVELS },
-      { to: '/sections', icon: FaSitemap, label: 'Section Creation', permission: PERMS.VIEW_SECTIONS },
-      { to: '/school_settings', icon: FaBuilding, label: 'School Information', permission: PERMS.MANAGE_SCHOOL_SETTINGS },
+      { to: '/school_year', icon: I.AcademicYear, label: 'Academic Year', permission: PERMS.VIEW_SCHOOL_YEARS },
+      { to: '/grade_level', icon: I.GradeLevels, label: 'Grade Levels', permission: PERMS.VIEW_GRADE_LEVELS },
+      { to: '/sections', icon: I.Sections, label: 'Section Creation', permission: PERMS.VIEW_SECTIONS },
+      { to: '/school_settings', icon: I.SchoolInfo, label: 'School Information', permission: PERMS.MANAGE_SCHOOL_SETTINGS },
     ],
   },
+
   {
-    type: 'dropdown', label: 'System Settings', icon: FaCog, key: 'sysadmin', roles: ['admin'],
+    type: 'dropdown', label: 'System Settings', icon: I.SystemSettingsDD, key: 'sysadmin', roles: ['admin'],
     children: [
-      { to: '/users_account', icon: FaUsersCog, label: 'User Management', permission: PERMS.MANAGE_USERS },
-      { to: '/all_logs', icon: FaHistory, label: 'Activity Logs', permission: PERMS.VIEW_LOGS },
-      { to: '/backup', icon: FaDatabase, label: 'Backup & Restore', permission: PERMS.MANAGE_BACKUPS },
+      { to: '/users_account', icon: I.UserMgmt, label: 'User Management', permission: PERMS.MANAGE_USERS },
+      { to: '/all_logs', icon: I.ActivityLogs, label: 'Activity Logs', permission: PERMS.VIEW_LOGS },
+      { to: '/backup', icon: I.BackupRestore, label: 'Backup & Restore', permission: PERMS.MANAGE_BACKUPS },
     ],
   },
 ];
 
-// Routes
+// ======== ROUTES (unchanged) ========
 const ROUTE_COMPONENTS = {
   '/dashboard': { el: <Home />, perm: PERMS.VIEW_REPORTS },
   '/teacher-dashboard': { el: <HomeTeacher /> },
-
   '/add_student': { el: <AddStudent />, perm: PERMS.REGISTER_STUDENT },
   '/student_information': { el: <StudentInformation />, perm: PERMS.VIEW_STUDENT_INFO },
   '/upload_ecards_all': { el: <UploadEcardAll />, perm: PERMS.UPLOAD_DOCUMENTS },
   '/view_request': { el: <ViewRequest />, perm: PERMS.APPROVE_TRANSFERS },
   '/enrollments': { el: <EnrollmentList />, perm: PERMS.VIEW_ENROLLMENTS },
   '/input-grades': { el: <GradeInputsList />, perm: PERMS.MANAGE_GRADE_INPUT },
-
   '/subjects': { el: <SubjectList />, perm: PERMS.VIEW_SUBJECTS },
   '/curriculum': { el: <Curriculum />, perm: PERMS.VIEW_CURRICULUM },
   '/teacher': { el: <TeacherList />, perm: PERMS.VIEW_TEACHERS },
-
   '/assign-subject-per-year-level': { el: <AssignSubjectPerYearLevel />, perm: PERMS.MANAGE_SUBJECTS },
   '/teacher-assignments': { el: <TeacherAssign />, perm: PERMS.VIEW_TEACHER_ASSIGNMENTS },
   '/class-schedules': { el: <ClassSchedulesList />, perm: PERMS.VIEW_CLASS_SCHEDULES },
-
   '/school_year': { el: <DisplaySchoolYear />, perm: PERMS.VIEW_SCHOOL_YEARS },
   '/grade_level': { el: <GradeLevelList />, perm: PERMS.VIEW_GRADE_LEVELS },
   '/sections': { el: <SectionList />, perm: PERMS.VIEW_SECTIONS },
   '/school_settings': { el: <SchoolSettings />, perm: PERMS.MANAGE_SCHOOL_SETTINGS },
-
   '/users_account': { el: <User />, perm: PERMS.MANAGE_USERS },
   '/all_logs': { el: <AllLogs />, perm: PERMS.VIEW_LOGS },
   '/backup': { el: <Backup />, perm: PERMS.MANAGE_BACKUPS },
@@ -382,6 +458,155 @@ const EXTRA_ROUTES = {
   ],
 };
 
+// ======== Sidebar helpers ========
+const NAV_FONT_SIZE = '0.92rem';
+const NAV_ICON_SIZE = 22;
+
+const SidebarLink = memo(function SidebarLink({ to, icon: Icon, label, selected, collapsed, onClick }) {
+  const content = (
+    <ListItemButton
+      component={NavLink}
+      to={to}
+      selected={selected}
+      onClick={onClick}
+      sx={{
+        position: 'relative',
+        px: collapsed ? 1 : 1.25,
+        py: 0.9,
+        borderRadius: 2,
+        mx: 0,
+        my: 0.4,
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        '& .MuiListItemIcon-root': {
+          minWidth: 0,
+          mr: collapsed ? 0 : 1.25,
+          justifyContent: 'center',
+          '& svg': { fontSize: NAV_ICON_SIZE, transition: 'transform .12s ease, opacity .12s ease' },
+        },
+        '&:hover': {
+          backgroundColor: (t) => (t.palette.mode === 'light' ? 'rgba(2,6,23,.04)' : 'rgba(255,255,255,.06)'),
+        },
+        '&.Mui-selected .MuiListItemIcon-root, &.Mui-selected .MuiListItemIcon-root svg': {
+          color: 'primary.main',
+        },
+        '&.Mui-selected .MuiListItemText-primary': {
+          color: 'primary.main',
+          fontWeight: 800,
+        },
+        '&:focus-visible': (t) => focusRing(t),
+        '@media (prefers-reduced-motion: reduce)': {
+          '& .MuiListItemIcon-root svg': { transition: 'none', transform: 'none' },
+        },
+      }}
+      aria-current={selected ? 'page' : undefined}
+    >
+      <ListItemIcon><Icon /></ListItemIcon>
+      {!collapsed && (
+        <ListItemText
+          primary={label}
+          primaryTypographyProps={{ fontSize: NAV_FONT_SIZE, fontWeight: 600, letterSpacing: 0.2, lineHeight: 1.1 }}
+        />
+      )}
+    </ListItemButton>
+  );
+  return collapsed ? <Tooltip title={label} placement="right">{content}</Tooltip> : content;
+});
+
+/**
+ * SidebarDropdown
+ * - Expanded mode: inline Collapse.
+ * - Collapsed: icon-only trigger opens Popover with submenu (auto-closes on click).
+ */
+const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open, onToggle, items, collapsed, active }) {
+  const [anchorEl, setAnchorEl] = useState(null);
+  const popOpen = Boolean(anchorEl);
+
+  const handleClick = (e) => { if (collapsed) setAnchorEl(e.currentTarget); else onToggle?.(); };
+  const handleClose = () => setAnchorEl(null);
+
+  const header = (
+    <ListItemButton
+      onClick={handleClick}
+      aria-haspopup="menu"
+      aria-expanded={collapsed ? popOpen : open}
+      aria-label={label}
+      selected={active}
+      sx={{
+        position: 'relative',
+        px: collapsed ? 1 : 1.25,
+        py: 0.9,
+        borderRadius: 2,
+        mx: 0,
+        my: 0.4,
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        '& .MuiListItemIcon-root': {
+          minWidth: 0,
+          mr: collapsed ? 0 : 1.25,
+          justifyContent: 'center',
+          '& svg': { fontSize: NAV_ICON_SIZE, transition: 'transform .12s ease, opacity .12s ease' },
+        },
+        '&:hover': { backgroundColor: (t) => t.palette.action.hover },
+        '&:focus-visible': (t) => focusRing(t),
+        '&.Mui-selected .MuiListItemIcon-root, &.Mui-selected .MuiListItemIcon-root svg': { color: 'primary.main' },
+        '&.Mui-selected .MuiListItemText-primary': { color: 'primary.main', fontWeight: 800 },
+      }}
+    >
+      <ListItemIcon><Icon /></ListItemIcon>
+      {!collapsed && (
+        <ListItemText
+          primary={label}
+          primaryTypographyProps={{ fontSize: NAV_FONT_SIZE, fontWeight: 700, letterSpacing: 0.2, lineHeight: 1.1 }}
+        />
+      )}
+      {!collapsed && (open ? <ExpandLess /> : <ExpandMore />)}
+    </ListItemButton>
+  );
+
+  return (
+    <Box>
+      {collapsed ? <Tooltip title={label} placement="right">{header}</Tooltip> : header}
+
+      {!collapsed && (
+        <Collapse in={open} timeout="auto" unmountOnExit>
+          <List component="div" disablePadding sx={{ pl: 1.75 }}>
+            {items.map((c) => (
+              <SidebarLink key={c.to} to={c.to} icon={c.icon} label={c.label} selected={false} collapsed={false} />
+            ))}
+          </List>
+        </Collapse>
+      )}
+
+      {collapsed && (
+        <Popover
+          open={popOpen}
+          onClose={handleClose}
+          anchorEl={anchorEl}
+          anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'center', horizontal: 'left' }}
+          PaperProps={{ sx: { ml: 1, borderRadius: 2, boxShadow: '0 12px 28px rgba(0,0,0,0.12)' } }}
+        >
+          <Box sx={{ minWidth: 240, p: 0.5 }}>
+            <List dense disablePadding>
+              {items.map((c) => (
+                <SidebarLink
+                  key={c.to}
+                  to={c.to}
+                  icon={c.icon}
+                  label={c.label}
+                  selected={false}
+                  collapsed={false}
+                  onClick={() => setAnchorEl(null)}
+                />
+              ))}
+            </List>
+          </Box>
+        </Popover>
+      )}
+    </Box>
+  );
+});
+
+// ======== Build routes from menu ========
 function buildRoutesFromMenu(menu, perms) {
   const hasPerm = (p) => (p ? Boolean(perms[p]) : true);
   const ordered = [];
@@ -391,70 +616,72 @@ function buildRoutesFromMenu(menu, perms) {
       const base = ROUTE_COMPONENTS[item.to];
       if (base && hasPerm(base.perm)) ordered.push({ path: item.to, el: base.el });
       (EXTRA_ROUTES[item.to] || []).forEach((r) => hasPerm(r.perm) && ordered.push({ path: r.path, el: r.el }));
-    } else if (item.type === 'dropdown') {
-      (item.children || []).forEach((c) => visit({ ...c, type: 'link' }));
-    }
+    } else if (item.type === 'dropdown') (item.children || []).forEach((c) => visit({ ...c, type: 'link' }));
   };
   menu.forEach(visit);
   return ordered;
 }
 
-const Sidebar = ({ onLogout }) => {
-  const [collapsed, setCollapsed] = useState(false);
-  const [openMenus, setOpenMenus] = useState({});
-  const [showModal, setShowModal] = useState(false);
+// ======== Main Component ========
+const drawerWidth = 320;
+const collapsedWidth = 92;
+const FOOTER_HEIGHT = 36;
 
+export default function SidebarMui({ onLogout }) {
+  // Themings
+  const [mode, setMode] = useState(getInitialTheme);
+  const appTheme = useMemo(() => createTheme(getDesignTokens(mode)), [mode]);
+  const mainLightTheme = useMemo(() => createTheme(getDesignTokens('light')), []);
+
+  const toggleTheme = () => {
+    setMode((m) => { const next = m === 'dark' ? 'light' : 'dark'; localStorage.setItem('mui-theme', next); return next; });
+  };
+
+  // Layout / UI state
+  const mdUp = useMediaQuery(appTheme.breakpoints.up('md'));
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const handleDrawerToggle = () => setMobileOpen(!mobileOpen);
+  const toggleCollapse = () => setCollapsed((c) => !c);
+
+  // Data/permissions
+  const [openMenus, setOpenMenus] = useState({});
   const [user, setUser] = useState(null);
   const [permissions, setPermissions] = useState({});
-
   const [schoolData, setSchoolData] = useState({});
   const [logoUrl, setLogoUrl] = useState(null);
+
+  const [anchorEl, setAnchorEl] = useState(null);
+  const profileMenuOpen = Boolean(anchorEl);
+  const handleProfileClick = (e) => setAnchorEl(e.currentTarget);
+  const handleProfileClose = () => setAnchorEl(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const schoolId = '1234567890';
   const token = sessionStorage.getItem('token');
   const userRole = (sessionStorage.getItem('user_role') || 'teacher').toLowerCase();
 
-  const fullName = useMemo(
-    () => (!user ? 'Loading...' : [user.first_name, user.middle_name, user.last_name].filter(Boolean).join(' ')),
-    [user]
-  );
+  const fullName = useMemo(() => (!user ? 'Loading...' : [user.first_name, user.middle_name, user.last_name].filter(Boolean).join(' ')), [user]);
   const avatarInitial = useMemo(() => (user?.first_name?.[0] || '?').toUpperCase(), [user?.first_name]);
   const roleLabel = useMemo(() => (Array.isArray(user?.role) ? user.role[0] : user?.role) || userRole || 'User', [user?.role, userRole]);
 
   const { pathname } = useLocation();
 
   useEffect(() => {
-    if (pathname === '/login' || pathname.startsWith('/login')) {
-      setUser(null); setPermissions({});
-      return;
-    }
-
+    if (pathname === '/login' || pathname.startsWith('/login')) { setUser(null); setPermissions({}); return; }
     checkToken();
-
     const serverFlags = getUserPermissions?.() || {};
     const merged = mergeServerAndRolePerms(userRole, serverFlags);
     setPermissions(merged);
 
     const loginRaw = sessionStorage.getItem('loginResponse');
-    if (loginRaw) {
-      try {
-        const loginData = JSON.parse(loginRaw);
-        if (loginData?.user) setUser(loginData.user);
-      } catch {}
-    }
+    if (loginRaw) { try { const loginData = JSON.parse(loginRaw); if (loginData?.user) setUser(loginData.user); } catch {} }
 
-    api
-      .get(`/school-defaults/${schoolId}`, { headers: { Authorization: `Bearer ${token}` } })
+    api.get(`/school-defaults/${schoolId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(({ data }) => {
         const { user, school_id, created_at, updated_at, ...filtered } = data || {};
         setSchoolData(filtered);
-        setLogoUrl(
-          data?.school_logo
-            ? data.school_logo.startsWith('http')
-              ? data.school_logo
-              : `${LOGO_URL}${data.school_logo}`
-            : null
-        );
+        setLogoUrl(data?.school_logo ? (data.school_logo.startsWith('http') ? data.school_logo : `${LOGO_URL}${data.school_logo}`) : null);
       })
       .catch(() => {});
   }, [pathname, schoolId, token, userRole]);
@@ -478,169 +705,411 @@ const Sidebar = ({ onLogout }) => {
   const orderedRoutes = useMemo(() => {
     const inMenuRoutes = buildRoutesFromMenu(filteredMenus, permissions);
     const seen = new Set(inMenuRoutes.map((r) => r.path));
-
     Object.entries(ROUTE_COMPONENTS).forEach(([path, cfg]) => {
-      if (!seen.has(path) && (!cfg.perm || permissions[cfg.perm])) {
-        seen.add(path);
-        inMenuRoutes.push({ path, el: cfg.el });
-      }
+      if (!seen.has(path) && (!cfg.perm || permissions[cfg.perm])) { seen.add(path); inMenuRoutes.push({ path, el: cfg.el }); }
     });
-
     Object.entries(EXTRA_ROUTES).forEach(([base, extras]) => {
-      if (!seen.has(base)) {
-        extras.forEach((r) => (!r.perm || permissions[r.perm]) && inMenuRoutes.push({ path: r.path, el: r.el }));
-      }
+      if (!seen.has(base)) extras.forEach((r) => (!r.perm || permissions[r.perm]) && inMenuRoutes.push({ path: r.path, el: r.el }));
     });
-
     inMenuRoutes.push({ path: '*', el: <NotFound /> });
     return inMenuRoutes;
   }, [filteredMenus, permissions]);
 
   const toggleMenu = (key) => setOpenMenus((p) => ({ ...p, [key]: !p[key] }));
 
-  const renderMenu = (menu) => {
-    if (menu.type === 'link') {
-      if (!hasRole(menu.roles) || !can(menu.permission)) return null;
-      return (
-        <li key={menu.to}>
-          <SidebarLink to={menu.to} icon={menu.icon} label={menu.label} collapsed={collapsed} />
-        </li>
-      );
+  // ---- DYNAMIC DOCUMENT TITLE PER ROUTE ----
+  const PATH_LABELS = useMemo(() => {
+    // Flatten menu items to map path -> label (use first match)
+    const map = {};
+    MENU_CONFIG.forEach((m) => {
+      if (m.type === 'link') map[m.to] = m.label;
+      if (m.type === 'dropdown') (m.children || []).forEach((c) => { map[c.to] = c.label; });
+    });
+    // Also include base dropdown labels for parent paths
+    MENU_CONFIG.filter(m => m.type === 'dropdown').forEach((m) => { map[`/${m.key}`] = m.label; });
+    return map;
+  }, []);
+
+  useEffect(() => {
+    // Exact match first
+    let action = PATH_LABELS[pathname];
+    if (!action) {
+      // Try prefix match (for nested routes like /subjects/create etc.)
+      const entry = Object.keys(PATH_LABELS).find((k) => pathname.startsWith(k + '/'));
+      if (entry) action = PATH_LABELS[entry];
     }
-    if (!hasRole(menu.roles)) return null;
-    const visibleChildren = (menu.children || []).filter((c) => can(c.permission));
-    if (visibleChildren.length === 0) return null;
-    const isOpen = !!openMenus[menu.key];
-    return (
-      <SidebarDropdown
-        key={menu.key}
-        label={menu.label}
-        icon={menu.icon}
-        collapsed={collapsed}
-        open={isOpen}
-        onToggle={() => toggleMenu(menu.key)}
+    if (!action) {
+      // Fallback: title-case from path segment
+      const seg = pathname.split('/').filter(Boolean).join(' / ');
+      action = seg ? seg.replace(/-/g, ' ').replace(/\b\w/g, s => s.toUpperCase()) : 'Dashboard';
+    }
+    document.title = `E-SF10 SYSTEM - ${action}`;
+  }, [pathname, PATH_LABELS]);
+  // ------------------------------------------
+
+  // Drawer content (credits)
+  const [creditsAnchor, setCreditsAnchor] = useState(null);
+  const creditsOpen = Boolean(creditsAnchor);
+  const openCredits = (e) => setCreditsAnchor(e.currentTarget);
+  const closeCredits = () => setCreditsAnchor(null);
+
+  // Drawer content
+  const drawer = (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header */}
+      <Box
+        sx={{
+          px: 1.5, pt: 1.25, pb: 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          textAlign: 'center', gap: 1, minHeight: 56,
+        }}
       >
-        {visibleChildren.map((c) => (
-          <li key={c.to}>
-            <SidebarLink to={c.to} icon={c.icon} label={c.label} collapsed={collapsed} />
-          </li>
-        ))}
-      </SidebarDropdown>
-    );
-  };
+        {!collapsed && (
+          <Box sx={{ overflow: 'hidden' }}>
+            <Typography noWrap sx={{ fontWeight: 900, fontSize: '1.18rem', letterSpacing: 0.2, lineHeight: 1.15 }}>
+              E-SF10 SYSTEM
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', mt: 0.25 }}>
+              Manage student forms easily & securely
+            </Typography>
+          </Box>
+        )}
+      </Box>
+
+      <Divider />
+
+      {/* Scroll area with proper gutters */}
+      <Box
+        sx={{
+          flex: 1,
+          overflowY: 'auto',
+          py: 1,
+          px: 1.25,
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          '&::-webkit-scrollbar': { display: 'none' },
+        }}
+      >
+        <List disablePadding>
+          {filteredMenus.map((menu) => {
+            if (menu.type === 'link') {
+              const selected = pathname === menu.to;
+              const Icon = menu.icon;
+              if (!hasRole(menu.roles) || !can(menu.permission)) return null;
+              return (
+                <SidebarLink
+                  key={menu.to}
+                  to={menu.to}
+                  icon={Icon}
+                  label={menu.label}
+                  selected={selected}
+                  collapsed={collapsed}
+                />
+              );
+            }
+            if (!hasRole(menu.roles)) return null;
+            const visibleChildren = (menu.children || []).filter((c) => can(c.permission));
+            if (!visibleChildren.length) return null;
+            const isOpen = !!openMenus[menu.key];
+            const Icon = menu.icon;
+            const anyChildActive = visibleChildren.some((c) => pathname === c.to || pathname.startsWith(c.to + '/'));
+            return (
+              <Box key={menu.key}>
+                <SidebarDropdown
+                  label={menu.label}
+                  icon={Icon}
+                  open={isOpen}
+                  onToggle={() => toggleMenu(menu.key)}
+                  collapsed={collapsed}
+                  items={visibleChildren}
+                  active={anyChildActive}
+                />
+              </Box>
+            );
+          })}
+        </List>
+      </Box>
+
+      <Divider />
+
+      {/* Sidebar bottom credits — CENTERED */}
+      {!collapsed ? (
+        <Box sx={{ p: 1.5, display: 'grid', justifyItems: 'center' }}>
+          <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, textAlign: 'center', width: '100%' }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+              Developers
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block' }}>
+              • John Paul Curib (Front-end)
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
+              • Quivir Cutanda (Back-end)
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+              Project Adviser / Manager
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block' }}>
+              • Clark Kevin Villamor
+            </Typography>
+          </Paper>
+
+          <Box sx={{ mt: 1, textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary">
+              © {new Date().getFullYear()} • TMC Coding Club
+            </Typography>
+          </Box>
+        </Box>
+      ) : (
+        <Box sx={{ p: 1, display: 'grid', justifyItems: 'center', rowGap: 0.5 }}>
+          <Tooltip title="Credits">
+            <IconButton size="small" onClick={openCredits}>
+              <InfoIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            © {new Date().getFullYear()}
+          </Typography>
+
+          {/* Credits popover in collapsed mode */}
+          <Popover
+            open={creditsOpen}
+            onClose={closeCredits}
+            anchorEl={creditsAnchor}
+            anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+            transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            PaperProps={{ sx: { p: 1, borderRadius: 2, minWidth: 240, textAlign: 'center' } }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+              Developers
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block' }}>
+              • John Paul Curib (Front-end)
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
+              • Quivir Cutanda (Back-end)
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+              Project Adviser / Manager
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block' }}>
+              • Clark Kevin Villamor
+            </Typography>
+          </Popover>
+        </Box>
+      )}
+    </Box>
+  );
+
+  const sideWidth = collapsed ? collapsedWidth : drawerWidth;
 
   return (
-    <div className="dashboard-container">
-      {/* Sidebar */}
-      <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-        <div className="brand">
-          <button
-            className="brand-toggle"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label="Toggle sidebar"
-            title="Toggle sidebar"
+    <ThemeProvider theme={appTheme}>
+      <CssBaseline />
+      <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+        {/* AppBar */}
+        <AppBar
+          position="fixed"
+          color="default"
+          elevation={0}
+          sx={{
+            zIndex: (t) => t.zIndex.drawer + 1,
+            bgcolor: 'background.paper',
+            width: { md: `calc(100% - ${sideWidth}px)` },
+            ml: { md: `${sideWidth}px` },
+            boxShadow: '0 10px 30px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
+            borderBottom: 'none',
+          }}
+        >
+          <Toolbar sx={{ gap: 1.25, minHeight: 72, px: { xs: 1.25, sm: 2, md: 3 } }}>
+            <Tooltip title={mdUp ? (collapsed ? 'Expand sidebar' : 'Collapse sidebar') : 'Open menu'}>
+              <IconButton
+                color="inherit"
+                edge="start"
+                onClick={mdUp ? toggleCollapse : handleDrawerToggle}
+                aria-label="toggle sidebar"
+                size="large"
+              >
+                <MenuIcon />
+              </IconButton>
+            </Tooltip>
+
+            {/* logo + school meta */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              {logoUrl ? (
+                <Box
+                  component="img"
+                  src={logoUrl}
+                  alt="School Logo"
+                  sx={{ width: 40, height: 40, borderRadius: 1.25, border: '1px solid', borderColor: 'divider', objectFit: 'cover' }}
+                />
+              ) : (
+                <Box sx={{
+                  width: 40, height: 40, borderRadius: 1.25, bgcolor: 'action.hover',
+                  display: 'grid', placeItems: 'center', color: 'text.disabled', fontSize: 11
+                }}>N/A</Box>
+              )}
+              <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <Typography variant="subtitle1" noWrap fontWeight={700}>{schoolData.school_name || 'Loading…'}</Typography>
+                <Typography variant="caption" color="text.secondary" noWrap>{schoolData.school_address || '—'}</Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ flex: 1 }} />
+
+            {/* Profile */}
+            <Tooltip title={fullName}>
+              <IconButton onClick={handleProfileClick} size="small" sx={{ ml: 0.5 }}>
+                <Avatar sx={{ width: 32, height: 32 }}>{avatarInitial}</Avatar>
+              </IconButton>
+            </Tooltip>
+            <Box sx={{ display: { xs: 'none', sm: 'flex' }, flexDirection: 'column', alignItems: 'flex-start', mx: 1 }}>
+              <Typography variant="body2" noWrap fontWeight={600}>{fullName}</Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>{roleLabel}</Typography>
+            </Box>
+
+            {/* Theme toggle (affects sidebar/appbar only) */}
+            <Tooltip title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}>
+              <IconButton onClick={toggleTheme} aria-label="toggle color mode" color="inherit">
+                {mode === 'dark' ? <LightIcon /> : <DarkIcon />}
+              </IconButton>
+            </Tooltip>
+
+            {/* Profile menu */}
+            <Menu
+              anchorEl={anchorEl}
+              open={profileMenuOpen}
+              onClose={handleProfileClose}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
+              <MenuItem disabled>
+                <ListItemIcon><AccountIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>{fullName}</ListItemText>
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={() => { handleProfileClose(); setConfirmOpen(true); }}>
+                <ListItemIcon><LogoutIcon color="error" fontSize="small" /></ListItemIcon>
+                <Typography color="error">Logout</Typography>
+              </MenuItem>
+            </Menu>
+          </Toolbar>
+        </AppBar>
+
+        {/* Drawer (sidebar) */}
+        <Box component="nav" sx={{ width: { md: sideWidth }, flexShrink: { md: 0 } }} aria-label="sidebar">
+          {/* Mobile */}
+          <Drawer
+            variant="temporary"
+            open={mobileOpen}
+            onClose={handleDrawerToggle}
+            ModalProps={{ keepMounted: true }}
+            sx={{
+              display: { xs: 'block', md: 'none' },
+              '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, borderRadius: 0 },
+            }}
           >
-            <FaBars />
-          </button>
+            <Box sx={{ width: drawerWidth }}>{drawer}</Box>
+          </Drawer>
 
-          {!collapsed && (
-            <div className="brand-meta">
-              <div className="brand-titles">
-                <h1 className="brand-title">E-SF10 SYSTEM</h1>
-                <p className="brand-sub">Manage student forms easily & securely</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <ul className="nav-links">{filteredMenus.map(renderMenu)}</ul>
-
-        {!collapsed && (
-          <div
-            className="school-info"
-            onClick={() => setShowModal(true)}
+          {/* Desktop mini-variant */}
+          <Drawer
+            variant="permanent"
+            open
+            sx={{
+              display: { xs: 'none', md: 'block' },
+              '& .MuiDrawer-paper': {
+                boxSizing: 'border-box',
+                width: sideWidth,
+                borderRight: '1px solid',
+                borderColor: 'divider',
+                overflowX: 'hidden',
+                transition: (t) => t.transitions.create('width', { duration: t.transitions.duration.shortest }),
+                backgroundImage: (t) => t.palette.mode === 'light'
+                  ? 'linear-gradient(180deg, #fff, #fafbff)'
+                  : 'linear-gradient(180deg, #0b1224, #0f172a)',
+              },
+            }}
           >
-            <div className="school-credits">
-              <span>&copy; {new Date().getFullYear()} All rights reserved.</span>
-              <span className="muted">TMC Coding Club</span>
-            </div>
-          </div>
-        )}
+            <Box sx={{ width: sideWidth }}>{drawer}</Box>
+          </Drawer>
+        </Box>
 
-        <Modal show={showModal} onHide={() => setShowModal(false)} centered>
-          <Modal.Header closeButton><Modal.Title>Credits</Modal.Title></Modal.Header>
-          <Modal.Body>
-            <p>This is an extension project created by the TMC Coding Club.</p>
-            <hr />
-            <p className="mb-1"><strong>Software Engineers:</strong></p>
-            <ul className="mb-2">
-              <li>John Paul Curib</li>
-              <li>Quivir Cutanda</li>
-            </ul>
-            <p className="mb-1"><strong>Project Manager & Adviser:</strong></p>
-            <ul className="mb-0"><li>Clark Kevin Villamor</li></ul>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>Close</Button>
-          </Modal.Footer>
-        </Modal>
-      </aside>
+        {/* MAIN CONTENT (locked to light) */}
+        <ThemeProvider theme={mainLightTheme}>
+          <Box
+            component="main"
+            sx={{
+              flexGrow: 1,
+              p: 2.25,
+              bgcolor: '#ffffff', // always white
+              color: '#0f172a',   // fixed text color
+              minHeight: '100vh',
+              pb: `${FOOTER_HEIGHT + 12}px`,
+              overflowY: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              '&::-webkit-scrollbar': { display: 'none' },
+            }}
+          >
+            {/* Spacer under AppBar */}
+            <Toolbar sx={{ minHeight: 72 }} />
+            <Routes>
+              {useMemo(() => orderedRoutes.map((r) => <Route key={r.path} path={r.path} element={r.el} />), [orderedRoutes])}
+            </Routes>
+          </Box>
 
-      {/* Main */}
-      <main className="main">
-        {/* Topbar */}
-      <header className="topbar">
-  <div className="topbar-left">
-    {logoUrl ? (
-      <img src={logoUrl} alt="School Logo" className="topbar-logo" />
-    ) : (
-      <div className="topbar-logo placeholder">N/A</div>
-    )}
-    <div className="topbar-meta">
-      <h2 className="topbar-title">{schoolData.school_name || 'Loading…'}</h2>
-      <small className="topbar-sub">{schoolData.school_address || '—'}</small>
-    </div>
-  </div>
+          {/* SLIM FOOTER — no developer/adviser info here */}
+          <Box
+            component="footer"
+            sx={{
+              position: 'fixed',
+              bottom: 0,
+              left: { xs: 0, md: `${sideWidth}px` },
+              width: { xs: '100%', md: `calc(100% - ${sideWidth}px)` },
+              height: `${FOOTER_HEIGHT}px`,
+              bgcolor: '#ffffff',
+              borderTop: '1px solid',
+              borderColor: 'divider',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              px: { xs: 1.5, md: 2 },
+              zIndex: (t) => t.zIndex.appBar,
+              color: '#334155',
+            }}
+          >
+            <Typography variant="caption" noWrap>
+              © {new Date().getFullYear()} TMC Coding Club
+            </Typography>
+          </Box>
+        </ThemeProvider>
+      </Box>
 
-  {/* RIGHT: profile only (search removed) */}
-  <div className="topbar-right">
-    <div className="profile dropdown">
-      <button className="profile-btn" data-bs-toggle="dropdown">
-        <div className="avatar">{avatarInitial}</div>
-        <div className="profile-meta">
-          <span className="name">{fullName}</span>
-          <small className="role">{roleLabel}</small>
-        </div>
-        <FaChevronDown className="chev" />
-      </button>
-      <ul className="dropdown-menu dropdown-menu-end mt-2 shadow-sm">
-        <li>
-          <button className="dropdown-item d-flex align-items-center gap-2" onClick={onLogout}>
-            <FaSignOutAlt className="text-danger" />
-            <span className="text-danger fw-semibold">Logout</span>
-          </button>
-        </li>
-      </ul>
-    </div>
-  </div>
-</header>
-
-
-        {/* Routes */}
-        <div className="main-content">
-          <Routes>
-            {orderedRoutes.map((r) => (
-              <Route key={r.path} path={r.path} element={r.el} />
-            ))}
-          </Routes>
-        </div>
-
-        <footer className="footer-flat">
-          &copy; {new Date().getFullYear()} All rights reserved. Credits – TMC Coding Club
-        </footer>
-      </main>
-    </div>
+      {/* Logout dialog */}
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Avatar sx={{ width: 28, height: 28 }}>{avatarInitial}</Avatar>
+          <Box>
+            <Typography variant="subtitle1">Sign out</Typography>
+            <Typography variant="caption" color="text.secondary">{fullName}</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2">Are you sure you want to logout?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmOpen(false)} variant="outlined">Cancel</Button>
+          <Button onClick={() => { setConfirmOpen(false); onLogout?.(); }} variant="contained" color="error" startIcon={<LogoutIcon />}>
+            Logout
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </ThemeProvider>
   );
-};
+}
 
-export default Sidebar;
+function getInitialTheme() {
+  const saved = localStorage.getItem('mui-theme');
+  if (saved === 'light' || saved === 'dark') return saved;
+  return 'light';
+}

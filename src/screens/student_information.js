@@ -275,7 +275,7 @@ const StudentInformation = () => {
       {/* Header */}
       <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3 mb-lg-4">
         <div>
-          <h3 className="fw-bold mb-1 d-flex align-items-center gap-2"><FaUserGraduate /> Students</h3>
+          <h3 className="fw-bold mb-1 d-flex align-items-center gap-2 text-dark"><FaUserGraduate /> Students</h3>
           <div className="text-muted small d-flex align-items-center gap-2">
             <FaInfoCircle className="opacity-75" /> Manage student directory, quick search, and E-SF10 records.
           </div>

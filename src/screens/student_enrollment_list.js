@@ -952,7 +952,7 @@ const EnrollmentList = () => {
       {/* Header */}
       <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3 mb-lg-4">
         <div>
-          <h3 className="fw-bold mb-1">Enrollments</h3>
+          <h3 className="fw-bold mb-1 text-dark">Enrollments</h3>
         </div>
         <div className="d-flex flex-wrap gap-2">
           <button

@@ -421,7 +421,7 @@ export default function GradeStudentList() {
       {/* Minimal header */}
       <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-2 mb-3">
         <div>
-          <h5 className="mb-1">Student Grades</h5>
+          <h5 className="mb-1 text-dark">Student Grades</h5>
           <div className="small text-muted">
             Showing {pageStudents.length} of {totalStudents} student{totalStudents !== 1 ? 's' : ''} (page {pageClamped}/{totalPages})
           </div>
