@@ -418,7 +418,7 @@ export default function StudentForm({ initialData = null, onSubmit }) {
 
           {/* Submit */}
           <div className="d-grid">
-            <button type="submit" className="btn btn-success py-2 fw-semibold text-nowrap d-inline-flex align-items-center justify-content-center gap-2">
+            <button type="submit" className="btn btn-primary py-2 fw-semibold text-nowrap d-inline-flex align-items-center justify-content-center gap-2">
               <FaSave aria-hidden="true" />
               {student.student_id ? "Update Student" : "Add Student"}
             </button>
