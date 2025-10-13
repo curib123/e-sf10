@@ -3,6 +3,7 @@
 // icon-only dropdown when collapsed, centered sidebar credits,
 // slim footer (no credits), main content locked to light mode.
 // Added: Desktop drag-to-resize sidebar (persisted), coexists with collapsed mini mode.
+// Patched: Drawer/AppBar z-index lowered under Bootstrap modal (modal=1055, backdrop=1050)
 
 import React, {
   memo,
@@ -494,6 +495,11 @@ const EXTRA_ROUTES = {
 const NAV_FONT_SIZE = '0.94rem';
 const NAV_ICON_SIZE = 22;
 
+// -------- Bootstrap modal-safe z-indexes --------
+// Bootstrap modal = 1055, backdrop = 1050.
+// Keep sidebar under these.
+const Z_SIDEBAR_UNDER_BOOTSTRAP = 1038;
+
 // Icon chip wrapper
 const IconChip = ({ children }) => (
   <Box
@@ -559,7 +565,6 @@ const SidebarLink = memo(function SidebarLink({
           transform: 'translateY(-1px)',
         },
 
-        // ACTIVE STATE from NavLink (.active)
         '&.active': {
           background: (t) =>
             t.palette.mode === 'light'
@@ -567,7 +572,6 @@ const SidebarLink = memo(function SidebarLink({
               : 'linear-gradient(90deg, rgba(96,165,250,.18), rgba(96,165,250,.08))',
         },
 
-        // Left accent bar ONLY when allowed
         ...(noActiveBar ? {} : {
           '&.active::before': {
             content: '""',
@@ -616,7 +620,6 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
       aria-haspopup="menu"
       aria-expanded={collapsed ? popOpen : open}
       aria-label={label}
-      // use "selected" for wash; NO ::before vertical bar
       selected={active}
       sx={{
         position: 'relative',
@@ -637,8 +640,6 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
         },
         '&:hover': { backgroundColor: (t) => t.palette.action.hover, transform: 'translateY(-1px)' },
 
-        // Remove the accent bar entirely on dropdown headers.
-        // Keep icon/text emphasis on "selected"
         '&.Mui-selected .MuiListItemIcon-root svg': { color: 'primary.main' },
         '&.Mui-selected .MuiListItemText-primary': { color: 'primary.main', fontWeight: 800 },
       }}
@@ -672,7 +673,7 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
                 icon={c.icon}
                 label={c.label}
                 collapsed={false}
-                noActiveBar // <- no vertical bar for dropdown children
+                noActiveBar
               />
             ))}
           </List>
@@ -704,7 +705,7 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
                   icon={c.icon}
                   label={c.label}
                   collapsed={false}
-                  noActiveBar // <- no vertical bar here too
+                  noActiveBar
                   onClick={() => setAnchorEl(null)}
                 />
               ))}
@@ -769,10 +770,8 @@ export default function SidebarMui({ onLogout }) {
   const toggleCollapse = () => {
     setCollapsed((c) => {
       if (!c) {
-        // going to collapsed: remember last expanded width
         prevExpandedWidthRef.current = sidebarWidth;
       } else {
-        // expanding back: restore previous expanded width
         const restored = clamp(prevExpandedWidthRef.current || sidebarWidth || DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH);
         setSidebarWidth(restored);
         localStorage.setItem(STORAGE_KEY, String(restored));
@@ -785,7 +784,6 @@ export default function SidebarMui({ onLogout }) {
   const onDragStart = (e) => {
     if (!mdUp || collapsed) return;
     draggingRef.current = true;
-    // Prevent text selection while dragging
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
     e.preventDefault();
@@ -793,7 +791,6 @@ export default function SidebarMui({ onLogout }) {
 
   const onDragMove = (e) => {
     if (!draggingRef.current) return;
-    // Calculate relative to viewport left edge; clamp
     const next = clamp(e.clientX, MIN_WIDTH, MAX_WIDTH);
     setSidebarWidth(next);
   };
@@ -803,14 +800,11 @@ export default function SidebarMui({ onLogout }) {
     draggingRef.current = false;
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
-    // Persist
     localStorage.setItem(STORAGE_KEY, String(sidebarWidth));
-    // Remember as last expanded width
     prevExpandedWidthRef.current = sidebarWidth;
   };
 
   useEffect(() => {
-    // Global listeners for drag
     window.addEventListener('mousemove', onDragMove);
     window.addEventListener('mouseup', onDragEnd);
     window.addEventListener('mouseleave', onDragEnd);
@@ -975,7 +969,6 @@ export default function SidebarMui({ onLogout }) {
                   icon={Icon}
                   label={menu.label}
                   collapsed={collapsed}
-                  // keep vertical accent for top-level links
                 />
               );
             }
@@ -985,7 +978,6 @@ export default function SidebarMui({ onLogout }) {
             const isOpen = !!openMenus[menu.key];
             const Icon = menu.icon;
 
-            // active when any child path is active
             const anyChildActive = visibleChildren.some((c) => pathname === c.to || pathname.startsWith(c.to + '/'));
             return (
               <Box key={menu.key}>
@@ -1094,7 +1086,6 @@ export default function SidebarMui({ onLogout }) {
           height: '100%',
           width: 6,
           cursor: 'col-resize',
-          // subtle hit area; show line on hover
           '&:hover': {
             background:
               'linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(99,102,241,0.2) 40%, rgba(99,102,241,0.35) 60%, rgba(0,0,0,0) 100%)',
@@ -1116,7 +1107,8 @@ export default function SidebarMui({ onLogout }) {
           color="default"
           elevation={0}
           sx={{
-            zIndex: (t) => t.zIndex.drawer + 1,
+            // Use our constant instead of theme.zIndex.drawer to stay under Bootstrap modal
+            zIndex: Z_SIDEBAR_UNDER_BOOTSTRAP + 1,
             width: { md: `calc(100% - ${sideWidth}px)` },
             ml: { md: `${sideWidth}px` },
           }}
@@ -1204,10 +1196,16 @@ export default function SidebarMui({ onLogout }) {
             variant="temporary"
             open={mobileOpen}
             onClose={handleDrawerToggle}
-            ModalProps={{ keepMounted: true }}
+            ModalProps={{ keepMounted: true, sx: { zIndex: Z_SIDEBAR_UNDER_BOOTSTRAP } }}
             sx={{
               display: { xs: 'block', md: 'none' },
-              '& .MuiDrawer-paper': { boxSizing: 'border-box', width: DEFAULT_WIDTH, borderRadius: 0 },
+              zIndex: Z_SIDEBAR_UNDER_BOOTSTRAP, // ensure Drawer root under Bootstrap modal
+              '& .MuiDrawer-paper': {
+                boxSizing: 'border-box',
+                width: DEFAULT_WIDTH,
+                borderRadius: 0,
+                zIndex: Z_SIDEBAR_UNDER_BOOTSTRAP, // paper under Bootstrap modal
+              },
             }}
           >
             <Box sx={{ width: DEFAULT_WIDTH }}>{drawer}</Box>
@@ -1219,7 +1217,9 @@ export default function SidebarMui({ onLogout }) {
             open
             sx={{
               display: { xs: 'none', md: 'block' },
+              zIndex: Z_SIDEBAR_UNDER_BOOTSTRAP, // root under Bootstrap modal
               '& .MuiDrawer-paper': {
+                zIndex: Z_SIDEBAR_UNDER_BOOTSTRAP, // paper under Bootstrap modal
                 boxSizing: 'border-box',
                 width: sideWidth,
                 borderRight: '1px solid',
@@ -1241,8 +1241,8 @@ export default function SidebarMui({ onLogout }) {
               flexGrow: 1,
               padding:'10px',
               p: 5,
-              bgcolor: '#ffffff', // always white
-              color: '#0f172a',   // fixed text color
+              bgcolor: '#ffffff',
+              color: '#0f172a',
               minHeight: '100vh',
               pb: `${FOOTER_HEIGHT + 12}px`,
               overflowY: 'auto',
@@ -1273,7 +1273,8 @@ export default function SidebarMui({ onLogout }) {
               alignItems: 'center',
               justifyContent: 'center',
               px: { xs: 1.5, md: 2 },
-              zIndex: (t) => t.zIndex.appBar,
+              // Keep footer above the drawer/appbar but still below Bootstrap modal
+              zIndex: Z_SIDEBAR_UNDER_BOOTSTRAP + 2,
               color: '#334155',
             }}
           >
