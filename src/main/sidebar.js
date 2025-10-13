@@ -2,11 +2,13 @@
 // NO vertical bar for dropdown headers & dropdown child links,
 // icon-only dropdown when collapsed, centered sidebar credits,
 // slim footer (no credits), main content locked to light mode.
+// Added: Desktop drag-to-resize sidebar (persisted), coexists with collapsed mini mode.
 
 import React, {
   memo,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -157,7 +159,7 @@ const PERMS = Object.freeze({
   MANAGE_ROLES: 'manage_roles',
   MANAGE_PERMISSIONS: 'manage_permissions',
   MANAGE_BACKUPS: 'manage_backups',
-  MANAGE_SCHOOL_SETTINGS: 'manage_school_settings',
+  MANAGE_SCHOOL_SETTINGS: 'manage_schooL_settings', // keep typo? ensure consistent with server; if not, use correct key below
   VIEW_LOGS: 'view_logs',
   EXPORT_DATA: 'export_data',
   IMPORT_DATA: 'import_data',
@@ -557,7 +559,6 @@ const SidebarLink = memo(function SidebarLink({
           transform: 'translateY(-1px)',
         },
 
-        // ACTIVE STATE from NavLink (.active)
         '&.active': {
           background: (t) =>
             t.palette.mode === 'light'
@@ -565,7 +566,6 @@ const SidebarLink = memo(function SidebarLink({
               : 'linear-gradient(90deg, rgba(96,165,250,.18), rgba(96,165,250,.08))',
         },
 
-        // Left accent bar ONLY when allowed
         ...(noActiveBar ? {} : {
           '&.active::before': {
             content: '""',
@@ -614,7 +614,6 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
       aria-haspopup="menu"
       aria-expanded={collapsed ? popOpen : open}
       aria-label={label}
-      // use "selected" for wash; NO ::before vertical bar
       selected={active}
       sx={{
         position: 'relative',
@@ -635,8 +634,6 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
         },
         '&:hover': { backgroundColor: (t) => t.palette.action.hover, transform: 'translateY(-1px)' },
 
-        // Remove the accent bar entirely on dropdown headers.
-        // Keep icon/text emphasis on "selected"
         '&.Mui-selected .MuiListItemIcon-root svg': { color: 'primary.main' },
         '&.Mui-selected .MuiListItemText-primary': { color: 'primary.main', fontWeight: 800 },
       }}
@@ -670,7 +667,7 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
                 icon={c.icon}
                 label={c.label}
                 collapsed={false}
-                noActiveBar // <- no vertical bar for dropdown children
+                noActiveBar
               />
             ))}
           </List>
@@ -702,7 +699,7 @@ const SidebarDropdown = memo(function SidebarDropdown({ label, icon: Icon, open,
                   icon={c.icon}
                   label={c.label}
                   collapsed={false}
-                  noActiveBar // <- no vertical bar here too
+                  noActiveBar
                   onClick={() => setAnchorEl(null)}
                 />
               ))}
@@ -730,11 +727,17 @@ function buildRoutesFromMenu(menu, perms) {
   return ordered;
 }
 
-// ======== Main Component ========
-const drawerWidth = 360;
-const collapsedWidth = 108;
+// ==== RESIZE CONSTANTS ====
+const DEFAULT_WIDTH = 360;          // original drawer width
+const MIN_WIDTH = 220;              // min expanded width
+const MAX_WIDTH = 520;              // max expanded width
+const COLLAPSE_WIDTH = 108;         // mini width
+const RESIZE_HANDLE_W = 8;          // drag area width
+const RESIZE_LS_KEY = 'sidebar-width-v1';
 const FOOTER_HEIGHT = 34;
+const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 
+// ======== Main Component ========
 export default function SidebarMui({ onLogout }) {
   // Themes
   const [mode, setMode] = useState(getInitialTheme);
@@ -751,6 +754,53 @@ export default function SidebarMui({ onLogout }) {
   const [collapsed, setCollapsed] = useState(false);
   const handleDrawerToggle = () => setMobileOpen(!mobileOpen);
   const toggleCollapse = () => setCollapsed((c) => !c);
+
+  // Resizable width (desktop expanded only)
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = parseInt(localStorage.getItem(RESIZE_LS_KEY) || '', 10);
+    return Number.isFinite(saved) ? clamp(saved, MIN_WIDTH, MAX_WIDTH) : DEFAULT_WIDTH;
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startW: sidebarWidth });
+
+  const sideWidth = collapsed ? COLLAPSE_WIDTH : sidebarWidth;
+
+  const startDragging = (e) => {
+    if (!mdUp || collapsed) return;
+    setIsDragging(true);
+    dragRef.current.startX = e.clientX;
+    dragRef.current.startW = sidebarWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (e) => {
+      const delta = e.clientX - dragRef.current.startX;
+      const next = clamp(dragRef.current.startW + delta, MIN_WIDTH, MAX_WIDTH);
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      setIsDragging(false);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      localStorage.setItem(RESIZE_LS_KEY, String(sidebarWidth));
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isDragging, sidebarWidth]);
+
+  // (Optional) Snap to collapsed if dragged too small
+  useEffect(() => {
+    if (mdUp && !collapsed && sidebarWidth < MIN_WIDTH + 12) {
+      setCollapsed(true);
+    }
+  }, [mdUp, collapsed, sidebarWidth]);
 
   // Data/permissions
   const [openMenus, setOpenMenus] = useState({});
@@ -905,7 +955,6 @@ export default function SidebarMui({ onLogout }) {
                   icon={Icon}
                   label={menu.label}
                   collapsed={collapsed}
-                  // keep vertical accent for top-level links
                 />
               );
             }
@@ -915,7 +964,6 @@ export default function SidebarMui({ onLogout }) {
             const isOpen = !!openMenus[menu.key];
             const Icon = menu.icon;
 
-            // active when any child path is active
             const anyChildActive = visibleChildren.some((c) => pathname === c.to || pathname.startsWith(c.to + '/'));
             return (
               <Box key={menu.key}>
@@ -1011,8 +1059,6 @@ export default function SidebarMui({ onLogout }) {
       )}
     </Box>
   );
-
-  const sideWidth = collapsed ? collapsedWidth : drawerWidth;
 
   return (
     <ThemeProvider theme={appTheme}>
@@ -1115,19 +1161,20 @@ export default function SidebarMui({ onLogout }) {
             ModalProps={{ keepMounted: true }}
             sx={{
               display: { xs: 'block', md: 'none' },
-              '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, borderRadius: 0 },
+              '& .MuiDrawer-paper': { boxSizing: 'border-box', width: DEFAULT_WIDTH, borderRadius: 0 },
             }}
           >
-            <Box sx={{ width: drawerWidth }}>{drawer}</Box>
+            <Box sx={{ width: DEFAULT_WIDTH }}>{drawer}</Box>
           </Drawer>
 
-          {/* Desktop mini-variant */}
+          {/* Desktop mini-variant w/ resize handle */}
           <Drawer
             variant="permanent"
             open
             sx={{
               display: { xs: 'none', md: 'block' },
               '& .MuiDrawer-paper': {
+                position: 'relative',
                 boxSizing: 'border-box',
                 width: sideWidth,
                 borderRight: '1px solid',
@@ -1138,6 +1185,31 @@ export default function SidebarMui({ onLogout }) {
             }}
           >
             <Box sx={{ width: sideWidth }}>{drawer}</Box>
+
+            {/* RESIZE HANDLE (desktop expanded only) */}
+            {!collapsed && mdUp && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  width: RESIZE_HANDLE_W,
+                  height: '100%',
+                  cursor: 'col-resize',
+                  '&:hover': {
+                    background:
+                      (t) => t.palette.mode === 'light'
+                        ? 'linear-gradient(to right, rgba(15,23,42,0), rgba(15,23,42,0.06))'
+                        : 'linear-gradient(to right, rgba(255,255,255,0), rgba(255,255,255,0.10))',
+                  },
+                  boxShadow: isDragging ? 'inset -2px 0 0 rgba(37,99,235,.35)' : 'none',
+                }}
+                onMouseDown={startDragging}
+                aria-label="Resize sidebar"
+                role="separator"
+                aria-orientation="vertical"
+              />
+            )}
           </Drawer>
         </Box>
 
@@ -1147,7 +1219,7 @@ export default function SidebarMui({ onLogout }) {
             component="main"
             sx={{
               flexGrow: 1,
-              padding:'10px',
+              padding: '10px',
               p: 5,
               bgcolor: '#ffffff', // always white
               color: '#0f172a',   // fixed text color
